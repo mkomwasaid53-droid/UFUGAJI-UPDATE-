@@ -1,0 +1,39 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check ownership
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Marketplace Products media storage (images and video)
+    match /marketplace/products/{sellerUid}/{productId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isOwner(sellerUid) && (request.resource == null || request.resource.size <= 55 * 1024 * 1024);
+    }
+
+    // Marketplace Digital Shops branding media (logo, cover)
+    match /marketplace/shops/{sellerUid}/{shopId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isOwner(sellerUid);
+    }
+
+    // User profile and farm media
+    match /users/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isOwner(userId);
+    }
+
+    // Default fallback
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+  }
+}

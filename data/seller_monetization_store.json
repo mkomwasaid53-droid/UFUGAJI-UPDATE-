@@ -1,0 +1,125 @@
+{
+  "records": {
+    "seller_sim_grace_test": {
+      "sellerUserId": "seller_sim_grace_test",
+      "sellerProfileId": "seller_sim_grace_test",
+      "status": "GRACE_PERIOD",
+      "plan": "SELLER_MONTHLY",
+      "price": 1000,
+      "currency": "TZS",
+      "trialStartAt": "2026-09-30T10:51:34.540Z",
+      "trialEndAt": "2026-10-30T10:51:34.540Z",
+      "graceStartAt": "2026-09-30T10:51:34.560Z",
+      "graceEndAt": "2026-10-07T10:51:34.560Z",
+      "currentPeriodStartAt": null,
+      "currentPeriodEndAt": null,
+      "activatedAt": "2026-09-30T10:51:34.540Z",
+      "lastPaymentAt": null,
+      "lastPaymentStatus": "NOT_REQUIRED",
+      "nextRenewalAt": "2026-10-30T10:51:34.540Z",
+      "expiredAt": null,
+      "cancelledAt": null,
+      "suspendedAt": null,
+      "suspendedReason": null,
+      "hasHadTrial": true,
+      "testSimulation": true,
+      "version": 3,
+      "emittedTransitions": [
+        "dedup_seller_sim_grace_test_seller_sim_grace_test_TRIAL_2026-09-30T10_51_34_540Z_SELLER_TRIAL_STARTE",
+        "dedup_seller_sim_grace_test_seller_sim_grace_test_SIMULATE_GRACE_2026-09-30T10_51_34_560Z_SELLER_GRA",
+        "dedup_seller_sim_grace_test_seller_sim_grace_test_SIMULATE_GRACE_2026-09-30T10_51_34_560Z_SELLER_PAY"
+      ],
+      "createdAt": "2026-09-30T10:51:34.540Z",
+      "updatedAt": "2026-09-30T10:51:34.560Z",
+      "lastLifecycleAction": "SIMULATE_GRACE",
+      "lastLifecycleActionAt": "2026-09-30T10:51:34.560Z",
+      "lastLifecycleActionBy": "admin_user_01"
+    }
+  },
+  "auditLogs": [
+    {
+      "id": "audit_sm_1790765494560_a977l",
+      "sellerUserId": "seller_sim_grace_test",
+      "eventType": "SELLER_GRACE_STARTED",
+      "previousStatus": "TRIAL_ACTIVE",
+      "newStatus": "GRACE_PERIOD",
+      "performedBy": "admin_user_01",
+      "timestamp": "2026-09-30T10:51:34.560Z",
+      "reason": "[ADMIN SIMULATION] Kipindi cha Grace kimeanzishwa rasmi na msimamizi kwa ajili ya majaribio."
+    },
+    {
+      "id": "audit_sm_1790765494560_u42wf",
+      "sellerUserId": "seller_sim_grace_test",
+      "eventType": "SELLER_TRIAL_EXPIRED",
+      "previousStatus": "TRIAL_ACTIVE",
+      "newStatus": "GRACE_PERIOD",
+      "performedBy": "admin_user_01",
+      "timestamp": "2026-09-30T10:51:34.560Z",
+      "reason": "[ADMIN SIMULATION] Kipindi cha mwezi mmoja cha bure kimehitimishwa kwa jaribio la utawala."
+    },
+    {
+      "id": "audit_sm_1790765494544_xk076",
+      "sellerUserId": "seller_sim_grace_test",
+      "eventType": "SELLER_TRIAL_STARTED",
+      "previousStatus": "NOT_ACTIVATED",
+      "newStatus": "TRIAL_ACTIVE",
+      "performedBy": "seller_sim_grace_test",
+      "timestamp": "2026-09-30T10:51:34.544Z",
+      "reason": "Jaribio la mwezi wa kwanza bila malipo limeanza hadi 2026-10-30T10:51:34.540Z."
+    },
+    {
+      "id": "audit_sm_1790765494544_fdii3",
+      "sellerUserId": "seller_sim_grace_test",
+      "eventType": "SELLER_MONETIZATION_ACTIVATED",
+      "previousStatus": "NOT_ACTIVATED",
+      "newStatus": "TRIAL_ACTIVE",
+      "performedBy": "seller_sim_grace_test",
+      "timestamp": "2026-09-30T10:51:34.544Z",
+      "reason": "Usajili wa muuzaji umewashwa kwa mara ya kwanza."
+    }
+  ],
+  "diagnosticLogs": [
+    {
+      "id": "diag_1790765494561_ui6kh",
+      "sellerUserId": "seller_sim_grace_test",
+      "previousStatus": "TRIAL_ACTIVE",
+      "nextStatus": "GRACE_PERIOD",
+      "transitionId": "seller_sim_grace_test_SIMULATE_GRACE_2026-09-30T10:51:34.560Z",
+      "action": "SIMULATE_GRACE",
+      "source": "ADMIN_ACTION",
+      "actorUserId": "admin_user_01",
+      "timestamp": "2026-09-30T10:51:34.561Z",
+      "notificationEventIds": [
+        "dedup_seller_sim_grace_test_seller_sim_grace_test_SIMULATE_GRACE_2026-09-30T10_51_34_560Z_SELLER_GRA",
+        "dedup_seller_sim_grace_test_seller_sim_grace_test_SIMULATE_GRACE_2026-09-30T10_51_34_560Z_SELLER_PAY"
+      ],
+      "metadata": {
+        "plan": "SELLER_MONTHLY",
+        "hasHadTrial": true,
+        "testSimulation": true,
+        "version": 3
+      }
+    },
+    {
+      "id": "diag_1790765494558_8ramm",
+      "sellerUserId": "seller_sim_grace_test",
+      "previousStatus": "NOT_ACTIVATED",
+      "nextStatus": "TRIAL_ACTIVE",
+      "transitionId": "seller_sim_grace_test_TRIAL_2026-09-30T10:51:34.540Z",
+      "action": "ACTIVATE_TRIAL",
+      "source": "SELLER_ACTION",
+      "actorUserId": "seller_sim_grace_test",
+      "timestamp": "2026-09-30T10:51:34.558Z",
+      "notificationEventIds": [
+        "dedup_seller_sim_grace_test_seller_sim_grace_test_TRIAL_2026-09-30T10_51_34_540Z_SELLER_TRIAL_STARTE"
+      ],
+      "metadata": {
+        "plan": "SELLER_MONTHLY",
+        "hasHadTrial": true,
+        "testSimulation": false,
+        "version": 2
+      }
+    }
+  ],
+  "processedIdempotencyKeys": {}
+}

@@ -1,0 +1,60 @@
+{
+  "hosting": {
+    "public": "dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "dist/server.cjs",
+      "dist/server.cjs.map",
+      "server.cjs",
+      "server.cjs.map",
+      "**/*.cjs",
+      "**/*.map"
+    ],
+    "redirects": [
+      {
+        "source": "/server.cjs",
+        "destination": "/",
+        "type": 302
+      },
+      {
+        "source": "/server.cjs.map",
+        "destination": "/",
+        "type": 302
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/assets/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      }
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  }
+}

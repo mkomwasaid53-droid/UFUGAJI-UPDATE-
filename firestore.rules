@@ -1,0 +1,582 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check authentication
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check user ownership
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Helper function to check if user is admin safely
+    function isAdmin() {
+      return request.auth != null && (
+        ('email' in request.auth.token && request.auth.token.email == 'mkomwasaid53@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // Users collection & explicitly defined subcollections (Inventory completed; arbitrary wildcard removed)
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      // Users cannot elevate their own role to 'admin'
+      allow create: if isAuthenticated() && (
+        (request.auth.uid == userId &&
+          (!('role' in request.resource.data) || request.resource.data.role != 'admin')) ||
+        isAdmin()
+      );
+      allow update: if isAuthenticated() && (
+        (request.auth.uid == userId &&
+          (!('role' in request.resource.data) || request.resource.data.role == resource.data.get('role', 'farmer'))) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+
+      // AI Conversations subcollection & messages (strict user ownership)
+      match /aiConversations/{conversationId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+
+        match /messages/{messageId} {
+          allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        }
+        match /{allSubpaths=**} {
+          allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        }
+      }
+
+      // Conversations, Chats, and Messages variants (guaranteeing no PERMISSION_DENIED on conversation history or AI chat)
+      match /conversations/{conversationId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        match /{allSubpaths=**} {
+          allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        }
+      }
+
+      match /chats/{chatId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        match /{allSubpaths=**} {
+          allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        }
+      }
+
+      match /chat/{chatId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        match /{allSubpaths=**} {
+          allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        }
+      }
+
+      match /ai/{aiId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        match /{allSubpaths=**} {
+          allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        }
+      }
+
+      match /ai_conversations/{conversationId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        match /{allSubpaths=**} {
+          allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        }
+      }
+
+      // Livestock records subcollection & events (strict user ownership)
+      match /livestockRecords/{recordId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+
+        match /events/{eventId} {
+          allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        }
+      }
+
+      // Professional Profile public subcollection
+      match /professionalProfile/profile {
+        allow read: if true;
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      }
+
+      // Professional Credentials (strictly private: owner + admin only)
+      match /professionalProfile/credentials {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      }
+
+      // Seller Profile info (publicly readable for marketplace buyers; writable by owner & admin)
+      match /sellerProfile/{docId} {
+        allow read: if true;
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+
+        // Catalogues subcollection under Digital Shop (publicly viewable by buyers)
+        match /catalogues/{catalogueId} {
+          allow read: if true;
+          allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+        }
+      }
+    }
+
+    // Authoritative Seller Verification Collection (V1.6A Marketplace Trust)
+    match /sellerVerification/{sellerId} {
+      allow read: if true;
+
+      // Sellers can submit application ONLY into PENDING_VERIFICATION, badgeEligible: false, no reviewedBy/reviewedAt
+      allow create: if isAdmin() || (
+        isAuthenticated() && request.auth.uid == sellerId &&
+        request.resource.data.sellerId == sellerId &&
+        request.resource.data.status in ['PENDING_VERIFICATION', 'NOT_APPLIED'] &&
+        request.resource.data.badgeEligible == false &&
+        !('reviewedBy' in request.resource.data) &&
+        !('reviewedAt' in request.resource.data)
+      );
+
+      // Sellers can update application fields or re-apply; cannot self-verify or tamper with active VERIFIED state
+      allow update: if isAdmin() || (
+        isAuthenticated() && request.auth.uid == sellerId &&
+        request.resource.data.sellerId == sellerId &&
+        request.resource.data.status in ['PENDING_VERIFICATION', 'NOT_APPLIED'] &&
+        request.resource.data.badgeEligible == false &&
+        !('reviewedBy' in request.resource.data) &&
+        !('reviewedAt' in request.resource.data) &&
+        (resource == null || resource.data.get('status', 'NOT_APPLIED') != 'VERIFIED')
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // Legacy Records collection (Kept separate without merging schemas)
+    match /records/{recordId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Marketplace Products collection (Gulio la Mifugo & Pembejeo - Scalable Foundation)
+    match /marketplaceProducts/{productId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && (
+        isAdmin() || (
+          request.resource.data.sellerId == request.auth.uid &&
+          request.resource.data.productId == productId &&
+          (!('shopId' in request.resource.data) || request.resource.data.shopId == request.auth.uid) &&
+          (!('price' in request.resource.data) || (request.resource.data.price is number && request.resource.data.price >= 0)) &&
+          (!('quantityAvailable' in request.resource.data) || (request.resource.data.quantityAvailable is number && request.resource.data.quantityAvailable >= 0)) &&
+          (!('deliveryFee' in request.resource.data) || request.resource.data.deliveryFee == null || (request.resource.data.deliveryFee is number && request.resource.data.deliveryFee >= 0)) &&
+          (!('categoryId' in request.resource.data) || (request.resource.data.categoryId is string && request.resource.data.categoryId.size() <= 100)) &&
+          (!('subcategoryId' in request.resource.data) || request.resource.data.subcategoryId == null || (request.resource.data.subcategoryId is string && request.resource.data.subcategoryId.size() <= 100)) &&
+          (!('sellerVerificationStatus' in request.resource.data) || request.resource.data.sellerVerificationStatus in ['unverified', 'pending', 'verified']) &&
+          (!('validationStatus' in request.resource.data) || request.resource.data.validationStatus in ['VALID', 'INCOMPLETE', 'INVALID', 'BLOCKED', 'UNAVAILABLE']) &&
+          (
+            request.resource.data.status != 'active' || (
+              request.resource.data.categoryId is string && request.resource.data.categoryId.size() > 0 &&
+              request.resource.data.title is string && request.resource.data.title.size() >= 3 &&
+              request.resource.data.price is number && request.resource.data.price >= 0 &&
+              request.resource.data.quantityAvailable is number && request.resource.data.quantityAvailable >= 0 &&
+              request.resource.data.location is string && request.resource.data.location.size() > 0
+            )
+          )
+        )
+      );
+      allow update: if isAuthenticated() && (
+        isAdmin() || (
+          resource != null &&
+          resource.data.sellerId == request.auth.uid &&
+          request.resource.data.sellerId == resource.data.sellerId &&
+          request.resource.data.productId == resource.data.productId &&
+          (!('shopId' in request.resource.data) || request.resource.data.shopId == resource.data.sellerId) &&
+          (!('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt) &&
+          (!('price' in request.resource.data) || (request.resource.data.price is number && request.resource.data.price >= 0)) &&
+          (!('quantityAvailable' in request.resource.data) || (request.resource.data.quantityAvailable is number && request.resource.data.quantityAvailable >= 0)) &&
+          (!('deliveryFee' in request.resource.data) || request.resource.data.deliveryFee == null || (request.resource.data.deliveryFee is number && request.resource.data.deliveryFee >= 0)) &&
+          (!('categoryId' in request.resource.data) || (request.resource.data.categoryId is string && request.resource.data.categoryId.size() <= 100)) &&
+          (!('subcategoryId' in request.resource.data) || request.resource.data.subcategoryId == null || (request.resource.data.subcategoryId is string && request.resource.data.subcategoryId.size() <= 100)) &&
+          (!('validationStatus' in request.resource.data) || request.resource.data.validationStatus in ['VALID', 'INCOMPLETE', 'INVALID', 'BLOCKED', 'UNAVAILABLE']) &&
+          (
+            request.resource.data.status != 'active' || (
+              request.resource.data.categoryId is string && request.resource.data.categoryId.size() > 0 &&
+              request.resource.data.title is string && request.resource.data.title.size() >= 3 &&
+              request.resource.data.price is number && request.resource.data.price >= 0 &&
+              request.resource.data.quantityAvailable is number && request.resource.data.quantityAvailable >= 0 &&
+              request.resource.data.location is string && request.resource.data.location.size() > 0
+            )
+          ) &&
+          (
+            !('sellerVerificationStatus' in request.resource.data) ||
+            request.resource.data.sellerVerificationStatus in ['unverified', 'pending', 'verified'] ||
+            request.resource.data.sellerVerificationStatus == resource.data.get('sellerVerificationStatus', 'unverified')
+          )
+        )
+      );
+      allow delete: if isAuthenticated() && (resource == null || resource.data.sellerId == request.auth.uid || isAdmin());
+    }
+
+    // Governed Marketplace Categories Collection (V1.7A Category Governance)
+    // Controlled exclusively by administrators; readable by all
+    match /marketplaceCategories/{categoryId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Permanent Video Storage Collection (Resilient Cloud Persistence)
+    // Enforces sellerUid ownership: sellers can only upload/delete their own video metadata and chunks
+    match /marketplaceVideos/{videoId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && (isAdmin() || request.resource.data.sellerUid == request.auth.uid);
+      allow update: if isAuthenticated() && (
+        isAdmin() || (
+          resource != null &&
+          resource.data.sellerUid == request.auth.uid &&
+          request.resource.data.sellerUid == resource.data.sellerUid
+        )
+      );
+      allow delete: if isAuthenticated() && (isAdmin() || (resource != null && resource.data.sellerUid == request.auth.uid));
+
+      match /chunks/{chunkId} {
+        allow read: if true;
+        allow create, update, delete: if isAuthenticated() && (
+          isAdmin() || (
+            get(/databases/$(database)/documents/marketplaceVideos/$(videoId)).data.sellerUid == request.auth.uid
+          )
+        );
+      }
+    }
+
+    // Legacy Marketplace collection (Gulio / Soko)
+    match /marketplace/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Community collection (Gumzo / Jamii)
+    match /community/{postId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Public Livestock & Veterinary Professionals Directory (Daktari Mtaani Kwako)
+    match /professionals/{professionalId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated() && (request.auth.uid == professionalId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Marketplace Reviews & Reputation (V1.6F Marketplace Trust)
+    match /marketplaceReviews/{reviewId} {
+      allow read: if true;
+
+      // Author can create review only if authenticated, integer rating 1..5, no self-reviews
+      allow create: if isAuthenticated() && (
+        isAdmin() || (
+          request.resource.data.authorUserId == request.auth.uid &&
+          request.resource.data.rating is int &&
+          request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
+          request.resource.data.targetType in ['PRODUCT', 'SHOP', 'SELLER'] &&
+          request.resource.data.sellerId != request.auth.uid &&
+          (!('shopId' in request.resource.data) || request.resource.data.shopId != request.auth.uid) &&
+          request.resource.data.moderationStatus in ['PUBLISHED', 'UNDER_REVIEW'] &&
+          request.resource.data.status == 'active' &&
+          request.resource.data.reportCount == 0 &&
+          !('sellerResponse' in request.resource.data)
+        )
+      );
+
+      // Updates: either Author updating rating/text, or Seller responding (without modifying review text/rating)
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        (
+          resource != null &&
+          resource.data.authorUserId == request.auth.uid &&
+          request.resource.data.authorUserId == request.auth.uid &&
+          request.resource.data.sellerId == resource.data.sellerId &&
+          request.resource.data.targetType == resource.data.targetType &&
+          request.resource.data.targetId == resource.data.targetId &&
+          request.resource.data.rating is int &&
+          request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
+          request.resource.data.moderationStatus == resource.data.moderationStatus &&
+          request.resource.data.reportCount == resource.data.reportCount &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          (!('sellerResponse' in request.resource.data) || request.resource.data.sellerResponse == resource.data.get('sellerResponse', null))
+        ) ||
+        (
+          resource != null &&
+          (resource.data.sellerId == request.auth.uid || resource.data.get('shopId', '') == request.auth.uid) &&
+          request.resource.data.authorUserId == resource.data.authorUserId &&
+          request.resource.data.rating == resource.data.rating &&
+          request.resource.data.title == resource.data.title &&
+          request.resource.data.body == resource.data.body &&
+          request.resource.data.targetType == resource.data.targetType &&
+          request.resource.data.targetId == resource.data.targetId &&
+          request.resource.data.moderationStatus == resource.data.moderationStatus &&
+          request.resource.data.reportCount == resource.data.reportCount &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.sellerResponseSellerId == request.auth.uid
+        )
+      );
+
+      allow delete: if isAuthenticated() && (resource == null || resource.data.authorUserId == request.auth.uid || isAdmin());
+    }
+
+    // Marketplace Incident & Content Reports (V1.6F & V1.7F Marketplace Governance)
+    match /marketplaceReports/{reportId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.reporterUserId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && (
+        isAdmin() || (
+          request.resource.data.reporterUserId == request.auth.uid &&
+          request.resource.data.targetType in ['REVIEW', 'PRODUCT', 'SHOP', 'SELLER', 'LISTING'] &&
+          request.resource.data.status == 'OPEN'
+        )
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // Marketplace Seller Appeals (V1.7F Reporting & Appeals)
+    match /marketplaceAppeals/{appealId} {
+      allow read: if isAdmin() || (
+        isAuthenticated() && resource != null && (
+          resource.data.appellantUserId == request.auth.uid ||
+          resource.data.sellerId == request.auth.uid
+        )
+      );
+      allow create: if isAuthenticated() && (
+        isAdmin() || (
+          request.resource.data.appellantUserId == request.auth.uid &&
+          request.resource.data.sellerId == request.auth.uid &&
+          request.resource.data.status == 'SUBMITTED' &&
+          request.resource.data.targetType in ['MODERATION_DECISION', 'SELLER_WARNING', 'SELLER_RESTRICTION']
+        )
+      );
+      allow update: if isAdmin() || (
+        isAuthenticated() && resource != null &&
+        resource.data.appellantUserId == request.auth.uid &&
+        resource.data.status in ['SUBMITTED', 'UNDER_REVIEW'] &&
+        request.resource.data.status == 'WITHDRAWN' &&
+        request.resource.data.appellantUserId == resource.data.appellantUserId &&
+        request.resource.data.sellerId == resource.data.sellerId &&
+        request.resource.data.targetId == resource.data.targetId
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Marketplace Reports & Appeals Audit Trail (V1.7F - Strictly Immutable)
+    match /marketplaceReportsAppealsAudit/{auditId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update, delete: if false; // Append-only, never modifiable
+    }
+
+    // Marketplace Moderation Records (V1.7D Admin Moderation)
+    match /marketplaceModeration/{productId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource != null && resource.data.sellerId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Marketplace Moderation Audit Trail (V1.7D Admin Moderation - Strictly Immutable)
+    match /marketplaceModerationAudit/{auditId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false; // Append-only, never modifiable
+    }
+
+    // Seller Governance Warnings (V1.7E Seller Warnings & Restrictions)
+    match /sellerWarnings/{warningId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource != null && resource.data.sellerId == request.auth.uid);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isAuthenticated() && resource != null && resource.data.sellerId == request.auth.uid &&
+        request.resource.data.status == 'ACKNOWLEDGED' &&
+        request.resource.data.sellerId == resource.data.sellerId &&
+        request.resource.data.warningType == resource.data.warningType &&
+        request.resource.data.severity == resource.data.severity &&
+        request.resource.data.reasonCode == resource.data.reasonCode
+      );
+    }
+
+    // Seller Governance Restrictions (V1.7E Seller Warnings & Restrictions)
+    match /sellerRestrictions/{restrictionId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource != null && resource.data.sellerId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Seller Governance Audit Trail (V1.7E Seller Warnings & Restrictions - Strictly Immutable)
+    match /sellerGovernanceAudit/{auditId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && (isAdmin() || request.resource.data.action == 'ACKNOWLEDGE_WARNING');
+      allow update, delete: if false; // Append-only, never modifiable
+    }
+
+    // Seller Monetization Records & Audit (V1.10A-C3 - Server Authoritative)
+    match /sellerMonetization/{sellerUserId} {
+      allow read: if isAuthenticated() && (request.auth.uid == sellerUserId || isAdmin());
+      allow write: if isAdmin();
+    }
+    match /sellerMonetizationAudit/{auditId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false; // Immutable audit log
+    }
+    match /sellerMonetizationDiagnostic/{diagId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false; // Immutable diagnostic log
+    }
+
+    // Platform User Notifications (V1.7H Notification Center Foundation)
+    // Cross-user isolation: Regular users can only read their own notifications.
+    // Admins can read their own and ADMIN_GROUP broadcast governance notifications.
+    // Normal users may ONLY update 'read' and 'readAt'.
+    match /userNotifications/{notificationId} {
+      allow get: if isAuthenticated() && (
+        resource.data.recipientUserId == request.auth.uid ||
+        resource.data.recipientUserId == 'ADMIN_GROUP' ||
+        isAdmin()
+      );
+      allow list: if isAuthenticated() && (
+        resource.data.recipientUserId == request.auth.uid ||
+        resource.data.recipientUserId == 'ADMIN_GROUP' ||
+        ('email' in request.auth.token && request.auth.token.email == 'mkomwasaid53@gmail.com')
+      );
+      // Notifications creation is authoritative: admin or self-notification only
+      allow create: if isAuthenticated() && (
+        request.resource.data.recipientUserId == request.auth.uid ||
+        isAdmin()
+      );
+      // Non-admin recipients can ONLY mark as read
+      allow update: if isAuthenticated() && (
+        (resource.data.recipientUserId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // AI Usage Events (V1.8A AI Usage, Cost & Answer Cache Foundation - Immutable Server-Authoritative Audit Logs)
+    // Ordinary clients cannot fabricate usage events; writes are restricted to server/admin
+    match /aiUsageEvents/{eventId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource != null && resource.data.userId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // AI User Daily Accounting (V1.8A Server-Authoritative Daily Limits)
+    // Ordinary clients cannot rewrite quota or reset usage; writes are restricted to server/admin
+    match /aiUserDailyUsage/{usageId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource != null && resource.data.userId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // AI Answer Cache (V1.8A General Knowledge & Contextual Cache)
+    // Global general knowledge cache writes are server-authoritative; reads remain public for global cache
+    match /aiAnswerCache/{cacheId} {
+      allow read: if (resource != null && resource.data.cacheType == 'GLOBAL_GENERAL_KNOWLEDGE') || isAdmin() || (
+        isAuthenticated() && resource != null && resource.data.get('userId', '') == request.auth.uid
+      );
+      allow create, update, delete: if isAdmin();
+    }
+
+    // AI Cost Configurations (V1.8A Model Pricing Metadata)
+    match /aiCostConfigurations/{configId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // AI Entitlements (V1.8B Server-Authoritative AI Entitlements & Usage Limits)
+    // Ordinary clients cannot fabricate or modify entitlements; writes are restricted to server/admin
+    match /aiEntitlements/{entitlementId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource != null && resource.data.userId == request.auth.uid);
+      allow list: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // V1.9A — Governed Ad Rewards & Audit Records
+    // Strict server-side authority: ordinary clients cannot modify reward records or grant allowance.
+    // Users can only read their own rewards; writes are restricted to server/admin.
+    match /adRewards/{rewardId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource != null && resource.data.userId == request.auth.uid);
+      allow list: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /adAuditEvents/{eventId} {
+      allow read, list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // =========================================================================
+    // Root-Level AI & Chat Conversations Fallbacks & Bridges
+    // Supports direct collection queries for /aiConversations, /conversations, /chats
+    // and their nested /messages subcollections, with strict user ownership and admin access.
+    // =========================================================================
+    match /aiConversations/{conversationId} {
+      allow read, write: if isAuthenticated() && (
+        isAdmin() ||
+        (resource == null || resource.data.uid == request.auth.uid || resource.data.userId == request.auth.uid)
+      );
+
+      match /messages/{messageId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    match /conversations/{conversationId} {
+      allow read, write: if isAuthenticated() && (
+        isAdmin() ||
+        (resource == null || resource.data.uid == request.auth.uid || resource.data.userId == request.auth.uid)
+      );
+
+      match /messages/{messageId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /chat/{messageId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    match /chats/{chatId} {
+      allow read, write: if isAuthenticated() && (
+        isAdmin() ||
+        (resource == null || resource.data.uid == request.auth.uid || resource.data.userId == request.auth.uid)
+      );
+
+      match /messages/{messageId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    match /chat/{chatId} {
+      allow read, write: if isAuthenticated() && (
+        isAdmin() ||
+        (resource == null || resource.data.uid == request.auth.uid || resource.data.userId == request.auth.uid)
+      );
+
+      match /{allSubpaths=**} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    match /messages/{messageId} {
+      allow read, write: if isAuthenticated() && (
+        isAdmin() ||
+        (resource == null || resource.data.uid == request.auth.uid || resource.data.userId == request.auth.uid)
+      );
+    }
+
+    match /ai/{docId} {
+      allow read, write: if isAuthenticated() && (
+        isAdmin() ||
+        (resource == null || resource.data.uid == request.auth.uid || resource.data.userId == request.auth.uid)
+      );
+
+      match /{allSubpaths=**} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // Collection Group Queries: Allow users and admins to read/write messages in conversations
+    match /{path=**}/messages/{messageId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

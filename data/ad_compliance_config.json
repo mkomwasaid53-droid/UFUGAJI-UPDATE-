@@ -1,0 +1,20 @@
+{
+  "privacyPolicyUrl": "https://ufugajiupdate.co.tz/privacy",
+  "termsUrl": "https://ufugajiupdate.co.tz/terms",
+  "contactPageUrl": "https://ufugajiupdate.co.tz/contact",
+  "developerWebsiteUrl": "https://ufugajiupdate.co.tz",
+  "appAdsTxtUrl": "https://ufugajiupdate.co.tz/app-ads.txt",
+  "appAdsTxtStatus": "READY",
+  "lastAppAdsTxtVerification": "2026-09-26T13:36:27.073Z",
+  "android": {
+    "packageName": "com.ufugajiupdate.app",
+    "playStoreUrl": "",
+    "publicationStatus": "NOT_PUBLISHED"
+  },
+  "web": {
+    "productionUrl": "https://ufugajiupdate.co.tz",
+    "publicationStatus": "TESTING"
+  },
+  "consentRequired": true,
+  "defaultConsentStatus": "UNKNOWN"
+}

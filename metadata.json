@@ -1,0 +1,6 @@
+{
+  "name": "Ufugaji Update",
+  "description": "Tanzanian livestock and agriculture platform with Swahili mobile-first interface, Firebase authentication, marketplace governance, server-authoritative PlusPesa mobile money payment integration, premium entitlement, daily limits, cost accounting, and V1.9B ad provider integration readiness & compliance foundation.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

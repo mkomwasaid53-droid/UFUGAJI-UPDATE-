@@ -1,0 +1,730 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User profile records for farmers, sellers, and administrators.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth user UID" },
+        "email": { "type": "string", "description": "Email address" },
+        "role": { "type": "string", "enum": ["farmer", "seller", "pro", "admin"], "description": "User access role" },
+        "displayName": { "type": "string", "description": "Full name of the farmer/user" },
+        "name": { "type": "string", "description": "Backwards-compatible full name" },
+        "phone": { "type": "string", "description": "Contact phone number" },
+        "location": { "type": "string", "description": "Living location / region in Tanzania" },
+        "region": { "type": "string", "description": "Backwards-compatible region" },
+        "mainLivestock": { "type": "array", "items": { "type": "string" }, "description": "Main livestock kept (e.g. kuku, ng'ombe, mbuzi)" },
+        "livestockTypes": { "type": "array", "items": { "type": "string" }, "description": "Breeds and types of livestock" },
+        "farmingType": { "type": "string", "description": "Primary livestock or farming type" },
+        "createdAt": { "type": "string", "description": "Timestamp of user registration" },
+        "updatedAt": { "type": "string", "description": "Timestamp of last update" }
+      },
+      "subcollections": {
+        "aiConversations": {
+          "title": "AI Assistant Conversations",
+          "description": "Conversation sessions between the farmer and the AI Assistant.",
+          "type": "object",
+          "properties": {
+            "conversationId": { "type": "string" },
+            "uid": { "type": "string" },
+            "title": { "type": "string" },
+            "createdAt": { "type": "string" },
+            "updatedAt": { "type": "string" },
+            "lastMessageAt": { "type": "string" },
+            "messageCount": { "type": "number" },
+            "status": { "type": "string", "enum": ["active", "archived", "deleted"] },
+            "isCustomTitle": { "type": "boolean" }
+          },
+          "subcollections": {
+            "messages": {
+              "title": "AI Assistant Chat Messages",
+              "description": "Individual messages in an AI conversation thread.",
+              "type": "object",
+              "properties": {
+                "messageId": { "type": "string" },
+                "role": { "type": "string", "enum": ["user", "assistant", "model"] },
+                "content": { "type": "string" },
+                "createdAt": { "type": "string" },
+                "personalized": { "type": "boolean" }
+              },
+              "required": ["messageId", "role", "content", "createdAt"]
+            }
+          },
+          "required": ["conversationId", "title", "createdAt", "updatedAt"]
+        },
+        "livestockRecords": {
+          "title": "Personal Livestock Records (My Assistant)",
+          "description": "Livestock count, categories, breeds, batches, and notes owned by the authenticated farmer.",
+          "type": "object",
+          "properties": {
+            "recordId": { "type": "string" },
+            "livestockCategory": { "type": "string" },
+            "livestockType": { "type": "string" },
+            "quantity": { "type": "number" },
+            "recordName": { "type": "string" },
+            "dateAdded": { "type": "string" },
+            "notes": { "type": "string" },
+            "createdAt": { "type": "string" },
+            "updatedAt": { "type": "string" }
+          },
+          "subcollections": {
+            "events": {
+              "title": "Livestock Events & History",
+              "description": "Historical timeline of vaccinations, treatments, mortality, purchases, sales, feedings, births, additions, and observations.",
+              "type": "object",
+              "properties": {
+                "eventId": { "type": "string" },
+                "eventType": {
+                  "type": "string",
+                  "enum": [
+                    "addition",
+                    "birth",
+                    "purchase",
+                    "sale",
+                    "death",
+                    "mortality",
+                    "vaccination",
+                    "treatment",
+                    "feed",
+                    "observation",
+                    "other"
+                  ]
+                },
+                "eventDate": { "type": "string" },
+                "quantity": { "type": ["number", "null"] },
+                "title": { "type": "string" },
+                "notes": { "type": "string" },
+                "description": { "type": "string" },
+                "createdAt": { "type": "string" },
+                "updatedAt": { "type": "string" }
+              },
+              "required": ["eventId", "eventType", "eventDate", "title", "createdAt", "updatedAt"]
+            }
+          },
+          "required": ["recordId", "livestockCategory", "livestockType", "quantity", "dateAdded", "createdAt", "updatedAt"]
+        },
+        "sellerProfile": {
+          "title": "Seller Capability & Digital Shop",
+          "description": "Optional seller capability, store profile, digital shop, and product catalogues.",
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "object",
+              "properties": {
+                "uid": { "type": "string" },
+                "businessName": { "type": "string" },
+                "displayName": { "type": "string" },
+                "phone": { "type": "string" },
+                "location": { "type": "string" },
+                "verificationStatus": { "type": "string", "enum": ["unverified", "pending", "verified"] },
+                "logoImage": { "type": "string", "description": "Seller avatar / logo image URL" },
+                "createdAt": { "type": "string" },
+                "updatedAt": { "type": "string" }
+              }
+            },
+            "shop": {
+              "type": "object",
+              "properties": {
+                "shopId": { "type": "string" },
+                "sellerId": { "type": "string" },
+                "shopName": { "type": "string" },
+                "description": { "type": "string" },
+                "location": { "type": "string" },
+                "phone": { "type": "string" },
+                "whatsapp": { "type": "string" },
+                "isPublished": { "type": "boolean" },
+                "logoImage": { "type": "string", "description": "Shop logo image URL" },
+                "coverImage": { "type": "string", "description": "Shop cover banner image URL" },
+                "createdAt": { "type": "string" },
+                "updatedAt": { "type": "string" }
+              },
+              "subcollections": {
+                "catalogues": {
+                  "title": "Digital Shop Catalogues / Sections",
+                  "description": "Product catalogues/sections organizing a seller's products.",
+                  "type": "object",
+                  "properties": {
+                    "catalogueId": { "type": "string" },
+                    "shopId": { "type": "string" },
+                    "sellerId": { "type": "string" },
+                    "name": { "type": "string" },
+                    "description": { "type": "string" },
+                    "icon": { "type": "string" },
+                    "displayOrder": { "type": "number" },
+                    "isActive": { "type": "boolean" },
+                    "createdAt": { "type": "string" },
+                    "updatedAt": { "type": "string" }
+                  },
+                  "required": ["catalogueId", "shopId", "sellerId", "name", "displayOrder", "isActive", "createdAt", "updatedAt"]
+                }
+              },
+              "required": ["shopId", "sellerId", "shopName", "location", "phone", "isPublished", "createdAt", "updatedAt"]
+            }
+          }
+        },
+        "professionalProfile": {
+          "title": "Professional Livestock / Veterinary Profile",
+          "description": "Daktari Mtaani Kwako profile and private credentials for verified veterinarians and extension officers.",
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "object",
+              "properties": {
+                "uid": { "type": "string" },
+                "fullName": { "type": "string" },
+                "professionalTitle": { "type": "string" },
+                "professionalType": { "type": "string" },
+                "phone": { "type": "string" },
+                "whatsapp": { "type": "string" },
+                "region": { "type": "string" },
+                "district": { "type": "string" },
+                "wardOrArea": { "type": "string" },
+                "locationDescription": { "type": "string" },
+                "livestockSpecialties": { "type": "array", "items": { "type": "string" } },
+                "services": { "type": "array", "items": { "type": "string" } },
+                "availability": { "type": "string" },
+                "emergencyAvailable": { "type": "boolean" },
+                "bio": { "type": "string" },
+                "profileImage": { "type": "string" },
+                "registrationStatus": { "type": "string", "enum": ["not_registered", "registered", "submitted", "active", "suspended"] },
+                "verificationStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected", "needs_correction"] },
+                "verificationSubmittedAt": { "type": "string" },
+                "verifiedAt": { "type": "string" },
+                "adminVerificationNotes": { "type": "string" },
+                "registrationFee": { "type": "number" },
+                "registrationPaymentStatus": { "type": "string", "enum": ["unpaid", "pending", "paid"] },
+                "subscriptionStatus": { "type": "string", "enum": ["unpaid", "free_trial", "pending", "paid", "expired"] },
+                "subscriptionStart": { "type": "string" },
+                "subscriptionEnd": { "type": "string" },
+                "freeTrialStart": { "type": "string" },
+                "freeTrialEnd": { "type": "string" },
+                "nextPaymentDue": { "type": "string" },
+                "createdAt": { "type": "string" },
+                "updatedAt": { "type": "string" }
+              }
+            },
+            "credentials": {
+              "type": "object",
+              "properties": {
+                "uid": { "type": "string" },
+                "professionalRegistrationNumber": { "type": "string" },
+                "professionalQualification": { "type": "string" },
+                "institution": { "type": "string" },
+                "graduationYear": { "type": "string" },
+                "documentUrls": { "type": "array", "items": { "type": "string" } },
+                "documentNotes": { "type": "string" },
+                "submittedAt": { "type": "string" },
+                "updatedAt": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "required": ["uid", "email", "role", "displayName", "phone", "location", "mainLivestock", "livestockTypes", "createdAt", "updatedAt"]
+    },
+    "records": {
+      "title": "Farm Records",
+      "description": "Livestock records, feeding logs, vaccination schedules, and production data.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "category": { "type": "string", "description": "kuku, ngombe, mbuzi, nguruwe, etc." },
+        "title": { "type": "string" },
+        "count": { "type": "number" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "category", "title", "createdAt"]
+    },
+    "marketplaceProducts": {
+      "title": "Marketplace Products (Gulio la Mifugo & Pembejeo)",
+      "description": "Livestock, poultry, veterinary medicine, feeds, equipment, and agricultural supplies listed for sale across Tanzania.",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "sellerId": { "type": "string", "description": "UID of the authoritative seller" },
+        "shopId": { "type": "string", "description": "Shop ID strictly bound to the seller UID" },
+        "catalogueId": { "type": ["string", "null"], "description": "Optional catalogue within the seller shop" },
+        "catalogueName": { "type": "string", "description": "Display name of the catalogue" },
+        "sellerName": { "type": "string" },
+        "sellerBusinessName": { "type": "string" },
+        "sellerPhone": { "type": "string" },
+        "sellerLocation": { "type": "string" },
+        "sellerVerificationStatus": { "type": "string", "enum": ["unverified", "pending", "verified"] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "subcategory": { "type": "string" },
+        "price": { "type": "number" },
+        "currency": { "type": "string", "enum": ["TZS", "Tsh"] },
+        "unit": { "type": "string" },
+        "quantityAvailable": { "type": "number" },
+        "priceUpdatedAt": { "type": "string", "description": "Authoritative timestamp when seller updated price" },
+        "stockUpdatedAt": { "type": "string", "description": "Authoritative timestamp when seller updated stock" },
+        "priceStatus": { "type": "string", "enum": ["PROVIDED", "NOT_PROVIDED", "UNAVAILABLE", "STALE", "ERROR"] },
+        "stockStatus": { "type": "string", "enum": ["IN_STOCK", "OUT_OF_STOCK", "NOT_PROVIDED", "UNAVAILABLE", "STALE", "ERROR"] },
+        "location": { "type": "string" },
+        "region": { "type": "string" },
+        "district": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "url": { "type": "string" },
+              "thumbnailUrl": { "type": "string" },
+              "isPrimary": { "type": "boolean" },
+              "caption": { "type": "string" },
+              "uploadedAt": { "type": "string" }
+            },
+            "required": ["id", "url"]
+          },
+          "description": "Product image gallery media"
+        },
+        "video": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "url": { "type": "string" },
+            "storagePath": { "type": "string" },
+            "thumbnailUrl": { "type": "string" },
+            "durationSeconds": { "type": "number" },
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "createdAt": { "type": "string" },
+            "updatedAt": { "type": "string" }
+          },
+          "required": ["id", "url", "createdAt"],
+          "description": "Optional product explanation video"
+        },
+        "status": { "type": "string", "enum": ["active", "inactive", "sold_out", "draft"] },
+        "isTestDemo": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["productId", "sellerId", "title", "category", "price", "unit", "quantityAvailable", "location", "status", "createdAt", "updatedAt"]
+    },
+    "marketplaceVideos": {
+      "title": "Permanent Product Videos",
+      "description": "Durable cloud-persisted product video chunks ensuring video demonstrations never disappear.",
+      "type": "object",
+      "properties": {
+        "videoId": { "type": "string" },
+        "productId": { "type": "string" },
+        "sellerUid": { "type": "string" },
+        "fileName": { "type": "string" },
+        "mimeType": { "type": "string" },
+        "totalBytes": { "type": "number" },
+        "totalChunks": { "type": "number" },
+        "chunkSize": { "type": "number" },
+        "durationSeconds": { "type": "number" },
+        "thumbnailUrl": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "subcollections": {
+        "chunks": {
+          "title": "Video Chunks",
+          "description": "Binary base64 video slices that assemble into the complete video file.",
+          "type": "object",
+          "properties": {
+            "chunkIndex": { "type": "number" },
+            "data": { "type": "string" },
+            "size": { "type": "number" }
+          },
+          "required": ["chunkIndex", "data"]
+        }
+      },
+      "required": ["videoId", "totalBytes", "totalChunks", "createdAt"]
+    },
+    "marketplace": {
+      "title": "Marketplace Items (Gulio)",
+      "description": "Livestock, poultry, feeds, equipment, and agricultural products listed for sale.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "sellerName": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "price": { "type": "number" },
+        "location": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "sold", "draft"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "title", "price", "location", "status", "createdAt"]
+    },
+    "community": {
+      "title": "Community Posts (Gumzo)",
+      "description": "Farmer discussions, questions, and agricultural experience sharing.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "topic": { "type": "string" },
+        "content": { "type": "string" },
+        "likesCount": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "authorName", "topic", "content", "createdAt"]
+    },
+    "professionals": {
+      "title": "Public Livestock / Veterinary Professionals Directory (Daktari Mtaani Kwako)",
+      "description": "Public discoverable directory of verified and registered veterinarians, animal health professionals, and livestock extension officers.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "fullName": { "type": "string" },
+        "professionalTitle": { "type": "string" },
+        "professionalType": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "region": { "type": "string" },
+        "district": { "type": "string" },
+        "wardOrArea": { "type": "string" },
+        "locationDescription": { "type": "string" },
+        "livestockSpecialties": { "type": "array", "items": { "type": "string" } },
+        "services": { "type": "array", "items": { "type": "string" } },
+        "availability": { "type": "string" },
+        "emergencyAvailable": { "type": "boolean" },
+        "bio": { "type": "string" },
+        "profileImage": { "type": "string" },
+        "registrationStatus": { "type": "string", "enum": ["not_registered", "registered", "submitted", "active", "suspended"] },
+        "verificationStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected", "needs_correction"] },
+        "verificationSubmittedAt": { "type": "string" },
+        "verifiedAt": { "type": "string" },
+        "adminVerificationNotes": { "type": "string" },
+        "registrationFee": { "type": "number" },
+        "registrationPaymentStatus": { "type": "string", "enum": ["unpaid", "pending", "paid"] },
+        "subscriptionStatus": { "type": "string", "enum": ["unpaid", "free_trial", "pending", "paid", "expired"] },
+        "subscriptionStart": { "type": "string" },
+        "subscriptionEnd": { "type": "string" },
+        "freeTrialStart": { "type": "string" },
+        "freeTrialEnd": { "type": "string" },
+        "nextPaymentDue": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "fullName", "phone", "region", "registrationStatus", "verificationStatus", "createdAt", "updatedAt"]
+    },
+    "sellerVerification": {
+      "title": "Authoritative Seller Verification Records",
+      "description": "Source of truth for seller identity verification, credential audit trails, and trust badge eligibility.",
+      "type": "object",
+      "properties": {
+        "sellerId": { "type": "string", "description": "Firebase Auth UID of the seller" },
+        "status": {
+          "type": "string",
+          "enum": ["NOT_APPLIED", "PENDING_VERIFICATION", "UNDER_REVIEW", "VERIFIED", "REJECTED", "SUSPENDED", "EXPIRED"],
+          "description": "Authoritative verification status"
+        },
+        "verificationType": {
+          "type": "string",
+          "enum": ["INDIVIDUAL", "FARM", "BUSINESS", "COOPERATIVE", "AGROVET", "BREEDER"],
+          "description": "Type of verified seller"
+        },
+        "businessName": { "type": "string" },
+        "displayName": { "type": "string" },
+        "phone": { "type": "string" },
+        "location": { "type": "string" },
+        "district": { "type": "string" },
+        "nationalId": { "type": "string" },
+        "tinNumber": { "type": "string" },
+        "permitReference": { "type": "string" },
+        "documentNotes": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "reviewedAt": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "rejectionReason": { "type": "string" },
+        "suspensionReason": { "type": "string" },
+        "notes": { "type": "string" },
+        "badgeEligible": { "type": "boolean" },
+        "publicBadgeText": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["sellerId", "status", "verificationType", "badgeEligible", "updatedAt"]
+    },
+    "marketplaceReviews": {
+      "title": "Marketplace Reviews & Customer Feedback",
+      "description": "User-generated reviews, ratings, and seller responses for marketplace products, shops, and sellers.",
+      "type": "object",
+      "properties": {
+        "reviewId": { "type": "string", "description": "Unique deterministic review ID" },
+        "authorUserId": { "type": "string", "description": "Firebase Auth UID of review author" },
+        "authorDisplayName": { "type": "string", "description": "Public display name of review author" },
+        "targetType": { "type": "string", "enum": ["PRODUCT", "SHOP", "SELLER"], "description": "Entity type reviewed" },
+        "targetId": { "type": "string", "description": "ID of reviewed product, shop, or seller" },
+        "sellerId": { "type": "string", "description": "Authoritative UID of seller owning the reviewed entity" },
+        "shopId": { "type": "string" },
+        "productId": { "type": "string" },
+        "rating": { "type": "integer", "minimum": 1, "maximum": 5, "description": "Integer rating between 1 and 5" },
+        "title": { "type": "string", "description": "Short headline/title of the review" },
+        "body": { "type": "string", "description": "Full text of user review experience" },
+        "status": { "type": "string", "enum": ["active", "archived", "deleted"] },
+        "moderationStatus": { "type": "string", "enum": ["PUBLISHED", "HIDDEN", "REMOVED", "UNDER_REVIEW"] },
+        "reportCount": { "type": "integer", "description": "Count of user reports against this review" },
+        "helpfulCount": { "type": "integer" },
+        "sellerResponse": { "type": "string", "description": "Official seller reply" },
+        "sellerResponseCreatedAt": { "type": "string" },
+        "sellerResponseSellerId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["reviewId", "authorUserId", "targetType", "targetId", "sellerId", "rating", "title", "body", "status", "moderationStatus", "createdAt", "updatedAt"]
+    },
+    "marketplaceReports": {
+      "title": "Marketplace Incident & Content Reports",
+      "description": "Structured incident reports submitted by users regarding reviews, products, shops, or sellers.",
+      "type": "object",
+      "properties": {
+        "reportId": { "type": "string", "description": "Unique deterministic report ID" },
+        "reporterUserId": { "type": "string", "description": "Firebase Auth UID of reporting user" },
+        "targetType": { "type": "string", "enum": ["REVIEW", "PRODUCT", "SHOP", "SELLER"] },
+        "targetId": { "type": "string", "description": "ID of reported entity" },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "SPAM",
+            "FRAUD_SUSPECTED",
+            "HARASSMENT",
+            "ABUSIVE_CONTENT",
+            "MISLEADING_INFORMATION",
+            "WRONG_PRODUCT",
+            "DUPLICATE_REVIEW",
+            "IMPERSONATION",
+            "PRIVACY_VIOLATION",
+            "OTHER"
+          ]
+        },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["OPEN", "UNDER_REVIEW", "RESOLVED", "DISMISSED"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "resolvedAt": { "type": "string" },
+        "resolvedBy": { "type": "string" }
+      },
+      "required": ["reportId", "reporterUserId", "targetType", "targetId", "reason", "status", "createdAt", "updatedAt"]
+    },
+    "userNotifications": {
+      "title": "Platform User Notifications",
+      "description": "Cross-user isolated notification records for marketplace governance, appeals, reports, and system announcements.",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string" },
+        "recipientUserId": { "type": "string" },
+        "type": { "type": "string" },
+        "category": { "type": "string", "enum": ["GOVERNANCE", "MARKETPLACE", "SELLER", "SYSTEM"] },
+        "priority": { "type": "string", "enum": ["LOW", "NORMAL", "HIGH", "URGENT"] },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "readAt": { "type": "string" }
+      },
+      "required": ["notificationId", "recipientUserId", "type", "category", "priority", "title", "message", "read", "createdAt"]
+    },
+    "aiUsageEvents": {
+      "title": "AI Usage Events",
+      "description": "Authoritative immutable audit log of AI requests, input classification, tokens, estimated costs, and sources.",
+      "type": "object",
+      "properties": {
+        "usageEventId": { "type": "string" },
+        "userId": { "type": "string" },
+        "requestType": { "type": "string", "enum": ["TEXT_QUERY", "IMAGE_QUERY", "VIDEO_QUERY", "TEXT_WITH_IMAGE", "TEXT_WITH_VIDEO"] },
+        "inputType": { "type": "string", "enum": ["TEXT", "IMAGE", "VIDEO", "TEXT_IMAGE", "TEXT_VIDEO"] },
+        "usageSource": { "type": "string", "enum": ["FREE_ALLOWANCE", "AD_REWARD", "PREMIUM", "CACHE", "SYSTEM", "UNKNOWN"] },
+        "timestamp": { "type": "string" },
+        "dateKey": { "type": "string" },
+        "modelProvider": { "type": "string" },
+        "modelName": { "type": "string" },
+        "currency": { "type": "string" },
+        "cacheStatus": { "type": "string", "enum": ["HIT", "MISS", "BYPASS", "INVALIDATED"] },
+        "entitlementSource": { "type": "string" },
+        "successStatus": { "type": "string", "enum": ["SUCCESS", "FAILURE"] },
+        "errorType": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "requestId": { "type": "string" }
+      },
+      "required": ["usageEventId", "userId", "requestType", "inputType", "usageSource", "timestamp", "dateKey", "modelProvider", "modelName", "cacheStatus", "successStatus", "requestId"]
+    },
+    "aiUserDailyUsage": {
+      "title": "AI User Daily Accounting",
+      "description": "Server-authoritative daily usage records bounded by server dateKey (EAT UTC+3), enforcing free and premium daily limits.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "dateKey": { "type": "string" },
+        "totalQueriesCount": { "type": "integer" },
+        "textQueriesCount": { "type": "integer" },
+        "mediaQueriesCount": { "type": "integer" },
+        "freeAllowanceUsed": { "type": "integer" },
+        "adRewardsGranted": { "type": "integer" },
+        "adRewardsUsed": { "type": "integer" },
+        "premiumQueriesUsed": { "type": "integer" },
+        "cacheHitsCount": { "type": "integer" },
+        "lastUpdated": { "type": "string" }
+      },
+      "required": ["userId", "dateKey", "totalQueriesCount", "textQueriesCount", "mediaQueriesCount", "lastUpdated"]
+    },
+    "aiAnswerCache": {
+      "title": "AI Answer Cache",
+      "description": "Reusable answers for general knowledge agricultural questions with deterministic TTL and knowledge version invalidation.",
+      "type": "object",
+      "properties": {
+        "cacheId": { "type": "string" },
+        "cacheType": { "type": "string", "enum": ["GLOBAL_GENERAL_KNOWLEDGE", "PERSONALIZED_CONTEXTUAL", "MARKETPLACE_DYNAMIC", "VISUAL_ANALYSIS", "DAKTARI_CONTEXTUAL"] },
+        "normalizedKey": { "type": "string" },
+        "language": { "type": "string" },
+        "questionIntent": { "type": "string" },
+        "answerText": { "type": "string" },
+        "sourceType": { "type": "string", "enum": ["GEMINI_API", "LOCAL_EXPERT_SYSTEM"] },
+        "knowledgeVersion": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "expiresAt": { "type": "string" },
+        "validationStatus": { "type": "string", "enum": ["VALID", "INVALID", "FLAGGED"] },
+        "safetyStatus": { "type": "string", "enum": ["PASSED", "FAILED", "PENDING"] },
+        "modelProvider": { "type": "string" },
+        "modelName": { "type": "string" }
+      },
+      "required": ["cacheId", "cacheType", "normalizedKey", "language", "answerText", "knowledgeVersion", "expiresAt", "validationStatus", "safetyStatus"]
+    },
+    "aiCostConfigurations": {
+      "title": "AI Model Cost Configurations",
+      "description": "Dynamic provider and model pricing metadata per unit tokens.",
+      "type": "object",
+      "properties": {
+        "configId": { "type": "string" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "inputCostPerUnit": { "type": "number" },
+        "outputCostPerUnit": { "type": "number" },
+        "unitTokens": { "type": "integer" },
+        "currency": { "type": "string" },
+        "effectiveFrom": { "type": "string" },
+        "effectiveTo": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["configId", "provider", "model", "inputCostPerUnit", "outputCostPerUnit", "unitTokens", "currency", "active"]
+    },
+    "aiEntitlements": {
+      "title": "aiEntitlements",
+      "description": "Server-authoritative user entitlement records controlling tier, package, status, and daily limits.",
+      "type": "object",
+      "properties": {
+        "entitlementId": { "type": "string" },
+        "userId": { "type": "string" },
+        "tier": { "type": "string", "enum": ["FREE", "PREMIUM"] },
+        "status": { "type": "string", "enum": ["ACTIVE", "EXPIRED", "REVOKED", "SUSPENDED"] },
+        "packageType": { "type": "string", "enum": ["WEEKLY", "MONTHLY", "ANNUAL", "NONE"] },
+        "source": { "type": "string", "enum": ["DEFAULT_FREE", "ADMIN_GRANT", "PROMO_CODE", "PAYMENT_MOCK_FALLBACK", "SUBSCRIPTION_RENEWAL"] },
+        "startedAt": { "type": "string" },
+        "expiresAt": { "type": ["string", "null"] },
+        "dailyLimit": { "type": "integer" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "metadata": { "type": "object" }
+      },
+      "required": ["entitlementId", "userId", "tier", "status", "packageType", "source", "startedAt", "dailyLimit", "createdAt", "updatedAt"]
+    },
+    "conversations": {
+      "title": "Conversations",
+      "description": "Conversation threads and chat history collections.",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string" },
+        "uid": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "messages": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "chats": {
+      "title": "Chats",
+      "description": "User chat records and message archives.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "uid": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "sellerMonetization": {
+      "title": "Seller Monetization",
+      "description": "Authoritative subscription and trial monetization records for sellers.",
+      "type": "object",
+      "properties": {
+        "sellerUserId": { "type": "string" },
+        "sellerProfileId": { "type": "string" },
+        "status": { "type": "string", "enum": ["NOT_ACTIVATED", "TRIAL_ACTIVE", "ACTIVE", "GRACE_PERIOD", "EXPIRED", "CANCELLED", "SUSPENDED"] },
+        "plan": { "type": "string" },
+        "price": { "type": "number" },
+        "currency": { "type": "string" },
+        "trialStartAt": { "type": ["string", "null"] },
+        "trialEndAt": { "type": ["string", "null"] },
+        "graceStartAt": { "type": ["string", "null"] },
+        "graceEndAt": { "type": ["string", "null"] },
+        "currentPeriodStartAt": { "type": ["string", "null"] },
+        "currentPeriodEndAt": { "type": ["string", "null"] },
+        "activatedAt": { "type": ["string", "null"] },
+        "lastPaymentAt": { "type": ["string", "null"] },
+        "lastPaymentStatus": { "type": "string" },
+        "nextRenewalAt": { "type": ["string", "null"] },
+        "expiredAt": { "type": ["string", "null"] },
+        "suspendedAt": { "type": ["string", "null"] },
+        "suspendedReason": { "type": ["string", "null"] },
+        "hasHadTrial": { "type": "boolean" },
+        "testSimulation": { "type": "boolean" },
+        "version": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["sellerUserId", "status", "plan", "price", "currency", "hasHadTrial", "createdAt", "updatedAt"]
+    },
+    "sellerMonetizationAudit": {
+      "title": "Seller Monetization Audit",
+      "description": "Immutable audit entries for seller monetization state changes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sellerUserId": { "type": "string" },
+        "eventType": { "type": "string" },
+        "previousStatus": { "type": ["string", "null"] },
+        "newStatus": { "type": "string" },
+        "performedBy": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "required": ["id", "sellerUserId", "eventType", "newStatus", "performedBy", "timestamp"]
+    },
+    "sellerMonetizationDiagnostic": {
+      "title": "Seller Monetization Diagnostic",
+      "description": "Structured diagnostic logs tracking seller lifecycle transitions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sellerUserId": { "type": "string" },
+        "previousStatus": { "type": "string" },
+        "nextStatus": { "type": "string" },
+        "transitionId": { "type": "string" },
+        "action": { "type": "string" },
+        "source": { "type": "string" },
+        "actorUserId": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "notificationEventIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "sellerUserId", "previousStatus", "nextStatus", "transitionId", "action", "source", "actorUserId", "timestamp"]
+    }
+  }
+}
+
