@@ -66,10 +66,11 @@ export interface VerificationPaymentIntent {
 
 // In-memory data structures
 const applicationsStore = new Map<string, SellerVerificationApplication>(); // verificationId -> app
-const sellerToVerificationMap = new Map<string, string>(); // sellerUserId -> verificationId
+const sellerToVerificationMap = new Map<string, string>(); // sellerUserId -> latest active verificationId
 const auditsStore = new Map<string, SellerVerificationAuditEvent[]>(); // verificationId -> audits[]
 const verificationPaymentIntentsStore = new Map<string, VerificationPaymentIntent>(); // paymentIntentId -> intent
 const externalIdToVerificationIntentMap = new Map<string, string>(); // externalId -> paymentIntentId
+const idempotencyKeyToVerificationMap = new Map<string, string>(); // idempotencyKey -> verificationId
 
 const isNode = typeof window === 'undefined';
 let fsModule: any = null;
@@ -79,19 +80,33 @@ const APPS_FILE_PATH = 'data/seller_verifications.json';
 const AUDITS_FILE_PATH = 'data/seller_verification_audits.json';
 const PAYMENTS_FILE_PATH = 'data/verification_payments.json';
 
+export function initVerificationStorage(customFs?: any, customPath?: any) {
+  if (customFs && customPath) {
+    fsModule = customFs;
+    pathModule = customPath;
+    loadFromDisk();
+    return;
+  }
+}
+
 if (isNode) {
   try {
-    fsModule = require('fs');
-    pathModule = require('path');
-    loadFromDisk();
+    import('fs').then((fs) => {
+      fsModule = fs.default || fs;
+      import('path').then((p) => {
+        pathModule = p.default || p;
+        loadFromDisk();
+      }).catch(() => {});
+    }).catch(() => {});
   } catch {}
 }
 
 function loadFromDisk() {
   if (!fsModule || !pathModule) return;
   try {
+    const cwd = process.cwd();
     // 1. Applications
-    const appsPath = pathModule.resolve(process.cwd(), APPS_FILE_PATH);
+    const appsPath = pathModule.resolve(cwd, APPS_FILE_PATH);
     if (fsModule.existsSync(appsPath)) {
       const data = JSON.parse(fsModule.readFileSync(appsPath, 'utf8'));
       if (Array.isArray(data)) {
@@ -99,26 +114,32 @@ function loadFromDisk() {
           if (!app.sellerId && app.sellerUserId) app.sellerId = app.sellerUserId;
           if (!app.location && app.region) app.location = app.region;
           applicationsStore.set(app.verificationId, app);
-          sellerToVerificationMap.set(app.sellerUserId, app.verificationId);
+          // Set mapping to active application
+          const existingActive = sellerToVerificationMap.get(app.sellerUserId);
+          if (!existingActive || app.status !== 'REJECTED') {
+            sellerToVerificationMap.set(app.sellerUserId, app.verificationId);
+          }
         });
       }
     }
 
     // 2. Audits
-    const auditsPath = pathModule.resolve(process.cwd(), AUDITS_FILE_PATH);
+    const auditsPath = pathModule.resolve(cwd, AUDITS_FILE_PATH);
     if (fsModule.existsSync(auditsPath)) {
       const data = JSON.parse(fsModule.readFileSync(auditsPath, 'utf8'));
       if (Array.isArray(data)) {
         data.forEach((audit: SellerVerificationAuditEvent) => {
           const list = auditsStore.get(audit.verificationId) || [];
-          list.push(audit);
+          if (!list.some(a => a.eventId === audit.eventId)) {
+            list.push(audit);
+          }
           auditsStore.set(audit.verificationId, list);
         });
       }
     }
 
     // 3. Payment intents
-    const payPath = pathModule.resolve(process.cwd(), PAYMENTS_FILE_PATH);
+    const payPath = pathModule.resolve(cwd, PAYMENTS_FILE_PATH);
     if (fsModule.existsSync(payPath)) {
       const data = JSON.parse(fsModule.readFileSync(payPath, 'utf8'));
       if (Array.isArray(data)) {
@@ -195,11 +216,27 @@ export class SellerVerificationService {
 
   public getVerificationBySellerId(sellerUserId: string): SellerVerificationApplication | null {
     if (!sellerUserId) return null;
-    const verificationId = sellerToVerificationMap.get(sellerUserId);
-    if (verificationId && applicationsStore.has(verificationId)) {
-      return applicationsStore.get(verificationId)!;
-    }
-    return null;
+    const all = Array.from(applicationsStore.values()).filter(
+      (app) => app.sellerUserId === sellerUserId || app.sellerId === sellerUserId
+    );
+    if (all.length === 0) return null;
+
+    // Prioritize active applications over rejected/expired ones
+    const active = all.find((app) =>
+      ['UNDER_REVIEW', 'PAYMENT_CONFIRMED', 'PAYMENT_PENDING', 'PAYMENT_REQUIRED', 'SUBMITTED', 'DRAFT'].includes(app.status) ||
+      (app.status === 'APPROVED' && app.badgeStatus === 'ACTIVE')
+    );
+    if (active) return active;
+
+    // Otherwise sort by updatedAt desc
+    return all.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+  }
+
+  public getAllApplicationsBySellerId(sellerUserId: string): SellerVerificationApplication[] {
+    if (!sellerUserId) return [];
+    return Array.from(applicationsStore.values())
+      .filter((app) => app.sellerUserId === sellerUserId || app.sellerId === sellerUserId)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }
 
   public getVerificationById(verificationId: string): SellerVerificationApplication | null {
@@ -216,16 +253,76 @@ export class SellerVerificationService {
   }
 
   /**
-   * Compatibility alias for getVerificationBySellerId (returns Promise for React/page callers)
+   * Authoritative lookup of current seller verification.
+   * If in browser, fetches from /api/seller/verification first to ensure reload persistence.
    */
-  public async getSellerVerification(sellerUserId: string): Promise<SellerVerificationApplication | null> {
+  public async getSellerVerification(
+    sellerUserId: string,
+    token?: string | null
+  ): Promise<SellerVerificationApplication | null> {
+    if (!sellerUserId) return null;
+    if (typeof window !== 'undefined') {
+      try {
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        } else {
+          headers['x-user-id'] = sellerUserId;
+        }
+        const res = await fetch(`/api/seller/verification?sellerUserId=${encodeURIComponent(sellerUserId)}`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.status === 'ok') {
+            if (data.application) {
+              applicationsStore.set(data.application.verificationId, data.application);
+              sellerToVerificationMap.set(sellerUserId, data.application.verificationId);
+            }
+            return data.application || null;
+          }
+        }
+      } catch (err) {
+        console.warn('[sellerVerificationService] API fetch error, falling back to local store:', err);
+      }
+    }
     return this.getVerificationBySellerId(sellerUserId);
   }
 
   /**
-   * Compatibility alias for getAllApplications
+   * Authoritative list of all seller verifications for Admin.
+   * If in browser, fetches from /api/admin/verifications to ensure authoritative reload persistence.
    */
-  public async getAllSellerVerifications(statusFilter?: SellerVerificationStatus): Promise<SellerVerificationApplication[]> {
+  public async getAllSellerVerifications(
+    statusFilter?: SellerVerificationStatus,
+    token?: string | null,
+    adminUserId?: string
+  ): Promise<SellerVerificationApplication[]> {
+    if (typeof window !== 'undefined') {
+      try {
+        const headers: Record<string, string> = {
+          'x-user-role': 'admin'
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        if (adminUserId) {
+          headers['x-user-id'] = adminUserId;
+        }
+        const url = `/api/admin/verifications${statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : ''}`;
+        const res = await fetch(url, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.status === 'ok' && Array.isArray(data.applications)) {
+            data.applications.forEach((app: SellerVerificationApplication) => {
+              applicationsStore.set(app.verificationId, app);
+              sellerToVerificationMap.set(app.sellerUserId, app.verificationId);
+            });
+            return data.applications;
+          }
+        }
+      } catch (err) {
+        console.warn('[sellerVerificationService] API fetch all error, falling back to local store:', err);
+      }
+    }
     return this.getAllApplications(statusFilter);
   }
 
@@ -299,14 +396,22 @@ export class SellerVerificationService {
   /**
    * Creates or updates a verification draft.
    * Enforces seller ownership & prevents duplicate active applications.
+   * If seller previously had a REJECTED or EXPIRED application, creates a new distinct application without overwriting history.
    */
   public createOrUpdateDraft(params: {
     sellerUserId: string;
     shopId?: string;
     input: SellerVerificationApplicationInput;
+    idempotencyKey?: string;
   }): SellerVerificationApplication {
-    const { sellerUserId, shopId, input } = params;
+    const { sellerUserId, shopId, input, idempotencyKey } = params;
     if (!sellerUserId) throw new Error('Utambulisho wa muuzaji (sellerUserId) unahitajika.');
+
+    if (idempotencyKey && idempotencyKeyToVerificationMap.has(idempotencyKey)) {
+      const vId = idempotencyKeyToVerificationMap.get(idempotencyKey)!;
+      const cached = this.getVerificationById(vId);
+      if (cached) return cached;
+    }
 
     const existingApp = this.getVerificationBySellerId(sellerUserId);
 
@@ -328,8 +433,18 @@ export class SellerVerificationService {
     }
 
     const now = new Date().toISOString();
-    const verificationId = existingApp ? existingApp.verificationId : `ver_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    const applicationNumber = existingApp ? existingApp.applicationNumber : `VER-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    // Only reuse verificationId and applicationNumber if existingApp was actually a DRAFT
+    const isEditingExistingDraft = Boolean(existingApp && existingApp.status === 'DRAFT');
+    const verificationId = isEditingExistingDraft && existingApp
+      ? existingApp.verificationId
+      : `ver_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const applicationNumber = isEditingExistingDraft && existingApp
+      ? existingApp.applicationNumber
+      : `VER-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const currentReviewVersion = isEditingExistingDraft && existingApp
+      ? existingApp.currentReviewVersion
+      : (existingApp ? (existingApp.currentReviewVersion || 1) + 1 : 1);
 
     const structuredDocs: VerificationDocumentReference[] = (input.documents || []).map((doc, idx) => ({
       documentId: `doc_${verificationId}_${idx + 1}`,
@@ -352,7 +467,7 @@ export class SellerVerificationService {
       verificationId,
       sellerUserId,
       sellerId: sellerUserId,
-      shopId: shopId || (existingApp ? existingApp.shopId : undefined),
+      shopId: shopId || (isEditingExistingDraft && existingApp ? existingApp.shopId : undefined),
       applicationNumber,
       status: 'DRAFT',
       verificationType: input.verificationType || 'INDIVIDUAL',
@@ -374,16 +489,19 @@ export class SellerVerificationService {
       documents: structuredDocs,
       processingFeeAmount: VERIFICATION_FEE_CONFIG.amount,
       processingFeeCurrency: VERIFICATION_FEE_CONFIG.currency,
-      processingPaymentStatus: existingApp?.processingPaymentStatus || 'NOT_PAID',
-      currentReviewVersion: existingApp ? existingApp.currentReviewVersion : 1,
-      badgeStatus: existingApp ? existingApp.badgeStatus : 'INACTIVE',
-      hasActiveBadge: existingApp ? existingApp.hasActiveBadge : false,
-      createdAt: existingApp ? existingApp.createdAt : now,
+      processingPaymentStatus: isEditingExistingDraft && existingApp ? existingApp.processingPaymentStatus : 'NOT_PAID',
+      currentReviewVersion,
+      badgeStatus: 'INACTIVE',
+      hasActiveBadge: false,
+      createdAt: isEditingExistingDraft && existingApp ? existingApp.createdAt : now,
       updatedAt: now
     };
 
     applicationsStore.set(verificationId, app);
     sellerToVerificationMap.set(sellerUserId, verificationId);
+    if (idempotencyKey) {
+      idempotencyKeyToVerificationMap.set(idempotencyKey, verificationId);
+    }
     persistToDisk();
 
     this.recordAuditEvent({
@@ -393,7 +511,7 @@ export class SellerVerificationService {
       actorRole: 'SELLER',
       action: 'VERIFICATION_APPLICATION_CREATED',
       newStatus: 'DRAFT',
-      notes: 'Rasimu ya maombi ya uhakiki imeundwa/kusasishwa'
+      notes: isEditingExistingDraft ? 'Rasimu ya maombi ya uhakiki imesasishwa' : 'Rasimu mpya ya maombi ya uhakiki imeundwa'
     });
 
     return app;
@@ -402,19 +520,44 @@ export class SellerVerificationService {
   /**
    * Submits a verification application.
    * Validates mandatory structured fields and moves to PAYMENT_REQUIRED or SUBMITTED.
+   * Supports idempotency: identical or repeated requests return the authoritative application idempotently.
    */
   public submitApplication(params: {
     sellerUserId: string;
     verificationId?: string;
     input?: SellerVerificationApplicationInput;
+    idempotencyKey?: string;
   }): SellerVerificationApplication {
-    const { sellerUserId, verificationId, input } = params;
+    const { sellerUserId, verificationId, input, idempotencyKey } = params;
+
+    // 1. Idempotency Key check
+    if (idempotencyKey && idempotencyKeyToVerificationMap.has(idempotencyKey)) {
+      const vId = idempotencyKeyToVerificationMap.get(idempotencyKey)!;
+      const existing = this.getVerificationById(vId);
+      if (existing) {
+        return existing;
+      }
+    }
+
+    // 2. Duplicate active submission check
+    const activeApp = this.getVerificationBySellerId(sellerUserId);
+    if (
+      activeApp &&
+      (!verificationId || verificationId === activeApp.verificationId) &&
+      ['SUBMITTED', 'PAYMENT_REQUIRED', 'PAYMENT_PENDING', 'PAYMENT_CONFIRMED', 'UNDER_REVIEW'].includes(activeApp.status)
+    ) {
+      if (idempotencyKey) {
+        idempotencyKeyToVerificationMap.set(idempotencyKey, activeApp.verificationId);
+      }
+      return activeApp;
+    }
+
     let app = verificationId
       ? this.getVerificationById(verificationId)
-      : this.getVerificationBySellerId(sellerUserId);
+      : activeApp;
 
     if (!app && input) {
-      app = this.createOrUpdateDraft({ sellerUserId, input });
+      app = this.createOrUpdateDraft({ sellerUserId, input, idempotencyKey });
     }
 
     if (!app) {
@@ -476,6 +619,10 @@ export class SellerVerificationService {
     app.updatedAt = now;
 
     applicationsStore.set(app.verificationId, app);
+    sellerToVerificationMap.set(sellerUserId, app.verificationId);
+    if (idempotencyKey) {
+      idempotencyKeyToVerificationMap.set(idempotencyKey, app.verificationId);
+    }
     persistToDisk();
 
     this.recordAuditEvent({
@@ -507,15 +654,50 @@ export class SellerVerificationService {
   }
 
   /**
-   * Compatibility wrapper for submitApplication used by SellerVerificationModal
+   * Authoritative submission wrapper used by SellerVerificationModal.
+   * If in browser, posts to /api/seller/verification/submit to ensure reload persistence on backend.
    */
   public async submitSellerVerificationApplication(
     sellerUserId: string,
-    input: SellerVerificationApplicationInput
+    input: SellerVerificationApplicationInput,
+    idempotencyKey?: string,
+    token?: string | null
   ): Promise<SellerVerificationApplication> {
+    if (typeof window !== 'undefined') {
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        } else {
+          headers['x-user-id'] = sellerUserId;
+        }
+        const res = await fetch('/api/seller/verification/submit', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            sellerUserId,
+            input,
+            idempotencyKey: idempotencyKey || `req_sub_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.status === 'ok' && data.application) {
+            applicationsStore.set(data.application.verificationId, data.application);
+            sellerToVerificationMap.set(sellerUserId, data.application.verificationId);
+            return data.application;
+          }
+        }
+      } catch (err) {
+        console.warn('[sellerVerificationService] API submit error, falling back to local store:', err);
+      }
+    }
     return this.submitApplication({
       sellerUserId,
-      input
+      input,
+      idempotencyKey
     });
   }
 
@@ -1455,16 +1637,50 @@ export class SellerVerificationService {
 
   /**
    * Authoritative administrative decision bridge used by AdminSellerVerificationReview.
+   * If in browser, calls /api/admin/verifications/:verificationId/review to execute authoritatively on server.
    */
   public async adminReviewSellerVerification(
     adminUserId: string,
-    sellerId: string,
+    targetId: string,
     actionType: 'VERIFY' | 'REJECT' | 'SUSPEND' | 'UNDER_REVIEW',
-    details?: { reason?: string; notes?: string }
+    details?: { reason?: string; notes?: string },
+    token?: string | null
   ): Promise<SellerVerificationApplication> {
-    const app = this.getVerificationBySellerId(sellerId);
+    if (typeof window !== 'undefined') {
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'x-user-role': 'admin',
+          'x-user-id': adminUserId
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        const res = await fetch(`/api/admin/verifications/${encodeURIComponent(targetId)}/review`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            adminUserId,
+            actionType,
+            details
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.status === 'ok' && data.application) {
+            applicationsStore.set(data.application.verificationId, data.application);
+            sellerToVerificationMap.set(data.application.sellerUserId, data.application.verificationId);
+            return data.application;
+          }
+        }
+      } catch (err) {
+        console.warn('[sellerVerificationService] API review error, falling back to local execution:', err);
+      }
+    }
+
+    const app = this.getVerificationById(targetId) || this.getVerificationBySellerId(targetId);
     if (!app) {
-      throw new Error(`Maombi ya uhakiki ya muuzaji (${sellerId}) hayakupatikana.`);
+      throw new Error(`Maombi ya uhakiki (${targetId}) hayakupatikana.`);
     }
 
     switch (actionType) {
@@ -1508,6 +1724,7 @@ export class SellerVerificationService {
     auditsStore.clear();
     verificationPaymentIntentsStore.clear();
     externalIdToVerificationIntentMap.clear();
+    idempotencyKeyToVerificationMap.clear();
   }
 }
 

@@ -231,38 +231,6 @@ export function createDefaultSellerMonetizationRecord(
   const now = new Date();
   const nowIso = now.toISOString();
 
-  // If this is a demo seller, initialize with active trial so mock marketplace products render cleanly
-  if (sellerUserId.startsWith('demo-seller-')) {
-    const trialEnd = new Date(now.getTime() + 30 * MS_PER_DAY).toISOString();
-    return {
-      sellerUserId,
-      sellerProfileId: sellerProfileId || sellerUserId,
-      status: 'TRIAL_ACTIVE',
-      plan: SELLER_MONETIZATION_CONFIG.plan,
-      price: SELLER_MONETIZATION_CONFIG.monthlyPrice,
-      currency: SELLER_MONETIZATION_CONFIG.currency,
-      trialStartAt: nowIso,
-      trialEndAt: trialEnd,
-      graceStartAt: trialEnd,
-      graceEndAt: new Date(now.getTime() + 37 * MS_PER_DAY).toISOString(),
-      currentPeriodStartAt: null,
-      currentPeriodEndAt: null,
-      activatedAt: nowIso,
-      lastPaymentAt: null,
-      lastPaymentStatus: 'NOT_REQUIRED',
-      nextRenewalAt: trialEnd,
-      expiredAt: null,
-      cancelledAt: null,
-      suspendedAt: null,
-      suspendedReason: null,
-      hasHadTrial: true,
-      testSimulation: false,
-      version: 1,
-      emittedTransitions: [`${sellerUserId}_INITIAL_DEMO_TRIAL`],
-      createdAt: nowIso,
-      updatedAt: nowIso
-    };
-  }
 
   return {
     sellerUserId,

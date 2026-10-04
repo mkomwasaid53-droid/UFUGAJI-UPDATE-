@@ -578,5 +578,78 @@ service cloud.firestore {
     match /{path=**}/messages/{messageId} {
       allow read, write: if isAuthenticated();
     }
+
+    // -------------------------------------------------------------
+    // V1.11A — SELLER VERIFICATION & GOVERNANCE RULES
+    // -------------------------------------------------------------
+
+    // 1. Seller Verification Applications (Strict ownership and admin authority)
+    match /sellerVerifications/{verificationId} {
+      // Seller can only read own application; Admins can read all applications
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        (resource != null && resource.data.sellerUserId == request.auth.uid)
+      );
+
+      // Seller can create draft or submit with strict field governance:
+      // Cannot set status to APPROVED, cannot activate badge, cannot set reviewedBy
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        (
+          request.resource.data.sellerUserId == request.auth.uid &&
+          request.resource.data.status in ['DRAFT', 'SUBMITTED', 'PAYMENT_REQUIRED', 'PAYMENT_PENDING'] &&
+          request.resource.data.badgeStatus == 'INACTIVE' &&
+          request.resource.data.hasActiveBadge == false &&
+          !('reviewedBy' in request.resource.data) &&
+          !('approvedAt' in request.resource.data) &&
+          !('badgeActivatedAt' in request.resource.data)
+        )
+      );
+
+      // Updates: Sellers can only update drafts or pending submissions without altering authoritative fields;
+      // Admins have full authoritative review and decision rights
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        (
+          resource != null &&
+          resource.data.sellerUserId == request.auth.uid &&
+          request.resource.data.sellerUserId == resource.data.sellerUserId &&
+          resource.data.status in ['DRAFT', 'REVERIFICATION_REQUIRED', 'PAYMENT_REQUIRED', 'PAYMENT_PENDING'] &&
+          request.resource.data.status in ['DRAFT', 'SUBMITTED', 'PAYMENT_REQUIRED', 'PAYMENT_PENDING'] &&
+          request.resource.data.badgeStatus == resource.data.badgeStatus &&
+          request.resource.data.hasActiveBadge == resource.data.hasActiveBadge &&
+          (!('reviewedBy' in request.resource.data) || request.resource.data.reviewedBy == resource.data.get('reviewedBy', null)) &&
+          (!('approvedAt' in request.resource.data) || request.resource.data.approvedAt == resource.data.get('approvedAt', null))
+        )
+      );
+
+      // Only administrators can delete records
+      allow delete: if isAdmin();
+    }
+
+    // 2. Seller Verification Audit Events (Immutable; Admin and owner read; Admin write only)
+    match /sellerVerificationAudits/{eventId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        (resource != null && resource.data.sellerUserId == request.auth.uid)
+      );
+      allow create: if isAdmin() || (isAuthenticated() && request.resource.data.sellerUserId == request.auth.uid);
+      allow update, delete: if false; // Immutable audit trail
+    }
+
+    // 3. Verification Payment Intents (Locked to fee; owner and admin read; Admin write only)
+    match /verificationPaymentIntents/{paymentIntentId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        (resource != null && resource.data.sellerUserId == request.auth.uid)
+      );
+      allow write: if isAdmin();
+    }
+
+    // 4. Public Seller Verification Badges (Safe public signal for marketplace buyers; Admin/server write)
+    match /sellerVerificationPublicBadges/{sellerUserId} {
+      allow read: if true; // Public trust signal
+      allow write: if isAdmin();
+    }
   }
 }

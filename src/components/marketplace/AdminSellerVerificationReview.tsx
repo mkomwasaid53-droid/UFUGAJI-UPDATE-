@@ -47,7 +47,7 @@ export const AdminSellerVerificationReview: React.FC = () => {
     setIsLoading(true);
     setFeedback(null);
     try {
-      const list = await sellerVerificationService.getAllSellerVerifications();
+      const list = await sellerVerificationService.getAllSellerVerifications(undefined, null, user?.uid);
       setVerifications(list);
     } catch (err: any) {
       console.error('Hitilafu ya kupakia maombi ya uhakiki:', err);
@@ -59,16 +59,17 @@ export const AdminSellerVerificationReview: React.FC = () => {
 
   useEffect(() => {
     loadVerifications();
-  }, []);
+  }, [user?.uid]);
 
   const handleExecuteAction = async () => {
     if (!actionType || !selectedSeller || !user?.uid) return;
 
     try {
       setIsProcessing(true);
+      const targetId = selectedSeller.verificationId || selectedSeller.sellerId;
       const updated = await sellerVerificationService.adminReviewSellerVerification(
         user.uid,
-        selectedSeller.sellerId,
+        targetId,
         actionType,
         {
           reason: actionReason.trim(),
@@ -76,9 +77,14 @@ export const AdminSellerVerificationReview: React.FC = () => {
         }
       );
 
-      // Update local state
+      // Update local state by immutable verificationId
       setVerifications((prev) =>
-        prev.map((v) => (v.sellerId === updated.sellerId ? updated : v))
+        prev.map((v) =>
+          (v.verificationId && updated.verificationId && v.verificationId === updated.verificationId) ||
+          (!v.verificationId && v.sellerId === updated.sellerId)
+            ? updated
+            : v
+        )
       );
       setSelectedSeller(updated);
       setActionType(null);
@@ -110,18 +116,22 @@ export const AdminSellerVerificationReview: React.FC = () => {
       const matchOwner = item.displayName?.toLowerCase().includes(q);
       const matchPhone = item.phone?.toLowerCase().includes(q);
       const matchLoc = item.location?.toLowerCase().includes(q);
-      const matchUid = item.sellerId?.toLowerCase().includes(q);
-      if (!matchName && !matchOwner && !matchPhone && !matchLoc && !matchUid) {
+      const matchUid = item.sellerId?.toLowerCase().includes(q) || item.sellerUserId?.toLowerCase().includes(q);
+      const matchAppNum = item.applicationNumber?.toLowerCase().includes(q);
+      const matchVerId = item.verificationId?.toLowerCase().includes(q);
+      if (!matchName && !matchOwner && !matchPhone && !matchLoc && !matchUid && !matchAppNum && !matchVerId) {
         return false;
       }
     }
     return true;
   });
 
-  // Count stats
-  const pendingCount = verifications.filter((v) => v.status === 'PENDING_VERIFICATION').length;
+  // Count stats directly from authoritative records
+  const pendingCount = verifications.filter((v) =>
+    ['PENDING_VERIFICATION', 'SUBMITTED', 'PAYMENT_REQUIRED', 'PAYMENT_PENDING', 'PAYMENT_CONFIRMED'].includes(v.status)
+  ).length;
   const underReviewCount = verifications.filter((v) => v.status === 'UNDER_REVIEW').length;
-  const verifiedCount = verifications.filter((v) => v.status === 'VERIFIED').length;
+  const verifiedCount = verifications.filter((v) => v.status === 'VERIFIED' || v.status === 'APPROVED').length;
   const rejectedCount = verifications.filter((v) => v.status === 'REJECTED').length;
   const suspendedCount = verifications.filter((v) => v.status === 'SUSPENDED').length;
 
@@ -302,15 +312,27 @@ export const AdminSellerVerificationReview: React.FC = () => {
 
             return (
               <div
-                key={item.sellerId}
+                key={item.verificationId || item.applicationNumber || item.sellerId}
                 className="bg-white rounded-2xl p-4 sm:p-5 border border-stone-200 hover:border-amber-400 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
               >
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 border border-stone-200 uppercase tracking-wider inline-block mb-1">
-                        {typeConfig?.labelSwahili || item.verificationType}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 border border-stone-200 uppercase tracking-wider">
+                          {typeConfig?.labelSwahili || item.verificationType}
+                        </span>
+                        {item.applicationNumber && (
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+                            {item.applicationNumber}
+                          </span>
+                        )}
+                        {item.currentReviewVersion && item.currentReviewVersion > 1 && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-stone-200 text-stone-700">
+                            v{item.currentReviewVersion}
+                          </span>
+                        )}
+                      </div>
                       <h4 className="text-sm sm:text-base font-bold text-stone-900">
                         {item.businessName || item.displayName}
                       </h4>

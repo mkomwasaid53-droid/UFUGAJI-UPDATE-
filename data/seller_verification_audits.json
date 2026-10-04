@@ -1,0 +1,106 @@
+[
+  {
+    "eventId": "va_1791124907134_dgqw76",
+    "timestamp": "2026-10-04T14:41:47.134Z",
+    "verificationId": "ver_1791124907130_al9u3r",
+    "sellerUserId": "seller_alpha_101",
+    "actorUserId": "seller_alpha_101",
+    "actorRole": "SELLER",
+    "action": "VERIFICATION_APPLICATION_SUBMITTED",
+    "previousStatus": "DRAFT",
+    "newStatus": "PAYMENT_REQUIRED",
+    "notes": "Maombi yamewasilishwa rasmi. Hali: PAYMENT_REQUIRED"
+  },
+  {
+    "eventId": "va_1791124907133_jytjn4",
+    "timestamp": "2026-10-04T14:41:47.133Z",
+    "verificationId": "ver_1791124907130_al9u3r",
+    "sellerUserId": "seller_alpha_101",
+    "actorUserId": "seller_alpha_101",
+    "actorRole": "SELLER",
+    "action": "VERIFICATION_APPLICATION_CREATED",
+    "newStatus": "DRAFT",
+    "notes": "Rasimu ya maombi ya uhakiki imesasishwa"
+  },
+  {
+    "eventId": "va_1791124907131_s718fw",
+    "timestamp": "2026-10-04T14:41:47.131Z",
+    "verificationId": "ver_1791124907130_al9u3r",
+    "sellerUserId": "seller_alpha_101",
+    "actorUserId": "seller_alpha_101",
+    "actorRole": "SELLER",
+    "action": "VERIFICATION_APPLICATION_CREATED",
+    "newStatus": "DRAFT",
+    "notes": "Rasimu mpya ya maombi ya uhakiki imeundwa"
+  },
+  {
+    "eventId": "va_1791124907139_9dlgri",
+    "timestamp": "2026-10-04T14:41:47.139Z",
+    "verificationId": "ver_1791124907131_ey54bx",
+    "sellerUserId": "seller_beta_202",
+    "actorUserId": "seller_beta_202",
+    "actorRole": "SELLER",
+    "action": "VERIFICATION_APPLICATION_SUBMITTED",
+    "previousStatus": "DRAFT",
+    "newStatus": "PAYMENT_REQUIRED",
+    "notes": "Maombi yamewasilishwa rasmi. Hali: PAYMENT_REQUIRED"
+  },
+  {
+    "eventId": "va_1791124907132_ygrprk",
+    "timestamp": "2026-10-04T14:41:47.132Z",
+    "verificationId": "ver_1791124907131_ey54bx",
+    "sellerUserId": "seller_beta_202",
+    "actorUserId": "seller_beta_202",
+    "actorRole": "SELLER",
+    "action": "VERIFICATION_APPLICATION_CREATED",
+    "newStatus": "DRAFT",
+    "notes": "Rasimu mpya ya maombi ya uhakiki imeundwa"
+  },
+  {
+    "eventId": "va_1791124907141_w6aj4i",
+    "timestamp": "2026-10-04T14:41:47.141Z",
+    "verificationId": "ver_1791124907140_uj8aj7",
+    "sellerUserId": "seller_gamma_303",
+    "actorUserId": "admin_said",
+    "actorRole": "ADMIN",
+    "action": "VERIFICATION_REJECTED",
+    "previousStatus": "PAYMENT_REQUIRED",
+    "newStatus": "REJECTED",
+    "reason": "Nyaraka za usajili hazikutosheleza.",
+    "notes": "Nyaraka za usajili hazikutosheleza."
+  },
+  {
+    "eventId": "va_1791124907140_ndz4vx",
+    "timestamp": "2026-10-04T14:41:47.140Z",
+    "verificationId": "ver_1791124907140_uj8aj7",
+    "sellerUserId": "seller_gamma_303",
+    "actorUserId": "seller_gamma_303",
+    "actorRole": "SELLER",
+    "action": "VERIFICATION_APPLICATION_SUBMITTED",
+    "previousStatus": "DRAFT",
+    "newStatus": "PAYMENT_REQUIRED",
+    "notes": "Maombi yamewasilishwa rasmi. Hali: PAYMENT_REQUIRED"
+  },
+  {
+    "eventId": "va_1791124907140_t9f4yt",
+    "timestamp": "2026-10-04T14:41:47.140Z",
+    "verificationId": "ver_1791124907140_uj8aj7",
+    "sellerUserId": "seller_gamma_303",
+    "actorUserId": "seller_gamma_303",
+    "actorRole": "SELLER",
+    "action": "VERIFICATION_APPLICATION_CREATED",
+    "newStatus": "DRAFT",
+    "notes": "Rasimu mpya ya maombi ya uhakiki imeundwa"
+  },
+  {
+    "eventId": "va_1791124907143_5kaiiy",
+    "timestamp": "2026-10-04T14:41:47.143Z",
+    "verificationId": "ver_1791124907142_rfx1le",
+    "sellerUserId": "seller_gamma_303",
+    "actorUserId": "seller_gamma_303",
+    "actorRole": "SELLER",
+    "action": "VERIFICATION_APPLICATION_CREATED",
+    "newStatus": "DRAFT",
+    "notes": "Rasimu mpya ya maombi ya uhakiki imeundwa"
+  }
+]

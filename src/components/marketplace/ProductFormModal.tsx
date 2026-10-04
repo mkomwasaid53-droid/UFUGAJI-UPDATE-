@@ -1879,7 +1879,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 type="text"
                 value={sellerBusinessName}
                 onChange={(e) => setSellerBusinessName(e.target.value)}
-                placeholder="Mfano: Massawe Poultry Farm"
+                placeholder="Mfano: Shamba la Mifugo"
                 className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-xs sm:text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-600 focus:bg-white min-h-[44px]"
               />
             </div>

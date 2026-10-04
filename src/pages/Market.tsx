@@ -1210,28 +1210,44 @@ export const Market: React.FC = () => {
                   </div>
                   <div className="space-y-1 max-w-sm mx-auto">
                     <h3 className="text-sm font-bold text-stone-900">
-                      Hakuna Bidhaa Zilizopatikana
+                      {products.length === 0 ? 'Bado Hakuna Bidhaa Sokoni' : 'Hakuna Bidhaa Zilizopatikana'}
                     </h3>
                     <p className="text-xs text-stone-500 leading-relaxed">
-                      Hakuna bidhaa inayolingana na vigezo ulivyoweka. Jaribu kubadilisha kategoria, mkoa au neno la utafutaji.
+                      {products.length === 0
+                        ? 'Soko hili limeandaliwa kwa ajili ya wauzaji halisi pekee. Matangazo mapya ya mifugo na vifaa yataonekana hapa.'
+                        : 'Hakuna bidhaa inayolingana na vigezo ulivyoweka. Jaribu kubadilisha kategoria, mkoa au neno la utafutaji.'}
                     </p>
                   </div>
 
-                  <div className="pt-2 flex justify-center">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchTerm('');
-                        setSelectedCategory('all');
-                        setSelectedRegion('all');
-                        setInStockOnly(false);
-                        setMinPrice('');
-                        setMaxPrice('');
-                      }}
-                      className="py-2 px-4 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-                    >
-                      Onyesha Bidhaa Zote
-                    </button>
+                  <div className="pt-2 flex justify-center gap-2 flex-wrap">
+                    {hasSellerCapability && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingProduct(null);
+                          setIsFormModalOpen(true);
+                        }}
+                        className="py-2 px-4 bg-amber-700 hover:bg-amber-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                      >
+                        Weka Tangazo la Kwanza
+                      </button>
+                    )}
+                    {products.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchTerm('');
+                          setSelectedCategory('all');
+                          setSelectedRegion('all');
+                          setInStockOnly(false);
+                          setMinPrice('');
+                          setMaxPrice('');
+                        }}
+                        className="py-2 px-4 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                      >
+                        Onyesha Bidhaa Zote
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : (

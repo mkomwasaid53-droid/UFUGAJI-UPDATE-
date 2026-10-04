@@ -107,7 +107,8 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
         notes
       };
 
-      const updated = await sellerVerificationService.submitSellerVerificationApplication(sellerId, input);
+      const idempotencyKey = `req_sub_${sellerId}_${Date.now()}`;
+      const updated = await sellerVerificationService.submitSellerVerificationApplication(sellerId, input, idempotencyKey);
       onSuccess(updated);
       onClose();
     } catch (err: any) {

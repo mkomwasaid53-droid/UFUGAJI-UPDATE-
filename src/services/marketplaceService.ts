@@ -69,14 +69,28 @@ export function getLocalCachedProducts(): MarketplaceProduct[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map(syncAuthoritativeModerationState);
+        // Strictly filter out any legacy demo or test listings
+        const realProducts = parsed
+          .filter((p: MarketplaceProduct) =>
+            p &&
+            !p.isTestDemo &&
+            !p.productId?.startsWith('demo-') &&
+            !p.sellerId?.startsWith('demo-seller-')
+          )
+          .map(syncAuthoritativeModerationState);
+
+        if (realProducts.length !== parsed.length) {
+          saveProductsToLocalCache(realProducts);
+        }
+        return realProducts;
       }
     }
   } catch (err) {
     console.warn('Hitilafu ya kusoma akiba ya bidhaa za soko:', err);
   }
-  return INITIAL_SAMPLE_PRODUCTS.map(syncAuthoritativeModerationState);
+  return [];
 }
+
 
 // Helper to save products to local cache with automatic quota overflow protection
 export function saveProductsToLocalCache(products: MarketplaceProduct[]): void {
@@ -170,24 +184,28 @@ export async function fetchMarketplaceProducts(options?: {
   // 3. Intelligently merge all sources to guarantee no published ad is ever lost
   const productMap = new Map<string, MarketplaceProduct>();
 
-  // Add initial samples first
-  for (const p of INITIAL_SAMPLE_PRODUCTS) {
-    if (p && p.productId) productMap.set(p.productId, p);
-  }
+  const isRealProduct = (p: MarketplaceProduct) =>
+    Boolean(
+      p &&
+      p.productId &&
+      !p.isTestDemo &&
+      !p.productId.startsWith('demo-') &&
+      !p.sellerId?.startsWith('demo-seller-')
+    );
 
   // Add local products
   for (const p of localList) {
-    if (p && p.productId) productMap.set(p.productId, p);
+    if (isRealProduct(p)) productMap.set(p.productId, p);
   }
 
   // Add server-persisted products
   for (const p of serverProducts) {
-    if (p && p.productId) productMap.set(p.productId, p);
+    if (isRealProduct(p)) productMap.set(p.productId, p);
   }
 
   // Add remote Firestore products
   for (const p of remoteProducts) {
-    if (p && p.productId) productMap.set(p.productId, p);
+    if (isRealProduct(p)) productMap.set(p.productId, p);
   }
 
   // Sync each merged product with authoritative moderation and seller governance state
@@ -307,14 +325,14 @@ export async function saveSellerProfile(
 
 // Fetch digital shop for a given seller UID
 export async function fetchDigitalShop(sellerId: string): Promise<DigitalShop | null> {
-  if (!sellerId) return null;
+  if (!sellerId || sellerId.startsWith('demo-seller-')) return null;
 
   // Check local cache first
   try {
     const raw = localStorage.getItem(`${LOCAL_DIGITAL_SHOPS_KEY}_${sellerId}`);
     if (raw) {
       const parsed = JSON.parse(raw) as DigitalShop;
-      if (parsed && parsed.sellerId === sellerId) {
+      if (parsed && parsed.sellerId === sellerId && !parsed.sellerId.startsWith('demo-seller-')) {
         return parsed;
       }
     }
@@ -338,11 +356,6 @@ export async function fetchDigitalShop(sellerId: string): Promise<DigitalShop | 
     }
   } catch (err) {
     console.warn('Hitilafu ya kupata duka la muuzaji kutoka Firestore:', err);
-  }
-
-  // If no explicit shop document exists yet, check INITIAL_SAMPLE_SHOPS
-  if (INITIAL_SAMPLE_SHOPS[sellerId]) {
-    return INITIAL_SAMPLE_SHOPS[sellerId];
   }
 
   // If no explicit shop document exists yet, check if sellerProfile exists and synthesize default shop for backward compatibility
@@ -441,7 +454,7 @@ export const togglePublishShop = toggleShopPublishStatus;
 
 // Fetch all catalogues for a seller's shop
 export async function fetchShopCatalogues(sellerId: string): Promise<ShopCatalogue[]> {
-  if (!sellerId) return [];
+  if (!sellerId || sellerId.startsWith('demo-seller-')) return [];
 
   // Check local cache
   try {
@@ -480,11 +493,6 @@ export async function fetchShopCatalogues(sellerId: string): Promise<ShopCatalog
     }
   } catch (err) {
     console.warn('Hitilafu ya kupata catalogues kutoka Firestore:', err);
-  }
-
-  // Fallback to sample catalogues if available
-  if (INITIAL_SAMPLE_CATALOGUES[sellerId]) {
-    return INITIAL_SAMPLE_CATALOGUES[sellerId];
   }
 
   return [];
@@ -1309,22 +1317,24 @@ export async function fetchAllPublishedShops(
 ): Promise<DigitalShop[]> {
   const shopMap: Map<string, DigitalShop> = new Map();
 
-  // 1. Load initial curated sample shops
-  Object.values(INITIAL_SAMPLE_SHOPS).forEach((shop) => {
-    if (shop.isPublished) {
-      shopMap.set(shop.sellerId, shop);
-    }
-  });
-
-  // 2. Scan locally cached shops
+  // 1. Scan locally cached shops (clearing and ignoring any legacy demo shops)
   try {
+    const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith(LOCAL_DIGITAL_SHOPS_KEY)) {
+        if (key.includes('demo-seller-')) {
+          keysToRemove.push(key);
+          continue;
+        }
         const raw = localStorage.getItem(key);
         if (raw) {
           const parsed = JSON.parse(raw) as DigitalShop;
           if (parsed && parsed.sellerId) {
+            if (parsed.sellerId.startsWith('demo-seller-') || parsed.shopId?.startsWith('demo-seller-')) {
+              keysToRemove.push(key);
+              continue;
+            }
             if (parsed.isPublished) {
               shopMap.set(parsed.sellerId, parsed);
             } else {
@@ -1334,12 +1344,19 @@ export async function fetchAllPublishedShops(
         }
       }
     }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
   } catch {}
 
-  // 3. Synthesize published shops from existing active products if not yet present
+  // 2. Synthesize published shops from existing active real products if not yet present
   const prods = currentProducts || getLocalCachedProducts();
   prods.forEach((prod) => {
-    if (prod.sellerId && !shopMap.has(prod.sellerId)) {
+    if (
+      prod.sellerId &&
+      !prod.sellerId.startsWith('demo-seller-') &&
+      !prod.isTestDemo &&
+      !prod.productId?.startsWith('demo-') &&
+      !shopMap.has(prod.sellerId)
+    ) {
       // Create a default published shop object for discovery
       const synthesized: DigitalShop = {
         shopId: prod.shopId || prod.sellerId,
@@ -1348,6 +1365,7 @@ export async function fetchAllPublishedShops(
         description: `Duka la ${prod.sellerBusinessName || prod.sellerName} linalouza ${prod.category.toLowerCase()} na bidhaa za mifugo.`,
         location: prod.location || prod.region || 'Tanzania',
         region: prod.region || prod.location || 'Tanzania',
+        district: prod.district || '',
         phone: prod.sellerPhone || '',
         whatsapp: prod.sellerPhone || '',
         isPublished: true,

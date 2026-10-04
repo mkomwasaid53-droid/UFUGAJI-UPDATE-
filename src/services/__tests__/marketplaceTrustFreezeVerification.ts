@@ -48,7 +48,7 @@ import { daktariService } from '../daktariService';
 import { sellerMonetizationService } from '../sellerMonetizationService';
 
 let passedCount = 0;
-let totalTests = 30;
+let totalTests = 31;
 
 function assert(condition: boolean, testId: string, description: string) {
   if (!condition) {

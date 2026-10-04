@@ -207,10 +207,12 @@ export const ShopDiscoveryView: React.FC<ShopDiscoveryViewProps> = ({
           </div>
           <div className="space-y-1.5">
             <h3 className="text-base font-bold text-stone-900">
-              Hakuna Duka Lililopatikana
+              {shops.length === 0 ? 'Bado Hakuna Maduka Yaliyosajiliwa' : 'Hakuna Duka Lililopatikana'}
             </h3>
             <p className="text-xs sm:text-sm text-stone-500 leading-relaxed">
-              Hakuna duka la kidijitali linaloendana na vigezo ulivyoweka. Jaribu kutafuta kwa jina lingine au ondoa vichujio.
+              {shops.length === 0
+                ? 'Soko hili linatumia wauzaji halisi pekee. Maduka mapya ya wauzaji waliosajiliwa yataonekana hapa.'
+                : 'Hakuna duka la kidijitali linaloendana na vigezo ulivyoweka. Jaribu kutafuta kwa jina lingine au ondoa vichujio.'}
             </p>
           </div>
           <div className="flex items-center justify-center gap-3 pt-2">

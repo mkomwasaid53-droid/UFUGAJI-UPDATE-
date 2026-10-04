@@ -83,6 +83,14 @@ import {
   SELLER_MONETIZATION_CONFIG
 } from './src/services/sellerMonetizationService';
 import {
+  sellerVerificationService,
+  initVerificationStorage
+} from './src/services/sellerVerificationService';
+import {
+  VERIFICATION_FEE_CONFIG,
+  getSellerVerificationDisplay
+} from './src/types/sellerVerification';
+import {
   AiRequestType,
   AiInputType,
   AiUsageSource,
@@ -119,6 +127,9 @@ if (!fs.existsSync(DATA_DIR)) {
 if (!fs.existsSync(TEMP_VIDEO_DIR)) {
   fs.mkdirSync(TEMP_VIDEO_DIR, { recursive: true });
 }
+
+// Authoritative verification persistent storage initialization (V1.11A-CORRECTIVE-1)
+initVerificationStorage(fs, path);
 
 // Persistent marketplace products storage helpers
 function readMarketplaceProductsFromDisk(): any[] {
@@ -367,11 +378,14 @@ async function startServer() {
   app.get('/api/marketplace/products', (req, res) => {
     try {
       const products = readMarketplaceProductsFromDisk();
+      const realOnly = products.filter((p: any) =>
+        p && !p.isTestDemo && !p.productId?.startsWith('demo-') && !p.sellerId?.startsWith('demo-seller-')
+      );
       if (req.query.includeNonEligible === 'true') {
-        return res.json(products);
+        return res.json(realOnly);
       }
       // V1.7G & V1.10A-CORRECTIVE-4: Filter out REJECTED, HIDDEN, SUSPENDED products and products from sellers ineligible to sell
-      const eligible = products.filter((p: any) => {
+      const eligible = realOnly.filter((p: any) => {
         if (!p) return false;
         if (['REJECTED', 'HIDDEN', 'SUSPENDED'].includes(p.moderationStatus)) {
           return false;
@@ -5801,6 +5815,357 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Hitilafu ya seva' });
+    }
+  });
+
+  // ============================================================================
+  // V1.11A-CORRECTIVE-1: AUTHORITATIVE SELLER VERIFICATION REST API
+  // ============================================================================
+
+  // 1. Get Seller Verification Application (Authoritative State & Reload Source)
+  app.get('/api/seller/verification', (req, res) => {
+    try {
+      const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
+      const querySellerUserId = (req.query.sellerUserId as string)?.trim();
+      const targetUserId = (isAdmin && querySellerUserId) ? querySellerUserId : (callerUserId || querySellerUserId);
+
+      if (!targetUserId) {
+        return res.status(401).json({
+          error: 'Utambulisho wa mtumiaji unahitajika (Tafadhali ingia kwenye akaunti).'
+        });
+      }
+
+      // Enforce caller ownership: regular sellers cannot inspect other sellers' verification documents
+      if (callerUserId && callerUserId !== targetUserId && !isAdmin) {
+        return res.status(403).json({
+          error: 'Ruhusa imekataliwa: Huwezi kuangalia maombi ya uhakiki ya muuzaji mwingine.'
+        });
+      }
+
+      const application = sellerVerificationService.getVerificationBySellerId(targetUserId);
+
+      return res.json({
+        status: 'ok',
+        version: 'V1.11A-CORRECTIVE-1',
+        sellerUserId: targetUserId,
+        application
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Hitilafu ya seva' });
+    }
+  });
+
+  // 2. Create or Update Verification Draft
+  app.post('/api/seller/verification/draft', (req, res) => {
+    try {
+      const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
+      const { sellerUserId: bodyUserId, shopId, input, idempotencyKey } = req.body || {};
+      const targetUserId = (isAdmin && bodyUserId) ? bodyUserId : (callerUserId || bodyUserId);
+
+      if (!targetUserId) {
+        return res.status(401).json({
+          error: 'Utambulisho wa muuzaji (sellerUserId) unahitajika.'
+        });
+      }
+
+      if (callerUserId && callerUserId !== targetUserId && !isAdmin) {
+        return res.status(403).json({
+          error: 'Ruhusa imekataliwa: Huwezi kuunda rasimu kwa niaba ya muuzaji mwingine.'
+        });
+      }
+
+      // Sanitize input: Client cannot forge authoritative status, badgeStatus, or review decisions
+      const sanitizedInput = { ...input };
+      delete (sanitizedInput as any).status;
+      delete (sanitizedInput as any).badgeStatus;
+      delete (sanitizedInput as any).hasActiveBadge;
+      delete (sanitizedInput as any).reviewedBy;
+      delete (sanitizedInput as any).approvedAt;
+      delete (sanitizedInput as any).processingPaymentStatus;
+
+      const application = sellerVerificationService.createOrUpdateDraft({
+        sellerUserId: targetUserId,
+        shopId,
+        input: sanitizedInput,
+        idempotencyKey
+      });
+
+      return res.json({
+        status: 'ok',
+        version: 'V1.11A-CORRECTIVE-1',
+        application
+      });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message || 'Hitilafu ya kuunda rasimu' });
+    }
+  });
+
+  // 3. Submit Verification Application (Authoritative & Idempotent)
+  app.post('/api/seller/verification/submit', (req, res) => {
+    try {
+      const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
+      const { sellerUserId: bodyUserId, verificationId, input, idempotencyKey } = req.body || {};
+      const targetUserId = (isAdmin && bodyUserId) ? bodyUserId : (callerUserId || bodyUserId);
+
+      if (!targetUserId) {
+        return res.status(401).json({
+          error: 'Utambulisho wa muuzaji (sellerUserId) unahitajika.'
+        });
+      }
+
+      if (callerUserId && callerUserId !== targetUserId && !isAdmin) {
+        return res.status(403).json({
+          error: 'Ruhusa imekataliwa: Huwezi kuwasilisha maombi ya muuzaji mwingine.'
+        });
+      }
+
+      // Sanitize input: Client cannot forge authoritative review fields
+      const sanitizedInput = input ? { ...input } : undefined;
+      if (sanitizedInput) {
+        delete (sanitizedInput as any).status;
+        delete (sanitizedInput as any).badgeStatus;
+        delete (sanitizedInput as any).hasActiveBadge;
+        delete (sanitizedInput as any).reviewedBy;
+        delete (sanitizedInput as any).approvedAt;
+        delete (sanitizedInput as any).processingPaymentStatus;
+      }
+
+      const application = sellerVerificationService.submitApplication({
+        sellerUserId: targetUserId,
+        verificationId,
+        input: sanitizedInput,
+        idempotencyKey
+      });
+
+      return res.json({
+        status: 'ok',
+        version: 'V1.11A-CORRECTIVE-1',
+        application
+      });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message || 'Hitilafu ya kuwasilisha maombi' });
+    }
+  });
+
+  // 4. Initiate Verification Fee Payment (Strict 5,000 TZS server-side boundary)
+  app.post('/api/seller/verification/pay', async (req, res) => {
+    try {
+      const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
+      const {
+        sellerUserId: bodyUserId,
+        verificationId,
+        customerPhone,
+        providerNetwork,
+        providerName,
+        idempotencyKey
+      } = req.body || {};
+      const targetUserId = (isAdmin && bodyUserId) ? bodyUserId : (callerUserId || bodyUserId);
+
+      if (!targetUserId || !verificationId) {
+        return res.status(400).json({
+          error: 'Taarifa za muuzaji na namba ya maombi zinahitajika.'
+        });
+      }
+
+      if (callerUserId && callerUserId !== targetUserId && !isAdmin) {
+        return res.status(403).json({
+          error: 'Ruhusa imekataliwa: Huwezi kulipia maombi ya muuzaji mwingine.'
+        });
+      }
+
+      const result = await sellerVerificationService.initiateVerificationPayment({
+        sellerUserId: targetUserId,
+        verificationId,
+        customerPhone: customerPhone || '0700000000',
+        providerNetwork,
+        providerName,
+        idempotencyKey
+      });
+
+      return res.json({
+        status: result.success ? 'ok' : 'error',
+        ...result
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Hitilafu ya kuanzisha malipo' });
+    }
+  });
+
+  // 5. Public Seller Badge Signal (Zero leak of sensitive documents or NIDA)
+  app.get('/api/seller/verification/public-badge/:sellerUserId', (req, res) => {
+    try {
+      const { sellerUserId } = req.params;
+      const badge = sellerVerificationService.getPublicSellerBadge(sellerUserId);
+      return res.json({
+        status: 'ok',
+        badge
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Hitilafu ya kupata beji' });
+    }
+  });
+
+  // 6. Admin: Get All Verification Applications (Authoritative Collection & Query)
+  app.get('/api/admin/verifications', (req, res) => {
+    try {
+      const { isAdmin } = extractUserAuthFromRequest(req);
+      if (!isAdmin) {
+        return res.status(403).json({
+          error: 'Ruhusa imekataliwa: Wasimamizi wa jukwaa pekee (Admin) ndio wanaoruhusiwa.'
+        });
+      }
+
+      const statusFilter = req.query.status as any;
+      const applications = sellerVerificationService.getAllApplications(statusFilter);
+
+      return res.json({
+        status: 'ok',
+        version: 'V1.11A-CORRECTIVE-1',
+        count: applications.length,
+        applications
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Hitilafu ya kupata maombi' });
+    }
+  });
+
+  // 7. Admin: Get Specific Application With Immutable Audit Trail
+  app.get('/api/admin/verifications/:verificationId', (req, res) => {
+    try {
+      const { isAdmin } = extractUserAuthFromRequest(req);
+      if (!isAdmin) {
+        return res.status(403).json({
+          error: 'Ruhusa imekataliwa: Admin pekee.'
+        });
+      }
+
+      const { verificationId } = req.params;
+      const application = sellerVerificationService.getVerificationById(verificationId);
+      if (!application) {
+        return res.status(404).json({ error: 'Maombi ya uhakiki hayakupatikana.' });
+      }
+
+      const auditLogs = sellerVerificationService.getAuditLogs(verificationId);
+
+      return res.json({
+        status: 'ok',
+        application,
+        auditLogs
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Hitilafu ya kupata maombi' });
+    }
+  });
+
+  // 8. Admin: Execute Authoritative Review Decision
+  app.post('/api/admin/verifications/:verificationId/review', async (req, res) => {
+    try {
+      const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
+      if (!isAdmin) {
+        return res.status(403).json({
+          error: 'Ruhusa imekataliwa: Wasimamizi wa jukwaa pekee (Admin) ndio wanaoruhusiwa.'
+        });
+      }
+
+      const { verificationId } = req.params;
+      const { actionType, details, adminUserId: bodyAdminId } = req.body || {};
+      const adminUid = callerUserId || bodyAdminId || 'admin_system';
+
+      if (!actionType) {
+        return res.status(400).json({ error: 'Aina ya uamuzi (actionType) inahitajika.' });
+      }
+
+      let updated;
+      switch (actionType) {
+        case 'UNDER_REVIEW':
+          updated = sellerVerificationService.startReview({
+            verificationId,
+            adminUserId: adminUid
+          });
+          break;
+        case 'REQUEST_CORRECTION':
+          updated = sellerVerificationService.requestCorrection({
+            verificationId,
+            correctionNotes: details?.reason || details?.notes || 'Tafadhali rekebisha taarifa.',
+            adminUserId: adminUid
+          });
+          break;
+        case 'VERIFY':
+        case 'APPROVE':
+          updated = sellerVerificationService.approveVerification({
+            verificationId,
+            adminNotes: details?.notes,
+            autoActivateBadge: true,
+            adminUserId: adminUid
+          });
+          break;
+        case 'REJECT':
+          updated = sellerVerificationService.rejectVerification({
+            verificationId,
+            safeRejectionReason: details?.reason || 'Maombi hayakukidhi vigezo vya uhakiki wa jukwaa.',
+            internalAdminNotes: details?.notes,
+            adminUserId: adminUid
+          });
+          break;
+        case 'SUSPEND':
+          updated = sellerVerificationService.suspendVerification({
+            verificationId,
+            reason: details?.reason || 'Uhakiki umesitishwa kiutawala.',
+            adminUserId: adminUid
+          });
+          break;
+        case 'REVERIFY':
+        case 'REQUIRE_REVERIFICATION':
+          updated = sellerVerificationService.requireReverification({
+            verificationId,
+            reason: details?.reason || 'Uhakiki upya unahitajika.',
+            adminUserId: adminUid
+          });
+          break;
+        default:
+          return res.status(400).json({ error: `Aina ya uamuzi '${actionType}' haitambuliki.` });
+      }
+
+      return res.json({
+        status: 'ok',
+        version: 'V1.11A-CORRECTIVE-1',
+        application: updated
+      });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message || 'Hitilafu ya kutekeleza uamuzi' });
+    }
+  });
+
+  // 9. Admin: Query Immutable Audit Trail
+  app.get('/api/admin/verifications/audits/:verificationId?', (req, res) => {
+    try {
+      const { isAdmin } = extractUserAuthFromRequest(req);
+      if (!isAdmin) {
+        return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
+      }
+
+      const { verificationId } = req.params;
+      const sellerUserId = req.query.sellerUserId as string | undefined;
+      const auditLogs = sellerVerificationService.getAuditLogs(verificationId, sellerUserId);
+
+      return res.json({
+        status: 'ok',
+        count: auditLogs.length,
+        auditLogs
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Hitilafu ya kupata kumbukumbu za ukaguzi' });
+    }
+  });
+
+  // 10. Webhook / Provider Callback for Verification Payment
+  app.post('/api/verification/payment/callback', async (req, res) => {
+    try {
+      const { provider = 'PLUSPESA', payload = req.body } = req.body || {};
+      const result = await sellerVerificationService.processVerificationPaymentCallback(provider, payload);
+      return res.json(result);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Hitilafu ya kuchakata callback ya malipo' });
     }
   });
 
