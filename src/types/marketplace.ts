@@ -1,5 +1,6 @@
 export type ProductStatus = 'active' | 'inactive' | 'sold_out' | 'draft';
 export type VerificationStatus = 'unverified' | 'pending' | 'verified';
+export type { SellerVerification, SellerVerificationStatus, SellerVerificationType } from './sellerVerification';
 
 export interface ProductImage {
   id: string;

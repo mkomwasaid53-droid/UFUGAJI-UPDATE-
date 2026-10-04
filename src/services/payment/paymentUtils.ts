@@ -191,3 +191,19 @@ export function generateSellerPaymentExternalId(paymentIntentIdOrSuffix?: string
   return `UFUGAJI_SELLER_PREMIUM_${timestamp}_${randomSuffix}`;
 }
 
+/**
+ * Generates an internal unique external ID for Seller Verification transactions (V1.11A).
+ * Format: UFUGAJI_VERIFICATION_<unique-payment-reference>
+ * Strictly isolates seller verification processing fee transactions from Seller Monetization and AI Premium.
+ */
+export function generateVerificationPaymentExternalId(paymentIntentIdOrSuffix?: string): string {
+  if (paymentIntentIdOrSuffix) {
+    const cleanId = paymentIntentIdOrSuffix.replace(/^(vpi_|spi_|pay_)/, '');
+    return `UFUGAJI_VERIFICATION_${cleanId}`;
+  }
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `UFUGAJI_VERIFICATION_${timestamp}_${randomSuffix}`;
+}
+
+

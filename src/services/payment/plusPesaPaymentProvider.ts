@@ -16,8 +16,29 @@
  * - Idempotent, server-authoritative entitlement activation happens upon verified SUCCESS only.
  */
 
-import * as crypto from 'crypto';
-import { Buffer } from 'node:buffer';
+function getNodeCrypto(): any {
+  if (typeof window === 'undefined') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require('crypto');
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function getNodeBuffer(): any {
+  if (typeof window === 'undefined') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require('node:buffer')?.Buffer || (globalThis as any).Buffer;
+    } catch {
+      return (globalThis as any).Buffer;
+    }
+  }
+  return (globalThis as any).Buffer;
+}
 import {
   PaymentProvider,
   CreatePaymentRequestParams,
@@ -478,7 +499,7 @@ export class PlusPesaPaymentProvider implements PaymentProvider {
   public async verifyPaymentCallback(
     payload: any,
     headers?: Record<string, string | string[] | undefined>,
-    rawBody?: Buffer | string
+    rawBody?: any
   ): Promise<VerifyCallbackResult> {
     // A. Payload format check
     if (!payload || typeof payload !== 'object') {
@@ -519,8 +540,22 @@ export class PlusPesaPaymentProvider implements PaymentProvider {
         };
       }
 
+      const nodeCrypto = getNodeCrypto();
+      const nodeBuffer = getNodeBuffer();
+      if (!nodeCrypto || !nodeBuffer) {
+        return {
+          isValid: false,
+          providerReference: this.extractProviderReference(payload),
+          internalPaymentId: null,
+          externalId: payload.external_id || null,
+          providerStatus: 'ENVIRONMENT_UNSUPPORTED',
+          normalizedStatus: 'FAILED',
+          errorMessage: 'Mazingira ya crypto hayapo kwa ajili ya ukaguzi wa webhook.'
+        };
+      }
+
       const secret = this.config.callbackSecret!;
-      const hmac = crypto.createHmac('sha256', secret);
+      const hmac = nodeCrypto.createHmac('sha256', secret);
       hmac.update(rawBody);
       const computedDigest = hmac.digest('hex');
       const receivedSignature = String(signatureHeader).trim();
@@ -528,7 +563,7 @@ export class PlusPesaPaymentProvider implements PaymentProvider {
       // Constant-time comparison to prevent timing attacks
       const isSignatureValid = 
         computedDigest.length === receivedSignature.length &&
-        crypto.timingSafeEqual(Buffer.from(computedDigest, 'utf8'), Buffer.from(receivedSignature, 'utf8'));
+        nodeCrypto.timingSafeEqual(nodeBuffer.from(computedDigest, 'utf8'), nodeBuffer.from(receivedSignature, 'utf8'));
 
       if (!isSignatureValid) {
         return {

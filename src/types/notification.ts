@@ -9,6 +9,7 @@ export type NotificationCategory =
   | 'USER'
   | 'MARKETPLACE'
   | 'GOVERNANCE'
+  | 'MODERATION'
   | 'SYSTEM'
   | 'DAKTARI'
   | 'MY_ASSISTANT';
@@ -36,7 +37,18 @@ export type NotificationType =
   | 'SELLER_RENEWAL_SUCCESS'
   | 'SELLER_RENEWAL_FAILED'
   | 'SELLER_MONETIZATION_SUSPENDED'
-  | 'SELLER_MONETIZATION_REACTIVATED';
+  | 'SELLER_MONETIZATION_REACTIVATED'
+  | 'VERIFICATION_APPLICATION_SUBMITTED'
+  | 'VERIFICATION_PAYMENT_CONFIRMED'
+  | 'VERIFICATION_PAYMENT_FAILED'
+  | 'VERIFICATION_UNDER_REVIEW'
+  | 'VERIFICATION_CORRECTION_REQUESTED'
+  | 'VERIFICATION_APPROVED'
+  | 'VERIFICATION_REJECTED'
+  | 'VERIFICATION_BADGE_ACTIVATED'
+  | 'VERIFICATION_BADGE_DEACTIVATED'
+  | 'VERIFICATION_REVERIFICATION_REQUIRED'
+  | 'VERIFICATION_SUSPENDED';
 
 export type NotificationPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 
@@ -79,6 +91,7 @@ export interface AppNotification {
   relatedAppealId?: string;
 
   actionUrl?: string;
+  senderUserId?: string;
   createdAt: string;
   expiresAt?: string;
   deduplicationKey?: string;
@@ -87,6 +100,7 @@ export interface AppNotification {
 
 export interface CreateNotificationInput {
   recipientUserId: string;
+  senderUserId?: string;
   type: NotificationType;
   category: NotificationCategory;
   title: string;

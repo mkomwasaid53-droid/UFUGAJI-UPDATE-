@@ -15,7 +15,9 @@ import {
   Check,
   FileText,
   Clock,
-  Ban
+  Ban,
+  ShieldCheck,
+  AlertCircle
 } from 'lucide-react';
 import { AppNotification } from '../../types/notification';
 
@@ -55,7 +57,20 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
       case 'SELLER_TRIAL_STARTED':
       case 'SELLER_RENEWAL_SUCCESS':
       case 'SELLER_MONETIZATION_REACTIVATED':
+      case 'VERIFICATION_PAYMENT_CONFIRMED':
+      case 'VERIFICATION_APPROVED':
+      case 'VERIFICATION_BADGE_ACTIVATED':
         return <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />;
+      case 'VERIFICATION_PAYMENT_FAILED':
+      case 'VERIFICATION_REJECTED':
+      case 'VERIFICATION_SUSPENDED':
+      case 'VERIFICATION_BADGE_DEACTIVATED':
+        return <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />;
+      case 'VERIFICATION_APPLICATION_SUBMITTED':
+      case 'VERIFICATION_UNDER_REVIEW':
+      case 'VERIFICATION_CORRECTION_REQUESTED':
+      case 'VERIFICATION_REVERIFICATION_REQUIRED':
+        return <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />;
       default:
         return <Info className="w-4 h-4 text-stone-500 shrink-0" />;
     }

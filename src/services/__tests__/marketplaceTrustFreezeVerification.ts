@@ -45,6 +45,7 @@ import { MyAssistantMarketplaceContext } from '../../types/myAssistantMarketplac
 import { extractConservativeVisualCharacteristics, scoreCandidateVisualMatch } from '../visualProductMatcher';
 import { StructuredVisualMarketplaceQuery } from '../../types/visualMarketplace';
 import { daktariService } from '../daktariService';
+import { sellerMonetizationService } from '../sellerMonetizationService';
 
 let passedCount = 0;
 let totalTests = 30;
@@ -57,6 +58,11 @@ function assert(condition: boolean, testId: string, description: string) {
   passedCount++;
   console.log(`✅ [${testId}] PASSED: ${description}`);
 }
+
+sellerMonetizationService.activateFirstMonthFreeTrial({
+  sellerUserId: 'seller_farmer_01',
+  sellerProfileId: 'seller_farmer_01'
+});
 
 console.log('================================================================');
 console.log('  UFUGAJI UPDATE — V1.6H MARKETPLACE TRUST FINAL REGRESSION TEST');
@@ -580,3 +586,5 @@ assert(
 console.log('\n================================================================');
 console.log(`  ALL ${passedCount}/${totalTests} TESTS COMPLETED AND PASSED SUCCESSFULLY!`);
 console.log('================================================================\n');
+
+process.exit(0);

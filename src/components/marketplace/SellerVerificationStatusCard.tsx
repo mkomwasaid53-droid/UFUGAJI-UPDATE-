@@ -95,30 +95,71 @@ export const SellerVerificationStatusCard: React.FC<SellerVerificationStatusCard
     );
   }
 
-  // 2. PENDING VERIFICATION STATE
-  if (status === 'PENDING_VERIFICATION') {
+  // 2. PAYMENT REQUIRED / PAYMENT PENDING STATE
+  if (status === 'PAYMENT_REQUIRED' || status === 'PAYMENT_PENDING') {
     return (
-      <div className="bg-gradient-to-br from-amber-50/80 via-white to-amber-50/40 border border-amber-300/80 rounded-2xl p-4 sm:p-5 shadow-xs">
+      <div className="bg-gradient-to-br from-amber-50/90 via-white to-amber-100/40 border border-amber-300 rounded-2xl p-4 sm:p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="flex items-start gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-800 border border-amber-300 flex items-center justify-center shrink-0">
-              <Clock className="w-6 h-6 animate-pulse text-amber-700" />
+            <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-900 border border-amber-300 flex items-center justify-center shrink-0">
+              <Clock className="w-6 h-6 text-amber-800" />
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="text-sm font-bold text-stone-900">
-                  Ombi la Uhakiki Linasubiri Ukaguzi
+                  Ada ya Uchakataji Inahitajika (TSh 5,000)
                 </h4>
-                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 inline-flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> Inasubiri Uhakiki
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> Ada ya Uchakataji
                 </span>
               </div>
               <p className="text-xs text-stone-600 leading-relaxed max-w-xl">
-                Ombi lako la tarehe <strong>{formattedDate(verification?.submittedAt)}</strong> kama <strong>{typeConfig?.labelSwahili || 'Mfugaji'}</strong> limepokelewa na linakaguliwa na wasimamizi wa Ufugaji Update.
+                Maombi yako yamewasilishwa. Ili kuingia kwenye foleni ya ukaguzi wa kiutawala, kamilisha ada ya uchakataji ya <strong>TSh 5,000 (Processing Fee)</strong>.
+              </p>
+              <div className="text-[11px] text-amber-800 bg-amber-50 rounded-xl px-3 py-1.5 border border-amber-200 inline-flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                <span>Ada hii ni ya ukaguzi wa taarifa na nyaraka; haimaanishi utoaji wa beji moja kwa moja.</span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onApply}
+            className="self-start sm:self-center px-4 py-2.5 bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 transition-colors cursor-pointer shrink-0 min-h-[44px]"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>Kamilisha / Lipia Ada</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. PAYMENT CONFIRMED / SUBMITTED STATE
+  if (status === 'PAYMENT_CONFIRMED' || status === 'SUBMITTED' || status === 'PENDING_VERIFICATION') {
+    return (
+      <div className="bg-gradient-to-br from-indigo-50/80 via-white to-indigo-50/40 border border-indigo-200 rounded-2xl p-4 sm:p-5 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-indigo-100 text-indigo-800 border border-indigo-300 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-6 h-6 text-indigo-700" />
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-bold text-stone-900">
+                  Ada Imepokelewa — Foleni ya Ukaguzi
+                </h4>
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-300 inline-flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> Inasubiri Ukaguzi
+                </span>
+              </div>
+              <p className="text-xs text-stone-600 leading-relaxed max-w-xl">
+                Malipo ya ada ya uchakataji yamekamilika. Maombi yako namba <strong>{verification?.applicationNumber || ''}</strong> yameingia kwenye foleni rasmi ya ukaguzi wa wasimamizi.
               </p>
               <div className="text-[11px] text-stone-500 bg-stone-100/80 rounded-xl px-3 py-1.5 border border-stone-200 inline-flex items-center gap-1.5">
                 <Info className="w-3.5 h-3.5 text-stone-500 shrink-0" />
-                <span>Bidhaa zako zitaendelea kuonekana sokoni wakati uhakiki unakamilishwa.</span>
+                <span>Bidhaa zako zitaendelea kuonekana sokoni kawaida wakati uhakiki unakamilishwa.</span>
               </div>
             </div>
           </div>
@@ -128,14 +169,14 @@ export const SellerVerificationStatusCard: React.FC<SellerVerificationStatusCard
             onClick={onApply}
             className="self-start sm:self-center px-3 py-2 bg-stone-100 hover:bg-stone-200 border border-stone-300 text-stone-700 text-xs font-semibold rounded-xl transition-colors cursor-pointer shrink-0 min-h-[40px]"
           >
-            Tazama / Hariri Ombi
+            Tazama Taarifa
           </button>
         </div>
       </div>
     );
   }
 
-  // 3. UNDER REVIEW STATE
+  // 4. UNDER REVIEW STATE
   if (status === 'UNDER_REVIEW') {
     return (
       <div className="bg-gradient-to-br from-blue-50/80 via-white to-blue-50/40 border border-blue-300/80 rounded-2xl p-4 sm:p-5 shadow-xs">
@@ -153,7 +194,7 @@ export const SellerVerificationStatusCard: React.FC<SellerVerificationStatusCard
               </span>
             </div>
             <p className="text-xs text-stone-600 leading-relaxed max-w-xl">
-              Wasimamizi wetu wanakagua taarifa za biashara yako na kumbukumbu za uthibitisho. Uamuzi utatolewa punde.
+              Wasimamizi wetu wanakagua taarifa za biashara yako na nyaraka za uthibitisho. Uamuzi rasmi utatolewa punde.
             </p>
           </div>
         </div>
@@ -161,8 +202,8 @@ export const SellerVerificationStatusCard: React.FC<SellerVerificationStatusCard
     );
   }
 
-  // 4. VERIFIED STATE
-  if (status === 'VERIFIED') {
+  // 5. VERIFIED / APPROVED STATE
+  if (status === 'VERIFIED' || status === 'APPROVED' || verification?.hasActiveBadge || verification?.badgeStatus === 'ACTIVE') {
     return (
       <div className="bg-gradient-to-br from-emerald-50/90 via-white to-emerald-100/40 border border-emerald-300 rounded-2xl p-4 sm:p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -180,9 +221,9 @@ export const SellerVerificationStatusCard: React.FC<SellerVerificationStatusCard
                 </span>
               </div>
               <p className="text-xs text-stone-700 leading-relaxed max-w-xl">
-                Duka lako na matangazo yako yote yanatambulika na yana beji rasmi ya uaminifu. 
+                Duka lako na matangazo yako yote yanatambulika na yana beji rasmi ya uaminifu wa jukwaa. 
                 {typeConfig ? ` Aina: ${typeConfig.labelSwahili}` : ''}
-                {verification?.reviewedAt ? ` • Tarehe ya Uhakiki: ${formattedDate(verification.reviewedAt)}` : ''}
+                {verification?.reviewedAt || verification?.badgeActivatedAt ? ` • Tarehe ya Uhakiki: ${formattedDate(verification.reviewedAt || verification.badgeActivatedAt)}` : ''}
               </p>
             </div>
           </div>
@@ -196,7 +237,7 @@ export const SellerVerificationStatusCard: React.FC<SellerVerificationStatusCard
     );
   }
 
-  // 5. REJECTED STATE
+  // 6. REJECTED STATE
   if (status === 'REJECTED') {
     return (
       <div className="bg-gradient-to-br from-rose-50/90 via-white to-rose-100/30 border border-rose-300 rounded-2xl p-4 sm:p-5 shadow-xs">
@@ -215,7 +256,7 @@ export const SellerVerificationStatusCard: React.FC<SellerVerificationStatusCard
                 </span>
               </div>
               <p className="text-xs text-stone-700 leading-relaxed max-w-xl">
-                Sababu kutoka kwa msimamizi: <strong>"{verification?.rejectionReason || 'Taarifa za uthibitisho hazikukamilika.'}"</strong>
+                Sababu kutoka kwa msimamizi: <strong>"{verification?.safeRejectionReason || (verification as any)?.rejectionReason || 'Taarifa za uthibitisho hazikukamilika.'}"</strong>
               </p>
               <p className="text-[11px] text-stone-500">
                 Unaweza kurekebisha taarifa zako na kutuma ombi jipya wakati wowote.

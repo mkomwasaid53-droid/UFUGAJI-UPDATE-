@@ -837,3 +837,5 @@ export async function dispatchAppealDecisionNotification(params: {
     actionUrl: '/market'
   });
 }
+
+export const emitAppNotification = createAuthoritativeNotification;
