@@ -48,7 +48,8 @@ export type NotificationType =
   | 'VERIFICATION_BADGE_ACTIVATED'
   | 'VERIFICATION_BADGE_DEACTIVATED'
   | 'VERIFICATION_REVERIFICATION_REQUIRED'
-  | 'VERIFICATION_SUSPENDED';
+  | 'VERIFICATION_SUSPENDED'
+  | 'MARKETPLACE_MESSAGE_RECEIVED';
 
 export type NotificationPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 
@@ -63,6 +64,7 @@ export type NotificationTargetType =
   | 'WARNING'
   | 'RESTRICTION'
   | 'CATEGORY'
+  | 'CONVERSATION'
   | 'SYSTEM';
 
 export interface AppNotification {

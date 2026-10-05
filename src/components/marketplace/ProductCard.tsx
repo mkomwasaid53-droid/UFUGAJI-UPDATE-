@@ -17,6 +17,7 @@ import {
   Edit3,
   Trash2,
   PhoneCall,
+  MessageSquare,
   CheckCircle2,
   Power,
   Layers,
@@ -479,9 +480,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <button
               type="button"
               onClick={() => onContact(product)}
-              className="py-2 px-3 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition-colors cursor-pointer min-h-[38px]"
+              title="Wasiliana na muuzaji kupitia Ujumbe wa Gulio"
+              className="py-2 px-3 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[38px]"
             >
-              <PhoneCall className="w-3.5 h-3.5" />
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-200" />
               <span>Wasiliana</span>
             </button>
           )

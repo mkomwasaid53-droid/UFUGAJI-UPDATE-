@@ -23,6 +23,7 @@ import {
   ShieldAlert,
   PhoneCall,
   MessageCircle,
+  MessageSquare,
   Package,
   Calendar,
   AlertCircle,
@@ -58,6 +59,7 @@ interface ProductDetailModalProps {
   onOpenShop?: (sellerId: string) => void;
   onOpenShopCatalogue?: (sellerId: string, catalogueId?: string | null, productId?: string) => void;
   onProductUpdated?: (updatedProduct: MarketplaceProduct) => void;
+  onContactSeller?: (product: MarketplaceProduct) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -67,7 +69,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onEdit,
   onOpenShop,
   onOpenShopCatalogue,
-  onProductUpdated
+  onProductUpdated,
+  onContactSeller
 }) => {
   const [currentProduct, setCurrentProduct] = useState<MarketplaceProduct | null>(product || null);
 
@@ -1469,26 +1472,39 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               </button>
             </div>
           ) : (
-            <div className="flex w-full flex-col sm:flex-row gap-2">
+            <div className="flex w-full flex-col gap-2.5">
+              {/* PRIMARY INQUIRY ACTION: Authenticated Marketplace Inbox (Requirement 1 & 14) */}
               <button
                 type="button"
-                onClick={handleCall}
-                disabled={!product.sellerPhone}
-                className="flex-1 py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer min-h-[44px]"
+                onClick={() => onContactSeller && onContactSeller(product)}
+                className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer min-h-[46px]"
               >
-                <PhoneCall className="w-4 h-4" />
-                <span>Piga Simu ({product.sellerPhone || 'Imehifadhiwa'})</span>
+                <MessageSquare className="w-4 h-4 text-emerald-200" />
+                <span>💬 Wasiliana na Muuzaji</span>
               </button>
 
-              <button
-                type="button"
-                onClick={handleWhatsApp}
-                disabled={!product.sellerPhone}
-                className="flex-1 py-2.5 px-4 bg-teal-800 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer min-h-[44px]"
-              >
-                <MessageCircle className="w-4 h-4 text-emerald-300" />
-                <span>Tuma WhatsApp</span>
-              </button>
+              {/* SECONDARY CONTACT OPTIONS */}
+              <div className="flex w-full flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={handleCall}
+                  disabled={!product.sellerPhone}
+                  className="flex-1 py-2 px-3 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-800 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
+                >
+                  <PhoneCall className="w-3.5 h-3.5 text-stone-600" />
+                  <span>Piga Simu ({product.sellerPhone || 'Imehifadhiwa'})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleWhatsApp}
+                  disabled={!product.sellerPhone}
+                  className="flex-1 py-2 px-3 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-800 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-teal-700" />
+                  <span>WhatsApp (Sekondari)</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

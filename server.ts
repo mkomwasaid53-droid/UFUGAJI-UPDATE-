@@ -87,6 +87,10 @@ import {
   initVerificationStorage
 } from './src/services/sellerVerificationService';
 import {
+  marketplaceInboxService,
+  initInboxStorage
+} from './src/services/marketplaceInboxService';
+import {
   VERIFICATION_FEE_CONFIG,
   getSellerVerificationDisplay
 } from './src/types/sellerVerification';
@@ -130,6 +134,9 @@ if (!fs.existsSync(TEMP_VIDEO_DIR)) {
 
 // Authoritative verification persistent storage initialization (V1.11A-CORRECTIVE-1)
 initVerificationStorage(fs, path);
+
+// Authoritative marketplace inbox storage initialization (V1.11B)
+initInboxStorage(fs, path);
 
 // Persistent marketplace products storage helpers
 function readMarketplaceProductsFromDisk(): any[] {
@@ -6166,6 +6173,157 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
       return res.json(result);
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Hitilafu ya kuchakata callback ya malipo' });
+    }
+  });
+
+  // ============================================================================
+  // MARKETPLACE INBOX API (V1.11B — Buyer <-> Seller <-> Product Conversation)
+  // ============================================================================
+
+  // 1. Create or get existing conversation (Idempotent)
+  app.post('/api/marketplace/inbox/conversations', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.callerUserId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo. Tafadhali ingia ili uweze kuwasiliana na muuzaji.' });
+      }
+
+      const input = req.body;
+      let injectedProduct: any = undefined;
+      if (input.productId) {
+        try {
+          const prods = readMarketplaceProductsFromDisk();
+          injectedProduct = prods.find((p: any) => p && p.productId === input.productId);
+        } catch {}
+      }
+      const result = await marketplaceInboxService.getOrCreateConversation(input, callerUserId, injectedProduct);
+      return res.json(result);
+    } catch (err: any) {
+      const status = err.message?.includes('Huruhusiwi') || err.message?.includes('Huwezi') ? 403 : 400;
+      return res.status(status).json({ error: err.message || 'Hitilafu ya kuanzisha mazungumzo' });
+    }
+  });
+
+  // 2. Get user conversations (Scoped to caller)
+  app.get('/api/marketplace/inbox/conversations', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const role = req.query.role as 'BUYER' | 'SELLER' | undefined;
+      const conversations = await marketplaceInboxService.getConversationsForUser(callerUserId, role);
+      return res.json(conversations);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Hitilafu ya kupakia mazungumzo' });
+    }
+  });
+
+  // 3. Get single conversation by ID (Participant authorized)
+  app.get('/api/marketplace/inbox/conversations/:id', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+      const conv = await marketplaceInboxService.getConversationById(req.params.id, callerUserId, isAdmin);
+      if (!conv) {
+        return res.status(404).json({ error: 'Mazungumzo hayajapatikana.' });
+      }
+      return res.json(conv);
+    } catch (err: any) {
+      const status = err.message?.includes('Huruhusiwi') ? 403 : 500;
+      return res.status(status).json({ error: err.message });
+    }
+  });
+
+  // 4. Get messages for a conversation (Participant authorized)
+  app.get('/api/marketplace/inbox/conversations/:id/messages', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+      const messages = await marketplaceInboxService.getMessagesForConversation(req.params.id, callerUserId, isAdmin);
+      return res.json(messages);
+    } catch (err: any) {
+      const status = err.message?.includes('Huruhusiwi') ? 403 : 500;
+      return res.status(status).json({ error: err.message });
+    }
+  });
+
+  // 5. Send message (Participant authorized)
+  app.post('/api/marketplace/inbox/conversations/:id/messages', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.senderUserId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+      const message = await marketplaceInboxService.sendMessage(
+        {
+          conversationId: req.params.id,
+          senderUserId: callerUserId,
+          text: req.body.text
+        },
+        callerUserId,
+        isAdmin
+      );
+      return res.json(message);
+    } catch (err: any) {
+      const status = err.message?.includes('Huruhusiwi') || err.message?.includes('yamezuiwa') ? 403 : 400;
+      return res.status(status).json({ error: err.message });
+    }
+  });
+
+  // 6. Mark conversation as read (Participant authorized)
+  app.post('/api/marketplace/inbox/conversations/:id/read', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.callerUserId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const updated = await marketplaceInboxService.markConversationAsRead(req.params.id, callerUserId);
+      return res.json(updated);
+    } catch (err: any) {
+      const status = err.message?.includes('Huruhusiwi') ? 403 : 500;
+      return res.status(status).json({ error: err.message });
+    }
+  });
+
+  // 7. Update conversation status (ACTIVE, CLOSED, BLOCKED)
+  app.patch('/api/marketplace/inbox/conversations/:id/status', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.callerUserId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+      const updated = await marketplaceInboxService.updateConversationStatus(
+        req.params.id,
+        req.body.status,
+        callerUserId,
+        isAdmin
+      );
+      return res.json(updated);
+    } catch (err: any) {
+      const status = err.message?.includes('Huruhusiwi') ? 403 : 500;
+      return res.status(status).json({ error: err.message });
     }
   });
 

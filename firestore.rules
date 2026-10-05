@@ -651,5 +651,47 @@ service cloud.firestore {
       allow read: if true; // Public trust signal
       allow write: if isAdmin();
     }
+
+    // ========================================================================
+    // 5. MARKETPLACE INBOX (V1.11B: Private Buyer <-> Seller Conversations)
+    // ========================================================================
+
+    match /marketplaceConversations/{conversationId} {
+      // Strictly participant-only read: Only the authenticated buyer, seller, or admin can read
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        (resource != null && (resource.data.buyerUserId == request.auth.uid || resource.data.sellerUserId == request.auth.uid))
+      );
+
+      // Create conversation: Buyer can create only for themselves and cannot self-deal
+      allow create: if isAuthenticated() &&
+        request.resource.data.buyerUserId == request.auth.uid &&
+        request.resource.data.buyerUserId != request.resource.data.sellerUserId;
+
+      // Update: Only participants can update read status or lifecycle state
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        (resource != null && (resource.data.buyerUserId == request.auth.uid || resource.data.sellerUserId == request.auth.uid))
+      );
+
+      // Delete: Strictly administrators only
+      allow delete: if isAdmin();
+    }
+
+    match /marketplaceMessages/{messageId} {
+      // Read: Authenticated participant or admin only
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        (resource != null && (resource.data.senderUserId == request.auth.uid || resource.data.recipientUserId == request.auth.uid))
+      );
+
+      // Create: Authenticated sender can create messages only under their own identity
+      allow create: if isAuthenticated() &&
+        request.resource.data.senderUserId == request.auth.uid;
+
+      // Update / Delete: Strictly administrators only (immutable chat audit)
+      allow update, delete: if isAdmin();
+    }
   }
 }
+

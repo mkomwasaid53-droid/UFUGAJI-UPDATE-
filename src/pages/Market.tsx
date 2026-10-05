@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   MarketplaceProduct,
@@ -43,6 +44,8 @@ import { ShopDiscoveryView } from '../components/marketplace/ShopDiscoveryView';
 import { VisualMarketplaceSearchModal } from '../components/marketplace/VisualMarketplaceSearchModal';
 import { SellerVerificationModal } from '../components/marketplace/SellerVerificationModal';
 import { FreeTrialActivationModal } from '../components/marketplace/FreeTrialActivationModal';
+import { MarketplaceInboxView } from '../components/marketplace/MarketplaceInboxView';
+import { marketplaceInboxService } from '../services/marketplaceInboxService';
 import { SellerVerification } from '../types/sellerVerification';
 import { sellerVerificationService } from '../services/sellerVerificationService';
 import {
@@ -79,7 +82,8 @@ import {
   Camera,
   Shield,
   ShieldCheck,
-  Clock
+  Clock,
+  MessageSquare
 } from 'lucide-react';
 
 export const Market: React.FC = () => {
@@ -101,8 +105,13 @@ export const Market: React.FC = () => {
   const [allCataloguesMap, setAllCataloguesMap] = useState<Record<string, ShopCatalogue[]>>({});
   const [isLoading, setIsLoading] = useState(true);
 
-  // Main Page View Mode: 'marketplace' | 'my_shop' | 'buyer_shop'
-  const [currentView, setCurrentView] = useState<'marketplace' | 'my_shop' | 'buyer_shop'>('marketplace');
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  // Main Page View Mode: 'marketplace' | 'my_shop' | 'buyer_shop' | 'inbox'
+  const [currentView, setCurrentView] = useState<'marketplace' | 'my_shop' | 'buyer_shop' | 'inbox'>('marketplace');
+  const [inboxConversationId, setInboxConversationId] = useState<string | null>(null);
+  const [inboxUnreadCount, setInboxUnreadCount] = useState<number>(0);
 
   // Sub-tab when on marketplace: 'products' | 'shops'
   const [activeMarketTab, setActiveMarketTab] = useState<'products' | 'shops'>('products');
@@ -168,6 +177,81 @@ export const Market: React.FC = () => {
       setSellerProfile(authSellerProfile);
     }
   }, [authSellerProfile]);
+
+  // Synchronize URL search params (e.g. ?tab=inbox or ?conv=xyz)
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    const conv = searchParams.get('conv');
+    if (tab === 'inbox' || conv) {
+      setCurrentView('inbox');
+      if (conv) setInboxConversationId(conv);
+    }
+  }, [searchParams]);
+
+  // Load and periodically refresh inbox unread count for current user
+  useEffect(() => {
+    if (!user?.uid) {
+      setInboxUnreadCount(0);
+      return;
+    }
+    const loadUnread = async () => {
+      try {
+        const convs = await marketplaceInboxService.getConversationsForUser(user.uid);
+        const total = convs.reduce((sum, c) => {
+          const unread = c.buyerUserId === user.uid ? c.buyerUnreadCount : c.sellerUnreadCount;
+          return sum + (unread || 0);
+        }, 0);
+        setInboxUnreadCount(total);
+      } catch {
+        // Ignore background polling errors
+      }
+    };
+    loadUnread();
+    const interval = setInterval(loadUnread, 15000);
+    return () => clearInterval(interval);
+  }, [user?.uid]);
+
+  // PRIMARY INQUIRY ACTION: Authenticated Marketplace Conversation Handler (V1.11B)
+  const handleStartConversation = async (product: MarketplaceProduct) => {
+    if (!user?.uid) {
+      showNotification('warning', 'Hujaingia kwenye mfumo. Tafadhali ingia ili uweze kuwasiliana na muuzaji.');
+      navigate('/login');
+      return;
+    }
+
+    if (user.uid === product.sellerId) {
+      showNotification('info', 'Huwezi kuanzisha mazungumzo na wewe mwenyewe (Hili ni tangazo lako).');
+      return;
+    }
+
+    try {
+      const { conversation } = await marketplaceInboxService.getOrCreateConversation(
+        {
+          buyerUserId: user.uid,
+          sellerUserId: product.sellerId,
+          shopId: product.shopId || product.sellerId,
+          productId: product.productId,
+          listingId: product.productId,
+          productTitleSnapshot: product.title,
+          listingTitleSnapshot: product.title,
+          categoryId: product.category,
+          priceSnapshot: product.price,
+          currencySnapshot: product.currency || 'Tsh',
+          imageUrlSnapshot: product.imageUrl,
+          sellerNameSnapshot: product.sellerBusinessName || product.sellerName || 'Muuzaji',
+          buyerNameSnapshot: profile?.displayName || user.displayName || 'Mnunuzi',
+        },
+        user.uid,
+        product
+      );
+
+      setViewingProduct(null);
+      setInboxConversationId(conversation.conversationId);
+      setCurrentView('inbox');
+    } catch (err: any) {
+      showNotification('error', err.message || 'Hitilafu ya kuanzisha mawasiliano na muuzaji.');
+    }
+  };
 
   // Load products, shop & catalogues
   const loadData = async () => {
@@ -741,7 +825,7 @@ export const Market: React.FC = () => {
           }}
           onDeleteProduct={(p) => setProductToDelete(p)}
           onToggleProductStatus={handleToggleStatus}
-          onContactSeller={(p) => setViewingProduct(p)}
+          onContactSeller={handleStartConversation}
           onEditShop={() => setIsShopEditModalOpen(true)}
         />
       )}
@@ -818,6 +902,43 @@ export const Market: React.FC = () => {
             }}
             onTogglePublishShop={handleTogglePublishShop}
             onMoveProductCatalogue={handleMoveProductCatalogue}
+          />
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* VIEW 4: MARKETPLACE INBOX (Ujumbe wa Gulio - V1.11B) */}
+      {/* ========================================================================= */}
+      {currentView === 'inbox' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setInboxConversationId(null);
+                setCurrentView('marketplace');
+              }}
+              className="py-2 px-3.5 bg-white hover:bg-stone-100 border border-stone-200 text-stone-800 text-xs sm:text-sm font-bold rounded-xl inline-flex items-center gap-2 shadow-2xs transition-colors cursor-pointer min-h-[40px]"
+            >
+              <ArrowLeft className="w-4 h-4 text-stone-600" />
+              <span>Rudi Kwenye Soko Kuu (Gulio)</span>
+            </button>
+          </div>
+
+          <MarketplaceInboxView
+            currentUserId={user?.uid || ''}
+            isSeller={hasSellerCapability}
+            initialConversationId={inboxConversationId}
+            onViewProduct={(productId) => {
+              const found = products.find((p) => p.productId === productId);
+              if (found) {
+                setViewingProduct(found);
+              }
+            }}
+            onBackToMarket={() => {
+              setInboxConversationId(null);
+              setCurrentView('marketplace');
+            }}
           />
         </div>
       )}
@@ -918,16 +1039,38 @@ export const Market: React.FC = () => {
                       <span>Pata Beji ya Uhakiki</span>
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => setCurrentView('inbox')}
+                    className="py-2.5 px-3.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-400/50 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
+                  >
+                    <MessageSquare className="w-4 h-4 text-emerald-400" />
+                    <span>Ujumbe {inboxUnreadCount > 0 ? `(${inboxUnreadCount} mpya)` : 'wa Gulio'}</span>
+                  </button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={handlePrimarySellerAction}
-                  className="py-2.5 px-4 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer min-h-[44px]"
-                >
-                  <Store className="w-4 h-4 text-amber-200" />
-                  <span>Fungua Duka Lako la Kidijitali (Bure)</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={handlePrimarySellerAction}
+                    className="py-2.5 px-4 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer min-h-[44px]"
+                  >
+                    <Store className="w-4 h-4 text-amber-200" />
+                    <span>Fungua Duka Lako la Kidijitali (Bure)</span>
+                  </button>
+
+                  {user && (
+                    <button
+                      type="button"
+                      onClick={() => setCurrentView('inbox')}
+                      className="py-2.5 px-3.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
+                    >
+                      <MessageSquare className="w-4 h-4 text-emerald-300" />
+                      <span>Ujumbe {inboxUnreadCount > 0 ? `(${inboxUnreadCount} mpya)` : 'wa Gulio'}</span>
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -975,6 +1118,26 @@ export const Market: React.FC = () => {
                 >
                   <Store className="w-3.5 h-3.5 text-amber-700" />
                   <span>🏪 Duka Langu ({myProductsCount})</span>
+                </button>
+              )}
+
+              {user && (
+                <button
+                  type="button"
+                  onClick={() => setCurrentView('inbox')}
+                  className={`pb-3 px-3.5 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    currentView === 'inbox'
+                      ? 'border-emerald-700 text-emerald-900 font-extrabold'
+                      : 'border-transparent text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Ujumbe (Inbox)</span>
+                  {inboxUnreadCount > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-700 text-white font-bold animate-pulse">
+                      {inboxUnreadCount}
+                    </span>
+                  )}
                 </button>
               )}
             </div>
@@ -1268,7 +1431,7 @@ export const Market: React.FC = () => {
                         setIsFormModalOpen(true);
                       }}
                       onDelete={(p) => setProductToDelete(p)}
-                      onContact={(p) => setViewingProduct(p)}
+                      onContact={handleStartConversation}
                     />
                   ))}
                 </div>
@@ -1457,6 +1620,7 @@ export const Market: React.FC = () => {
           product={viewingProduct}
           onClose={() => setViewingProduct(null)}
           isOwner={user?.uid === viewingProduct.sellerId || isAdmin}
+          onContactSeller={handleStartConversation}
           onOpenShop={(sellerId) => {
             setViewingProduct(null);
             handleOpenBuyerShop(sellerId);

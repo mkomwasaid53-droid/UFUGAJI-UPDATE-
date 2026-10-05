@@ -17,7 +17,8 @@ import {
   Clock,
   Ban,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  MessageSquare
 } from 'lucide-react';
 import { AppNotification } from '../../types/notification';
 
@@ -71,6 +72,8 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
       case 'VERIFICATION_CORRECTION_REQUESTED':
       case 'VERIFICATION_REVERIFICATION_REQUIRED':
         return <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />;
+      case 'MARKETPLACE_MESSAGE_RECEIVED':
+        return <MessageSquare className="w-4 h-4 text-emerald-600 shrink-0" />;
       default:
         return <Info className="w-4 h-4 text-stone-500 shrink-0" />;
     }
