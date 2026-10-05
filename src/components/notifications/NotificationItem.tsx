@@ -73,7 +73,18 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
       case 'VERIFICATION_REVERIFICATION_REQUIRED':
         return <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />;
       case 'MARKETPLACE_MESSAGE_RECEIVED':
+      case 'MARKETPLACE_PAYMENT_REQUEST_CREATED':
         return <MessageSquare className="w-4 h-4 text-emerald-600 shrink-0" />;
+      case 'MARKETPLACE_PAYMENT_SUCCESS':
+        return <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />;
+      case 'MARKETPLACE_PAYMENT_FAILED':
+        return <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />;
+      case 'MARKETPLACE_PAYMENT_PROCESSING':
+        return <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />;
+      case 'MARKETPLACE_PAYMENT_CANCELLED':
+        return <Ban className="w-4 h-4 text-stone-500 shrink-0" />;
+      case 'MARKETPLACE_PAYMENT_EXPIRED':
+        return <Clock className="w-4 h-4 text-stone-400 shrink-0" />;
       default:
         return <Info className="w-4 h-4 text-stone-500 shrink-0" />;
     }

@@ -64,6 +64,7 @@ const LOCAL_CATALOGUES_KEY = 'ufugaji_shop_catalogues_cache';
 
 // Helper to get local cached products (always synced with authoritative moderation state)
 export function getLocalCachedProducts(): MarketplaceProduct[] {
+  if (typeof localStorage === 'undefined') return [];
   try {
     const raw = localStorage.getItem(LOCAL_PRODUCTS_CACHE_KEY);
     if (raw) {

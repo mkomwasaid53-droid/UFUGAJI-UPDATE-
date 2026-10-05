@@ -21,8 +21,14 @@ import {
   ExternalLink,
   ShieldAlert,
   Search,
-  AlertCircle
+  AlertCircle,
+  CreditCard
 } from 'lucide-react';
+import { MarketplacePaymentRequest } from '../../types/marketplacePaymentRequest';
+import { marketplacePaymentRequestService } from '../../services/marketplacePaymentRequestService';
+import { MarketplacePaymentRequestModal } from './MarketplacePaymentRequestModal';
+import { MarketplaceBuyerPayModal } from './MarketplaceBuyerPayModal';
+import { MarketplacePaymentRequestCard } from './MarketplacePaymentRequestCard';
 
 interface MarketplaceInboxViewProps {
   currentUserId: string;
@@ -43,6 +49,9 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
   const [conversations, setConversations] = useState<MarketplaceConversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<MarketplaceConversation | null>(null);
   const [messages, setMessages] = useState<MarketplaceMessage[]>([]);
+  const [paymentRequests, setPaymentRequests] = useState<MarketplacePaymentRequest[]>([]);
+  const [isPaymentRequestModalOpen, setIsPaymentRequestModalOpen] = useState(false);
+  const [activePaymentRequestForPay, setActivePaymentRequestForPay] = useState<MarketplacePaymentRequest | null>(null);
   const [inputText, setInputText] = useState('');
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -88,12 +97,19 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
     const loadMessages = async () => {
       try {
         setIsLoadingMessages(true);
-        const msgs = await marketplaceInboxService.getMessagesForConversation(
-          selectedConversation.conversationId,
-          currentUserId
-        );
+        const [msgs, reqs] = await Promise.all([
+          marketplaceInboxService.getMessagesForConversation(
+            selectedConversation.conversationId,
+            currentUserId
+          ),
+          marketplacePaymentRequestService
+            .listPaymentRequestsForConversation(selectedConversation.conversationId, currentUserId)
+            .catch(() => [])
+        ]);
+
         if (isMounted) {
           setMessages(msgs);
+          setPaymentRequests(reqs);
         }
 
         // Mark as read if user has unread messages
@@ -551,16 +567,30 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
                 </div>
               </div>
 
-              {onViewProduct && selectedConversation.productId && (
-                <button
-                  type="button"
-                  onClick={() => onViewProduct(selectedConversation.productId)}
-                  className="py-1.5 px-3 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
-                >
-                  <span>Tazama Tangazo</span>
-                  <ExternalLink className="w-3 h-3 text-stone-500" />
-                </button>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {selectedConversation.sellerUserId === currentUserId && (
+                  <button
+                    type="button"
+                    onClick={() => setIsPaymentRequestModalOpen(true)}
+                    className="py-1.5 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                    title="Tuma ombi la malipo kwa mnunuzi"
+                  >
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>Request Payment</span>
+                  </button>
+                )}
+
+                {onViewProduct && selectedConversation.productId && (
+                  <button
+                    type="button"
+                    onClick={() => onViewProduct(selectedConversation.productId)}
+                    className="py-1.5 px-3 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                  >
+                    <span>Tazama Tangazo</span>
+                    <ExternalLink className="w-3 h-3 text-stone-500" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* SAFETY ADVISORY NOTICE (Requirement 11) */}
@@ -636,6 +666,32 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
               ) : (
                 messages.map((msg) => {
                   const isMine = msg.senderUserId === currentUserId;
+
+                  // Render Payment Request Card if message is of type PAYMENT_REQUEST
+                  if (msg.messageType === 'PAYMENT_REQUEST' || msg.paymentRequestId) {
+                    const req =
+                      paymentRequests.find((r) => r.paymentRequestId === msg.paymentRequestId) ||
+                      msg.paymentRequestSnapshot;
+                    if (req) {
+                      return (
+                        <div key={msg.messageId} className="w-full my-1">
+                          <MarketplacePaymentRequestCard
+                            request={req}
+                            currentUserId={currentUserId}
+                            onPayClick={(r) => setActivePaymentRequestForPay(r)}
+                            onStatusUpdated={(updated) => {
+                              setPaymentRequests((prev) =>
+                                prev.map((item) =>
+                                  item.paymentRequestId === updated.paymentRequestId ? updated : item
+                                )
+                              );
+                            }}
+                          />
+                        </div>
+                      );
+                    }
+                  }
+
                   return (
                     <div
                       key={msg.messageId}
@@ -725,6 +781,44 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Payment Request Creation Modal (Verified Seller) */}
+      {selectedConversation && (
+        <MarketplacePaymentRequestModal
+          isOpen={isPaymentRequestModalOpen}
+          onClose={() => setIsPaymentRequestModalOpen(false)}
+          conversation={selectedConversation}
+          currentUserId={currentUserId}
+          onSuccess={async (newReq) => {
+            setPaymentRequests((prev) => [newReq, ...prev]);
+            try {
+              const latestMsgs = await marketplaceInboxService.getMessagesForConversation(
+                selectedConversation.conversationId,
+                currentUserId
+              );
+              setMessages(latestMsgs);
+            } catch {}
+          }}
+        />
+      )}
+
+      {/* Buyer Pay Modal */}
+      {activePaymentRequestForPay && (
+        <MarketplaceBuyerPayModal
+          isOpen={!!activePaymentRequestForPay}
+          onClose={() => setActivePaymentRequestForPay(null)}
+          paymentRequest={activePaymentRequestForPay}
+          currentUserId={currentUserId}
+          onPaymentSuccess={(updated) => {
+            setPaymentRequests((prev) =>
+              prev.map((item) =>
+                item.paymentRequestId === updated.paymentRequestId ? updated : item
+              )
+            );
+          }}
+        />
+      )}
     </div>
   );
 };
+

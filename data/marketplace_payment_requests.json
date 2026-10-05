@@ -1,0 +1,30 @@
+[
+  {
+    "paymentRequestId": "mpr_1791199783833_n7h74c",
+    "conversationId": "conv_1791199695471_xkuj0g",
+    "buyerUserId": "buyer_user_201",
+    "sellerUserId": "seller_verified_101",
+    "shopId": "shop_101",
+    "productId": "prod_cow_friesian_01",
+    "listingId": "prod_cow_friesian_01",
+    "amount": 100000,
+    "currency": "TZS",
+    "quantity": 1,
+    "unitPrice": 100000,
+    "totalAmount": 100000,
+    "productTitleSnapshot": "Ngombe",
+    "listingTitleSnapshot": "Ngombe",
+    "sellerNameSnapshot": "Muuzaji",
+    "buyerNameSnapshot": "Mnunuzi",
+    "status": "PENDING_PAYMENT",
+    "paymentReference": null,
+    "externalPaymentId": "UFUGAJI_MARKETPLACE_PAYMENT_mpr_1791199783833_n7h74c",
+    "paidAt": null,
+    "failureReason": null,
+    "cancelledAt": null,
+    "cancelledBy": null,
+    "expiresAt": "2026-10-08T11:29:43.833Z",
+    "createdAt": "2026-10-05T11:29:43.833Z",
+    "updatedAt": "2026-10-05T11:29:43.833Z"
+  }
+]

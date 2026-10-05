@@ -1,123 +1,259 @@
 {
   "records": {
-    "seller_sim_grace_test": {
-      "sellerUserId": "seller_sim_grace_test",
-      "sellerProfileId": "seller_sim_grace_test",
-      "status": "GRACE_PERIOD",
+    "s1": {
+      "sellerUserId": "s1",
+      "sellerProfileId": "p1",
+      "status": "TRIAL_ACTIVE",
       "plan": "SELLER_MONTHLY",
       "price": 1000,
       "currency": "TZS",
-      "trialStartAt": "2026-09-30T10:51:34.540Z",
-      "trialEndAt": "2026-10-30T10:51:34.540Z",
-      "graceStartAt": "2026-09-30T10:51:34.560Z",
-      "graceEndAt": "2026-10-07T10:51:34.560Z",
+      "trialStartAt": "2026-10-05T10:29:15.826Z",
+      "trialEndAt": "2026-11-04T10:29:15.826Z",
+      "graceStartAt": "2026-11-04T10:29:15.826Z",
+      "graceEndAt": "2026-11-11T10:29:15.826Z",
       "currentPeriodStartAt": null,
       "currentPeriodEndAt": null,
-      "activatedAt": "2026-09-30T10:51:34.540Z",
+      "activatedAt": "2026-10-05T10:29:15.826Z",
       "lastPaymentAt": null,
       "lastPaymentStatus": "NOT_REQUIRED",
-      "nextRenewalAt": "2026-10-30T10:51:34.540Z",
+      "nextRenewalAt": "2026-11-04T10:29:15.826Z",
       "expiredAt": null,
       "cancelledAt": null,
       "suspendedAt": null,
       "suspendedReason": null,
       "hasHadTrial": true,
-      "testSimulation": true,
-      "version": 3,
+      "testSimulation": false,
+      "version": 2,
       "emittedTransitions": [
-        "dedup_seller_sim_grace_test_seller_sim_grace_test_TRIAL_2026-09-30T10_51_34_540Z_SELLER_TRIAL_STARTE",
-        "dedup_seller_sim_grace_test_seller_sim_grace_test_SIMULATE_GRACE_2026-09-30T10_51_34_560Z_SELLER_GRA",
-        "dedup_seller_sim_grace_test_seller_sim_grace_test_SIMULATE_GRACE_2026-09-30T10_51_34_560Z_SELLER_PAY"
+        "dedup_SELLER_TRIAL_STARTED_s1_s1_TRIAL_2026-10-05T10_29_15_826Z"
       ],
-      "createdAt": "2026-09-30T10:51:34.540Z",
-      "updatedAt": "2026-09-30T10:51:34.560Z",
-      "lastLifecycleAction": "SIMULATE_GRACE",
-      "lastLifecycleActionAt": "2026-09-30T10:51:34.560Z",
-      "lastLifecycleActionBy": "admin_user_01"
+      "createdAt": "2026-10-05T10:29:15.826Z",
+      "updatedAt": "2026-10-05T10:29:15.826Z",
+      "lastLifecycleAction": "ACTIVATE_TRIAL",
+      "lastLifecycleActionAt": "2026-10-05T10:29:15.826Z",
+      "lastLifecycleActionBy": "s1"
+    },
+    "seller_1": {
+      "sellerUserId": "seller_1",
+      "sellerProfileId": "prof_1",
+      "status": "TRIAL_ACTIVE",
+      "plan": "SELLER_MONTHLY",
+      "price": 1000,
+      "currency": "TZS",
+      "trialStartAt": "2026-10-05T11:27:49.004Z",
+      "trialEndAt": "2026-11-04T11:27:49.004Z",
+      "graceStartAt": "2026-11-04T11:27:49.004Z",
+      "graceEndAt": "2026-11-11T11:27:49.004Z",
+      "currentPeriodStartAt": null,
+      "currentPeriodEndAt": null,
+      "activatedAt": "2026-10-05T11:27:49.004Z",
+      "lastPaymentAt": null,
+      "lastPaymentStatus": "NOT_REQUIRED",
+      "nextRenewalAt": "2026-11-04T11:27:49.004Z",
+      "expiredAt": null,
+      "cancelledAt": null,
+      "suspendedAt": null,
+      "suspendedReason": null,
+      "hasHadTrial": true,
+      "testSimulation": false,
+      "version": 2,
+      "emittedTransitions": [
+        "dedup_SELLER_TRIAL_STARTED_seller_1_seller_1_TRIAL_2026-10-05T11_27_49_004Z"
+      ],
+      "createdAt": "2026-10-05T11:27:49.004Z",
+      "updatedAt": "2026-10-05T11:27:49.004Z",
+      "lastLifecycleAction": "ACTIVATE_TRIAL",
+      "lastLifecycleActionAt": "2026-10-05T11:27:49.004Z",
+      "lastLifecycleActionBy": "seller_1"
+    },
+    "seller_verified_101": {
+      "sellerUserId": "seller_verified_101",
+      "sellerProfileId": "profile_seller_verified_101",
+      "status": "TRIAL_ACTIVE",
+      "plan": "SELLER_MONTHLY",
+      "price": 1000,
+      "currency": "TZS",
+      "trialStartAt": "2026-10-05T11:28:15.441Z",
+      "trialEndAt": "2026-11-04T11:28:15.441Z",
+      "graceStartAt": "2026-11-04T11:28:15.441Z",
+      "graceEndAt": "2026-11-11T11:28:15.441Z",
+      "currentPeriodStartAt": null,
+      "currentPeriodEndAt": null,
+      "activatedAt": "2026-10-05T11:28:15.441Z",
+      "lastPaymentAt": null,
+      "lastPaymentStatus": "NOT_REQUIRED",
+      "nextRenewalAt": "2026-11-04T11:28:15.441Z",
+      "expiredAt": null,
+      "cancelledAt": null,
+      "suspendedAt": null,
+      "suspendedReason": null,
+      "hasHadTrial": true,
+      "testSimulation": false,
+      "version": 2,
+      "emittedTransitions": [
+        "dedup_SELLER_TRIAL_STARTED_seller_verified_101_seller_verified_101_TRIAL_2026-10-05T11_28_15_441Z"
+      ],
+      "createdAt": "2026-10-05T11:28:15.441Z",
+      "updatedAt": "2026-10-05T11:28:15.441Z",
+      "lastLifecycleAction": "ACTIVATE_TRIAL",
+      "lastLifecycleActionAt": "2026-10-05T11:28:15.441Z",
+      "lastLifecycleActionBy": "seller_verified_101"
     }
   },
   "auditLogs": [
     {
-      "id": "audit_sm_1790765494560_a977l",
-      "sellerUserId": "seller_sim_grace_test",
-      "eventType": "SELLER_GRACE_STARTED",
-      "previousStatus": "TRIAL_ACTIVE",
-      "newStatus": "GRACE_PERIOD",
-      "performedBy": "admin_user_01",
-      "timestamp": "2026-09-30T10:51:34.560Z",
-      "reason": "[ADMIN SIMULATION] Kipindi cha Grace kimeanzishwa rasmi na msimamizi kwa ajili ya majaribio."
-    },
-    {
-      "id": "audit_sm_1790765494560_u42wf",
-      "sellerUserId": "seller_sim_grace_test",
-      "eventType": "SELLER_TRIAL_EXPIRED",
-      "previousStatus": "TRIAL_ACTIVE",
-      "newStatus": "GRACE_PERIOD",
-      "performedBy": "admin_user_01",
-      "timestamp": "2026-09-30T10:51:34.560Z",
-      "reason": "[ADMIN SIMULATION] Kipindi cha mwezi mmoja cha bure kimehitimishwa kwa jaribio la utawala."
-    },
-    {
-      "id": "audit_sm_1790765494544_xk076",
-      "sellerUserId": "seller_sim_grace_test",
+      "id": "audit_sm_1791199695446_fqdz9",
+      "sellerUserId": "seller_verified_101",
       "eventType": "SELLER_TRIAL_STARTED",
       "previousStatus": "NOT_ACTIVATED",
       "newStatus": "TRIAL_ACTIVE",
-      "performedBy": "seller_sim_grace_test",
-      "timestamp": "2026-09-30T10:51:34.544Z",
-      "reason": "Jaribio la mwezi wa kwanza bila malipo limeanza hadi 2026-10-30T10:51:34.540Z."
+      "performedBy": "seller_verified_101",
+      "timestamp": "2026-10-05T11:28:15.446Z",
+      "reason": "Jaribio la mwezi wa kwanza bila malipo limeanza hadi 2026-11-04T11:28:15.441Z. Command: cmd_act_1791199695440_42ife6",
+      "metadata": {
+        "commandId": "cmd_act_1791199695440_42ife6",
+        "entryPoint": "SELLER_MAIN_CTA"
+      }
     },
     {
-      "id": "audit_sm_1790765494544_fdii3",
-      "sellerUserId": "seller_sim_grace_test",
+      "id": "audit_sm_1791199695446_ovhxz",
+      "sellerUserId": "seller_verified_101",
       "eventType": "SELLER_MONETIZATION_ACTIVATED",
       "previousStatus": "NOT_ACTIVATED",
       "newStatus": "TRIAL_ACTIVE",
-      "performedBy": "seller_sim_grace_test",
-      "timestamp": "2026-09-30T10:51:34.544Z",
-      "reason": "Usajili wa muuzaji umewashwa kwa mara ya kwanza."
+      "performedBy": "seller_verified_101",
+      "timestamp": "2026-10-05T11:28:15.446Z",
+      "reason": "Usajili wa muuzaji umewashwa kwa mara ya kwanza kupitia SELLER_MAIN_CTA.",
+      "metadata": {
+        "commandId": "cmd_act_1791199695440_42ife6",
+        "entryPoint": "SELLER_MAIN_CTA"
+      }
+    },
+    {
+      "id": "audit_sm_1791199669009_5uroc",
+      "sellerUserId": "seller_1",
+      "eventType": "SELLER_TRIAL_STARTED",
+      "previousStatus": "NOT_ACTIVATED",
+      "newStatus": "TRIAL_ACTIVE",
+      "performedBy": "seller_1",
+      "timestamp": "2026-10-05T11:27:49.009Z",
+      "reason": "Jaribio la mwezi wa kwanza bila malipo limeanza hadi 2026-11-04T11:27:49.004Z. Command: cmd_act_1791199669003_4yca4x",
+      "metadata": {
+        "commandId": "cmd_act_1791199669003_4yca4x",
+        "entryPoint": "SELLER_MAIN_CTA"
+      }
+    },
+    {
+      "id": "audit_sm_1791199669008_bx0k4",
+      "sellerUserId": "seller_1",
+      "eventType": "SELLER_MONETIZATION_ACTIVATED",
+      "previousStatus": "NOT_ACTIVATED",
+      "newStatus": "TRIAL_ACTIVE",
+      "performedBy": "seller_1",
+      "timestamp": "2026-10-05T11:27:49.008Z",
+      "reason": "Usajili wa muuzaji umewashwa kwa mara ya kwanza kupitia SELLER_MAIN_CTA.",
+      "metadata": {
+        "commandId": "cmd_act_1791199669003_4yca4x",
+        "entryPoint": "SELLER_MAIN_CTA"
+      }
+    },
+    {
+      "id": "audit_sm_1791196155831_35voa",
+      "sellerUserId": "s1",
+      "eventType": "SELLER_TRIAL_STARTED",
+      "previousStatus": "NOT_ACTIVATED",
+      "newStatus": "TRIAL_ACTIVE",
+      "performedBy": "s1",
+      "timestamp": "2026-10-05T10:29:15.831Z",
+      "reason": "Jaribio la mwezi wa kwanza bila malipo limeanza hadi 2026-11-04T10:29:15.826Z. Command: cmd_act_1791196155825_39uam8",
+      "metadata": {
+        "commandId": "cmd_act_1791196155825_39uam8",
+        "entryPoint": "SELLER_MAIN_CTA"
+      }
+    },
+    {
+      "id": "audit_sm_1791196155830_7tgws",
+      "sellerUserId": "s1",
+      "eventType": "SELLER_MONETIZATION_ACTIVATED",
+      "previousStatus": "NOT_ACTIVATED",
+      "newStatus": "TRIAL_ACTIVE",
+      "performedBy": "s1",
+      "timestamp": "2026-10-05T10:29:15.830Z",
+      "reason": "Usajili wa muuzaji umewashwa kwa mara ya kwanza kupitia SELLER_MAIN_CTA.",
+      "metadata": {
+        "commandId": "cmd_act_1791196155825_39uam8",
+        "entryPoint": "SELLER_MAIN_CTA"
+      }
     }
   ],
   "diagnosticLogs": [
     {
-      "id": "diag_1790765494561_ui6kh",
-      "sellerUserId": "seller_sim_grace_test",
-      "previousStatus": "TRIAL_ACTIVE",
-      "nextStatus": "GRACE_PERIOD",
-      "transitionId": "seller_sim_grace_test_SIMULATE_GRACE_2026-09-30T10:51:34.560Z",
-      "action": "SIMULATE_GRACE",
-      "source": "ADMIN_ACTION",
-      "actorUserId": "admin_user_01",
-      "timestamp": "2026-09-30T10:51:34.561Z",
-      "notificationEventIds": [
-        "dedup_seller_sim_grace_test_seller_sim_grace_test_SIMULATE_GRACE_2026-09-30T10_51_34_560Z_SELLER_GRA",
-        "dedup_seller_sim_grace_test_seller_sim_grace_test_SIMULATE_GRACE_2026-09-30T10_51_34_560Z_SELLER_PAY"
-      ],
-      "metadata": {
-        "plan": "SELLER_MONTHLY",
-        "hasHadTrial": true,
-        "testSimulation": true,
-        "version": 3
-      }
-    },
-    {
-      "id": "diag_1790765494558_8ramm",
-      "sellerUserId": "seller_sim_grace_test",
+      "id": "diag_1791199695467_sgogt",
+      "sellerUserId": "seller_verified_101",
       "previousStatus": "NOT_ACTIVATED",
       "nextStatus": "TRIAL_ACTIVE",
-      "transitionId": "seller_sim_grace_test_TRIAL_2026-09-30T10:51:34.540Z",
+      "transitionId": "seller_verified_101_TRIAL_2026-10-05T11:28:15.441Z",
       "action": "ACTIVATE_TRIAL",
       "source": "SELLER_ACTION",
-      "actorUserId": "seller_sim_grace_test",
-      "timestamp": "2026-09-30T10:51:34.558Z",
+      "actorUserId": "seller_verified_101",
+      "timestamp": "2026-10-05T11:28:15.467Z",
       "notificationEventIds": [
-        "dedup_seller_sim_grace_test_seller_sim_grace_test_TRIAL_2026-09-30T10_51_34_540Z_SELLER_TRIAL_STARTE"
+        "dedup_SELLER_TRIAL_STARTED_seller_verified_101_seller_verified_101_TRIAL_2026-10-05T11_28_15_441Z"
       ],
       "metadata": {
         "plan": "SELLER_MONTHLY",
         "hasHadTrial": true,
         "testSimulation": false,
-        "version": 2
+        "version": 2,
+        "commandId": "cmd_act_1791199695440_42ife6",
+        "entryPoint": "SELLER_MAIN_CTA",
+        "result": "SUCCESS"
+      }
+    },
+    {
+      "id": "diag_1791199669028_j4trv",
+      "sellerUserId": "seller_1",
+      "previousStatus": "NOT_ACTIVATED",
+      "nextStatus": "TRIAL_ACTIVE",
+      "transitionId": "seller_1_TRIAL_2026-10-05T11:27:49.004Z",
+      "action": "ACTIVATE_TRIAL",
+      "source": "SELLER_ACTION",
+      "actorUserId": "seller_1",
+      "timestamp": "2026-10-05T11:27:49.028Z",
+      "notificationEventIds": [
+        "dedup_SELLER_TRIAL_STARTED_seller_1_seller_1_TRIAL_2026-10-05T11_27_49_004Z"
+      ],
+      "metadata": {
+        "plan": "SELLER_MONTHLY",
+        "hasHadTrial": true,
+        "testSimulation": false,
+        "version": 2,
+        "commandId": "cmd_act_1791199669003_4yca4x",
+        "entryPoint": "SELLER_MAIN_CTA",
+        "result": "SUCCESS"
+      }
+    },
+    {
+      "id": "diag_1791196155849_fwt1r",
+      "sellerUserId": "s1",
+      "previousStatus": "NOT_ACTIVATED",
+      "nextStatus": "TRIAL_ACTIVE",
+      "transitionId": "s1_TRIAL_2026-10-05T10:29:15.826Z",
+      "action": "ACTIVATE_TRIAL",
+      "source": "SELLER_ACTION",
+      "actorUserId": "s1",
+      "timestamp": "2026-10-05T10:29:15.849Z",
+      "notificationEventIds": [
+        "dedup_SELLER_TRIAL_STARTED_s1_s1_TRIAL_2026-10-05T10_29_15_826Z"
+      ],
+      "metadata": {
+        "plan": "SELLER_MONTHLY",
+        "hasHadTrial": true,
+        "testSimulation": false,
+        "version": 2,
+        "commandId": "cmd_act_1791196155825_39uam8",
+        "entryPoint": "SELLER_MAIN_CTA",
+        "result": "SUCCESS"
       }
     }
   ],

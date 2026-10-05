@@ -1,0 +1,25 @@
+[
+  {
+    "conversationId": "conv_1791199695471_xkuj0g",
+    "buyerUserId": "buyer_user_201",
+    "sellerUserId": "seller_verified_101",
+    "shopId": "shop_101",
+    "productId": "prod_cow_friesian_01",
+    "listingId": "prod_cow_friesian_01",
+    "productTitleSnapshot": "Ngombe",
+    "listingTitleSnapshot": "Ngombe",
+    "categoryId": "MIFUGO",
+    "status": "ACTIVE",
+    "lastMessage": "💰 Ombi la Malipo: TSh 100,000 (1 × TSh 100,000)\nBidhaa: Ngombe",
+    "lastMessageAt": "2026-10-05T11:29:43.834Z",
+    "buyerUnreadCount": 2,
+    "sellerUnreadCount": 0,
+    "priceSnapshot": 2500000,
+    "currencySnapshot": "TZS",
+    "imageUrlSnapshot": "",
+    "sellerNameSnapshot": "Muuzaji",
+    "buyerNameSnapshot": "Mnunuzi",
+    "createdAt": "2026-10-05T11:28:15.471Z",
+    "updatedAt": "2026-10-05T11:29:43.834Z"
+  }
+]

@@ -1431,6 +1431,19 @@ export class SellerVerificationService {
     app.updatedAt = now;
 
     applicationsStore.set(verificationId, app);
+
+    // Ensure all applications for this sellerUserId reflect the deactivated badge status
+    Array.from(applicationsStore.values()).forEach((otherApp) => {
+      if (otherApp.sellerUserId === app.sellerUserId || otherApp.sellerId === app.sellerUserId) {
+        otherApp.badgeStatus = 'INACTIVE';
+        otherApp.hasActiveBadge = false;
+        otherApp.badgeDeactivatedAt = now;
+        otherApp.badgeDeactivationReason = reason || 'Kuzimwa na msimamizi';
+        otherApp.updatedAt = now;
+        applicationsStore.set(otherApp.verificationId, otherApp);
+      }
+    });
+
     persistToDisk();
 
     this.recordAuditEvent({
@@ -1725,6 +1738,7 @@ export class SellerVerificationService {
     verificationPaymentIntentsStore.clear();
     externalIdToVerificationIntentMap.clear();
     idempotencyKeyToVerificationMap.clear();
+    persistToDisk();
   }
 }
 

@@ -1,1 +1,112 @@
-[]
+[
+  {
+    "paymentIntentId": "vpi_1791199595328_xxab0n",
+    "verificationId": "ver_1791199595327_rriwdx",
+    "sellerUserId": "seller_verified_101",
+    "purpose": "VERIFICATION_PROCESSING_FEE",
+    "amount": 5000,
+    "currency": "TZS",
+    "provider": "PLUSPESA",
+    "status": "SUCCESS",
+    "externalId": "UFUGAJI_VERIFICATION_1791199595328_xxab0n",
+    "providerReference": "MPESA_REF_VERIF_101",
+    "providerUuid": "bec00da2-df78-40c7-9755-6cebb65f5233",
+    "customerPhone": "255754123456",
+    "providerNetwork": "Mpesa",
+    "paymentInstructions": "Omba la malipo limetumwa kwenye simu yako. Ingiza PIN kukamilisha malipo.",
+    "createdAt": "2026-10-05T11:26:35.328Z",
+    "updatedAt": "2026-10-05T11:26:36.302Z",
+    "metadata": {
+      "providerStatus": "processing"
+    },
+    "completedAt": "2026-10-05T11:26:36.302Z"
+  },
+  {
+    "paymentIntentId": "vpi_1791199621052_0vdevy",
+    "verificationId": "ver_1791199621051_o9xnqf",
+    "sellerUserId": "seller_verified_101",
+    "purpose": "VERIFICATION_PROCESSING_FEE",
+    "amount": 5000,
+    "currency": "TZS",
+    "provider": "PLUSPESA",
+    "status": "SUCCESS",
+    "externalId": "UFUGAJI_VERIFICATION_1791199621052_0vdevy",
+    "providerReference": "MPESA_REF_VERIF_101",
+    "providerUuid": "a4dc0bc6-f388-4808-a953-69a32916f4ac",
+    "customerPhone": "255754123456",
+    "providerNetwork": "Mpesa",
+    "paymentInstructions": "Omba la malipo limetumwa kwenye simu yako. Ingiza PIN kukamilisha malipo.",
+    "createdAt": "2026-10-05T11:27:01.052Z",
+    "updatedAt": "2026-10-05T11:27:01.880Z",
+    "metadata": {
+      "providerStatus": "processing"
+    },
+    "completedAt": "2026-10-05T11:27:01.880Z"
+  },
+  {
+    "paymentIntentId": "vpi_1791199845191_xd73vz",
+    "verificationId": "ver_1791199845190_8zhmcw",
+    "sellerUserId": "seller_verified_101",
+    "purpose": "VERIFICATION_PROCESSING_FEE",
+    "amount": 5000,
+    "currency": "TZS",
+    "provider": "PLUSPESA",
+    "status": "SUCCESS",
+    "externalId": "UFUGAJI_VERIFICATION_1791199845191_xd73vz",
+    "providerReference": "MPESA_REF_VERIF_101",
+    "providerUuid": "e7db0b8b-a7b9-4125-a75b-d987dbd6de17",
+    "customerPhone": "255754123456",
+    "providerNetwork": "Mpesa",
+    "paymentInstructions": "Omba la malipo limetumwa kwenye simu yako. Ingiza PIN kukamilisha malipo.",
+    "createdAt": "2026-10-05T11:30:45.191Z",
+    "updatedAt": "2026-10-05T11:30:46.058Z",
+    "metadata": {
+      "providerStatus": "processing"
+    },
+    "completedAt": "2026-10-05T11:30:46.058Z"
+  },
+  {
+    "paymentIntentId": "vpi_1791200023396_be79dx",
+    "verificationId": "ver_1791200023395_en033t",
+    "sellerUserId": "seller_verified_101",
+    "purpose": "VERIFICATION_PROCESSING_FEE",
+    "amount": 5000,
+    "currency": "TZS",
+    "provider": "PLUSPESA",
+    "status": "SUCCESS",
+    "externalId": "UFUGAJI_VERIFICATION_1791200023396_be79dx",
+    "providerReference": "MPESA_REF_VERIF_101",
+    "providerUuid": "4c84a120-7f80-4146-80a2-3e9ea55cb6bc",
+    "customerPhone": "255754123456",
+    "providerNetwork": "Mpesa",
+    "paymentInstructions": "Omba la malipo limetumwa kwenye simu yako. Ingiza PIN kukamilisha malipo.",
+    "createdAt": "2026-10-05T11:33:43.396Z",
+    "updatedAt": "2026-10-05T11:33:44.388Z",
+    "metadata": {
+      "providerStatus": "processing"
+    },
+    "completedAt": "2026-10-05T11:33:44.388Z"
+  },
+  {
+    "paymentIntentId": "vpi_1791200064919_v2t4j5",
+    "verificationId": "ver_1791200064917_igo85u",
+    "sellerUserId": "seller_verified_101",
+    "purpose": "VERIFICATION_PROCESSING_FEE",
+    "amount": 5000,
+    "currency": "TZS",
+    "provider": "PLUSPESA",
+    "status": "SUCCESS",
+    "externalId": "UFUGAJI_VERIFICATION_1791200064919_v2t4j5",
+    "providerReference": "MPESA_REF_VERIF_101",
+    "providerUuid": "c1b6d814-80db-4a59-91ae-2abc9cb8ea45",
+    "customerPhone": "255754123456",
+    "providerNetwork": "Mpesa",
+    "paymentInstructions": "Omba la malipo limetumwa kwenye simu yako. Ingiza PIN kukamilisha malipo.",
+    "createdAt": "2026-10-05T11:34:24.919Z",
+    "updatedAt": "2026-10-05T11:34:25.908Z",
+    "metadata": {
+      "providerStatus": "processing"
+    },
+    "completedAt": "2026-10-05T11:34:25.908Z"
+  }
+]
