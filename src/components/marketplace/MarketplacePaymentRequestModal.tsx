@@ -3,7 +3,6 @@ import {
   X,
   CreditCard,
   ShieldCheck,
-  ShieldAlert,
   AlertCircle,
   Loader2,
   Package,
@@ -16,14 +15,12 @@ import {
   MARKETPLACE_PAYMENT_CONFIG
 } from '../../types/marketplacePaymentRequest';
 import { marketplacePaymentRequestService } from '../../services/marketplacePaymentRequestService';
-import { sellerVerificationService } from '../../services/sellerVerificationService';
 
 interface MarketplacePaymentRequestModalProps {
   isOpen: boolean;
   onClose: () => void;
   conversation: MarketplaceConversation;
   currentUserId: string;
-  existingRequests?: MarketplacePaymentRequest[];
   onSuccess: (paymentRequest: MarketplacePaymentRequest) => void;
 }
 
@@ -32,36 +29,20 @@ export const MarketplacePaymentRequestModal: React.FC<MarketplacePaymentRequestM
   onClose,
   conversation,
   currentUserId,
-  existingRequests = [],
   onSuccess,
 }) => {
   const [quantityInput, setQuantityInput] = useState<string>('1');
   const [unitPriceInput, setUnitPriceInput] = useState<string>(
-    conversation.priceSnapshot && conversation.priceSnapshot > 0
-      ? String(conversation.priceSnapshot)
-      : '1000'
+    conversation.priceSnapshot ? String(conversation.priceSnapshot) : ''
   );
   const [description, setDescription] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Authoritative seller verification check (V1.11C-CORRECTIVE-1)
-  const sellerBadge = sellerVerificationService.getPublicSellerBadge(currentUserId);
-  const isSellerVerified = Boolean(sellerBadge && sellerBadge.isVerified && sellerBadge.badgeStatus === 'ACTIVE');
-
-  // Check for active pending/processing request in this conversation
-  const hasActiveRequest = existingRequests.some(
-    (r) => r.status === 'PENDING_PAYMENT' || r.status === 'PROCESSING'
-  );
-
   useEffect(() => {
     if (isOpen) {
       setQuantityInput('1');
-      setUnitPriceInput(
-        conversation.priceSnapshot && conversation.priceSnapshot > 0
-          ? String(conversation.priceSnapshot)
-          : '1000'
-      );
+      setUnitPriceInput(conversation.priceSnapshot ? String(conversation.priceSnapshot) : '');
       setDescription('');
       setErrorMsg(null);
     }
@@ -69,23 +50,45 @@ export const MarketplacePaymentRequestModal: React.FC<MarketplacePaymentRequestM
 
   if (!isOpen) return null;
 
-  const parsedQuantity = parseInt(quantityInput, 10) || 0;
-  const parsedUnitPrice = parseInt(unitPriceInput, 10) || 0;
-  const totalAmount = Math.max(0, Math.floor(parsedQuantity * parsedUnitPrice));
+  // Accurately parse and calculate numbers while allowing free typing without sticky locks
+  const cleanQty = quantityInput.replace(/,/g, '').trim();
+  const cleanPrice = unitPriceInput.replace(/,/g, '').trim();
+  const parsedQuantity = Math.max(0, parseFloat(cleanQty) || 0);
+  const parsedUnitPrice = Math.max(0, parseFloat(cleanPrice) || 0);
+  const totalAmount = Math.round(parsedQuantity * parsedUnitPrice);
 
   const isTooLow = totalAmount < MARKETPLACE_PAYMENT_CONFIG.minAmount;
   const isTooHigh = totalAmount > MARKETPLACE_PAYMENT_CONFIG.maxAmount;
-  const isInvalid =
-    !isSellerVerified ||
-    hasActiveRequest ||
-    isTooLow ||
-    isTooHigh ||
-    parsedQuantity <= 0 ||
-    parsedUnitPrice <= 0;
+  const isInvalid = parsedQuantity <= 0 || parsedUnitPrice <= 0 || isTooLow || isTooHigh;
+
+  const handleQuantityIncrement = () => {
+    const next = Math.floor(parsedQuantity) + 1;
+    setQuantityInput(String(next));
+  };
+
+  const handleQuantityDecrement = () => {
+    const next = Math.max(1, Math.ceil(parsedQuantity) - 1);
+    setQuantityInput(String(next));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isInvalid) return;
+    if (parsedQuantity <= 0) {
+      setErrorMsg('Tafadhali weka idadi (quantity) sahihi zaidi ya 0.');
+      return;
+    }
+    if (parsedUnitPrice <= 0) {
+      setErrorMsg('Tafadhali weka bei sahihi kwa moja (unit price).');
+      return;
+    }
+    if (isTooLow) {
+      setErrorMsg(`Jumla ya malipo lazima iwe angalau TSh ${MARKETPLACE_PAYMENT_CONFIG.minAmount.toLocaleString()}.`);
+      return;
+    }
+    if (isTooHigh) {
+      setErrorMsg(`Jumla ya malipo haitakiwi kuzidi TSh ${MARKETPLACE_PAYMENT_CONFIG.maxAmount.toLocaleString()}.`);
+      return;
+    }
 
     setIsSubmitting(true);
     setErrorMsg(null);
@@ -95,7 +98,7 @@ export const MarketplacePaymentRequestModal: React.FC<MarketplacePaymentRequestM
         {
           conversationId: conversation.conversationId,
           quantity: parsedQuantity,
-          unitPrice: parsedUnitPrice,
+          unitPrice: Math.round(parsedUnitPrice),
           description: description.trim() || undefined,
         },
         currentUserId
@@ -141,37 +144,15 @@ export const MarketplacePaymentRequestModal: React.FC<MarketplacePaymentRequestM
 
         {/* Content & Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Trust Banner or Unverified Warning */}
-          {isSellerVerified ? (
-            <div className="p-3 bg-emerald-50/80 border border-emerald-200/80 rounded-xl flex items-start gap-2.5 text-xs text-emerald-950">
-              <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-              <div className="leading-relaxed">
-                <span className="font-bold">Muuzaji Aliyethibitishwa:</span> Malipo
-                yatakayofanywa na mnunuzi yatahifadhiwa salama kwenye mfumo wa Ufugaji Update
-                mpaka bidhaa itakapofika.
-              </div>
+          {/* Trust Banner */}
+          <div className="p-3 bg-emerald-50/80 border border-emerald-200/80 rounded-xl flex items-start gap-2.5 text-xs text-emerald-950">
+            <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+            <div className="leading-relaxed">
+              <span className="font-bold">Muuzaji Aliyethibitishwa:</span> Malipo
+              yatakayofanywa na mnunuzi yatahifadhiwa salama kwenye mfumo wa Ufugaji Update
+              mpaka bidhaa itakapofika.
             </div>
-          ) : (
-            <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-950">
-              <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-              <div className="leading-relaxed">
-                <span className="font-bold">Uhakiki Unahitajika:</span> Malipo kupitia jukwaa yanapatikana
-                kwa muuzaji aliyethibitishwa pekee mwenye beji iliyo ACTIVE. Tafadhali thibitisha akaunti yako
-                kwenye sehemu ya Wasifu ili kuwezesha maombi ya malipo.
-              </div>
-            </div>
-          )}
-
-          {/* Active Request Warning if applicable */}
-          {hasActiveRequest && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-2.5 text-xs text-blue-900">
-              <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-              <div className="leading-relaxed">
-                <span className="font-bold">Ombi Lipo Tayari:</span> Kuna ombi la malipo linalosubiri au
-                linalochakatwa tayari katika mazungumzo haya. Huwezi kuunda ombi jipya mpaka la awali likamilike au lighairiwe.
-              </div>
-            </div>
-          )}
+          </div>
 
           {/* Bound Context Snapshots (Read-Only) */}
           <div className="bg-stone-50 border border-stone-200 rounded-xl p-3.5 space-y-2.5 text-xs">
@@ -211,21 +192,42 @@ export const MarketplacePaymentRequestModal: React.FC<MarketplacePaymentRequestM
               <label className="block text-xs font-bold text-stone-700 mb-1">
                 Quantity (Idadi) <span className="text-rose-600">*</span>
               </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={quantityInput}
-                onChange={(e) => setQuantityInput(e.target.value.replace(/\D/g, ''))}
-                onBlur={() => {
-                  if (!quantityInput || parseInt(quantityInput, 10) < 1) {
-                    setQuantityInput('1');
-                  }
-                }}
-                required
-                disabled={isSubmitting || !isSellerVerified || hasActiveRequest}
-                className="w-full px-3.5 py-2.5 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-600 min-h-[42px] disabled:opacity-50"
-              />
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={handleQuantityDecrement}
+                  disabled={isSubmitting || parsedQuantity <= 1}
+                  className="px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold border border-r-0 border-stone-300 rounded-l-xl transition-colors cursor-pointer disabled:opacity-40 min-h-[42px]"
+                >
+                  -
+                </button>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={quantityInput}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9.]/g, '');
+                    const parts = val.split('.');
+                    if (parts.length > 2) return;
+                    setQuantityInput(val);
+                  }}
+                  placeholder="1"
+                  required
+                  disabled={isSubmitting}
+                  className="w-full px-3 py-2 text-center bg-white border border-stone-300 text-xs sm:text-sm font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-600 min-h-[42px]"
+                />
+                <button
+                  type="button"
+                  onClick={handleQuantityIncrement}
+                  disabled={isSubmitting}
+                  className="px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold border border-l-0 border-stone-300 rounded-r-xl transition-colors cursor-pointer min-h-[42px]"
+                >
+                  +
+                </button>
+              </div>
+              <p className="text-[10.5px] text-stone-500 mt-1">
+                Kipimo: {parsedQuantity > 0 ? `${parsedQuantity} idadi` : 'Ingiza idadi'}
+              </p>
             </div>
 
             <div>
@@ -235,32 +237,40 @@ export const MarketplacePaymentRequestModal: React.FC<MarketplacePaymentRequestM
               <input
                 type="text"
                 inputMode="numeric"
-                pattern="[0-9]*"
                 value={unitPriceInput}
-                onChange={(e) => setUnitPriceInput(e.target.value.replace(/\D/g, ''))}
-                onBlur={() => {
-                  if (!unitPriceInput) {
-                    setUnitPriceInput('0');
-                  }
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^0-9.]/g, '');
+                  const parts = val.split('.');
+                  if (parts.length > 2) return;
+                  setUnitPriceInput(val);
                 }}
+                placeholder="Mfano: 25000"
                 required
-                disabled={isSubmitting || !isSellerVerified || hasActiveRequest}
-                className="w-full px-3.5 py-2.5 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-600 min-h-[42px] disabled:opacity-50"
+                disabled={isSubmitting}
+                className="w-full px-3.5 py-2.5 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-600 min-h-[42px]"
               />
+              <div className="flex items-center justify-between text-[10.5px] text-stone-500 mt-1">
+                <span>Bei kwa kipimo:</span>
+                <span className="font-bold text-stone-800 font-mono">
+                  {parsedUnitPrice > 0 ? `TSh ${Math.round(parsedUnitPrice).toLocaleString()}` : '0 TZS'}
+                </span>
+              </div>
             </div>
           </div>
 
           {/* Total Calculation Display */}
-          <div className="p-3.5 bg-stone-900 text-white rounded-xl flex items-center justify-between">
+          <div className="p-4 bg-gradient-to-r from-stone-900 to-stone-800 text-white rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-stone-700 shadow-sm">
             <div>
-              <p className="text-[11px] text-stone-400 font-medium">Jumla ya Malipo (Total):</p>
-              <p className="text-lg font-extrabold text-emerald-400 font-mono">
+              <p className="text-[11px] text-stone-300 font-medium">Jumla ya Malipo (Total = Idadi × Bei):</p>
+              <p className="text-2xl font-black text-emerald-400 font-mono tracking-tight">
                 TSh {totalAmount.toLocaleString()}
               </p>
             </div>
-            <div className="text-right text-[11px] text-stone-400">
-              <span>{parsedQuantity} × TSh {parsedUnitPrice.toLocaleString()}</span>
-              <p className="text-stone-300 font-semibold">Sarafu: TZS</p>
+            <div className="sm:text-right text-xs text-stone-300 bg-white/5 sm:bg-transparent p-2.5 sm:p-0 rounded-xl">
+              <span className="font-semibold text-stone-200">
+                {parsedQuantity} × TSh {Math.round(parsedUnitPrice).toLocaleString()}
+              </span>
+              <p className="text-[11px] text-emerald-400 font-bold mt-0.5">Sarafu: TZS</p>
             </div>
           </div>
 
@@ -275,13 +285,13 @@ export const MarketplacePaymentRequestModal: React.FC<MarketplacePaymentRequestM
               onChange={(e) => setDescription(e.target.value)}
               placeholder="k.m. Ng'ombe mmoja mwenye afya kama tulivyokubaliana..."
               maxLength={500}
-              disabled={isSubmitting || !isSellerVerified || hasActiveRequest}
-              className="w-full px-3.5 py-2 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-emerald-600 disabled:opacity-50"
+              disabled={isSubmitting}
+              className="w-full px-3.5 py-2 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
             />
           </div>
 
           {/* Validation Warnings */}
-          {isTooLow && parsedQuantity > 0 && parsedUnitPrice > 0 && (
+          {isTooLow && (
             <p className="text-xs text-rose-600 flex items-center gap-1.5 font-medium">
               <Info className="w-3.5 h-3.5 shrink-0" />
               Kiasi cha chini cha malipo ni TSh {MARKETPLACE_PAYMENT_CONFIG.minAmount.toLocaleString()}.

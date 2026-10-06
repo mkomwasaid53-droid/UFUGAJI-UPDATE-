@@ -114,9 +114,17 @@ export function resolveProductTrustSignals(
 
   // Determine Seller Verification Signal
   const isSellerVerified = Boolean(
-    (sellerVerification && sellerVerification.status === 'VERIFIED') ||
+    (sellerVerification && (
+      sellerVerification.status === 'VERIFIED' ||
+      sellerVerification.status === 'APPROVED' ||
+      sellerVerification.badgeStatus === 'ACTIVE' ||
+      Boolean(sellerVerification.hasActiveBadge) ||
+      Boolean((sellerVerification as any).isVerified)
+    )) ||
     ownership.isSellerVerified ||
-    product.sellerVerificationStatus === 'verified'
+    product.sellerVerificationStatus === 'verified' ||
+    String(product.sellerVerificationStatus).toLowerCase() === 'approved' ||
+    String(product.sellerVerificationStatus).toLowerCase() === 'active'
   );
 
   const sellerVerificationSignal: VerifiedSellerTrustSignal = {

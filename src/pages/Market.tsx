@@ -47,11 +47,7 @@ import { FreeTrialActivationModal } from '../components/marketplace/FreeTrialAct
 import { MarketplaceInboxView } from '../components/marketplace/MarketplaceInboxView';
 import { marketplaceInboxService } from '../services/marketplaceInboxService';
 import { SellerVerification } from '../types/sellerVerification';
-import {
-  sellerVerificationService,
-  getPublicSellerVerificationStatus,
-  PublicSellerVerificationBadge
-} from '../services/sellerVerificationService';
+import { sellerVerificationService } from '../services/sellerVerificationService';
 import {
   fetchGovernedCategories,
   getLocalCachedCategories,
@@ -125,10 +121,8 @@ export const Market: React.FC = () => {
     shop: DigitalShop;
     catalogues: ShopCatalogue[];
     verification?: SellerVerification | null;
-    publicBadge?: PublicSellerVerificationBadge | null;
   } | null>(null);
   const [sellerVerificationsMap, setSellerVerificationsMap] = useState<Record<string, SellerVerification>>({});
-  const [publicBadgesMap, setPublicBadgesMap] = useState<Record<string, PublicSellerVerificationBadge>>({});
   const [buyerShopInitialCatalogueId, setBuyerShopInitialCatalogueId] = useState<string | null>(null);
   const [buyerShopHighlightProductId, setBuyerShopHighlightProductId] = useState<string | null>(null);
   const [isLoadingShop, setIsLoadingShop] = useState(false);
@@ -275,22 +269,19 @@ export const Market: React.FC = () => {
       const shops = await fetchAllPublishedShops(prods);
       setPublishedShops(shops);
 
-      // Pre-fetch catalogues and authoritative public verification badges for known shops (V1.11C-CORRECTIVE-1)
+      // Pre-fetch catalogues and authoritative verifications for known shops
       const catMap: Record<string, ShopCatalogue[]> = {};
       const verifMap: Record<string, SellerVerification> = {};
-      const badgesMap: Record<string, PublicSellerVerificationBadge> = {};
 
       await Promise.all(
         shops.map(async (s) => {
           try {
-            const [cats, badge] = await Promise.all([
+            const [cats, v] = await Promise.all([
               fetchShopCatalogues(s.sellerId).catch(() => []),
-              getPublicSellerVerificationStatus(s.sellerId).catch(() => sellerVerificationService.getPublicSellerBadge(s.sellerId)),
+              sellerVerificationService.getSellerVerification(s.sellerId).catch(() => null),
             ]);
             catMap[s.sellerId] = cats;
-            if (badge) {
-              badgesMap[s.sellerId] = badge;
-            }
+            if (v) verifMap[s.sellerId] = v;
           } catch (e) {
             // ignore individual load failure
           }
@@ -298,7 +289,6 @@ export const Market: React.FC = () => {
       );
       setAllCataloguesMap(catMap);
       setSellerVerificationsMap(verifMap);
-      setPublicBadgesMap(badgesMap);
 
       if (user?.uid) {
         const sProf = await fetchSellerProfile(user.uid);
@@ -352,45 +342,6 @@ export const Market: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [user?.uid]);
-
-  // V1.11C-CORRECTIVE-1: Real-time revalidation across all Marketplace surfaces
-  useEffect(() => {
-    const handleVerificationUpdated = async (event: any) => {
-      const targetSellerId = event?.detail?.sellerUserId;
-      if (targetSellerId) {
-        try {
-          const freshBadge = await getPublicSellerVerificationStatus(targetSellerId);
-          setPublicBadgesMap((prev) => ({ ...prev, [targetSellerId]: freshBadge }));
-          if (viewingSellerShop && viewingSellerShop.shop.sellerId === targetSellerId) {
-            setViewingSellerShop((prev) => (prev ? { ...prev, publicBadge: freshBadge } : null));
-          }
-          if (user?.uid === targetSellerId) {
-            const freshVerif = await sellerVerificationService.getSellerVerification(targetSellerId);
-            setSellerVerification(freshVerif);
-          }
-        } catch (e) {
-          console.warn('[Marketplace] Error updating verification badge:', e);
-        }
-      } else {
-        // Refresh all shops
-        try {
-          const refreshed: Record<string, PublicSellerVerificationBadge> = {};
-          await Promise.all(
-            publishedShops.map(async (s) => {
-              const b = await getPublicSellerVerificationStatus(s.sellerId);
-              if (b) refreshed[s.sellerId] = b;
-            })
-          );
-          setPublicBadgesMap(refreshed);
-        } catch {}
-      }
-    };
-
-    window.addEventListener('seller_verification_updated', handleVerificationUpdated);
-    return () => {
-      window.removeEventListener('seller_verification_updated', handleVerificationUpdated);
-    };
-  }, [publishedShops, viewingSellerShop, user]);
 
   // Deep linking via URL on mount
   useEffect(() => {
@@ -515,7 +466,6 @@ export const Market: React.FC = () => {
         shop: myShop,
         catalogues: myCatalogues,
         verification: sellerVerification,
-        publicBadge: publicBadgesMap[user.uid] || sellerVerificationService.getPublicSellerBadge(user.uid),
       });
       setCurrentView('buyer_shop');
       return;
@@ -523,15 +473,12 @@ export const Market: React.FC = () => {
 
     try {
       setIsLoadingShop(true);
-      const [shopData, cataloguesData, verifData, publicBadgeData] = await Promise.all([
+      const [shopData, cataloguesData, verifData] = await Promise.all([
         fetchDigitalShop(sellerId),
         fetchShopCatalogues(sellerId),
         sellerVerificationsMap[sellerId]
           ? Promise.resolve(sellerVerificationsMap[sellerId])
           : sellerVerificationService.getSellerVerification(sellerId).catch(() => null),
-        publicBadgesMap[sellerId]
-          ? Promise.resolve(publicBadgesMap[sellerId])
-          : getPublicSellerVerificationStatus(sellerId).catch(() => sellerVerificationService.getPublicSellerBadge(sellerId)),
       ]);
 
       const targetShop = shopData || {
@@ -556,11 +503,14 @@ export const Market: React.FC = () => {
         }
       }
 
+      if (verifData) {
+        setSellerVerificationsMap((prev) => ({ ...prev, [sellerId]: verifData }));
+      }
+
       setViewingSellerShop({
         shop: targetShop,
         catalogues: cataloguesData,
         verification: verifData,
-        publicBadge: publicBadgeData || sellerVerificationService.getPublicSellerBadge(sellerId),
       });
       setCurrentView('buyer_shop');
     } catch (err: any) {
@@ -864,11 +814,6 @@ export const Market: React.FC = () => {
             sellerVerificationsMap[viewingSellerShop.shop.sellerId] ||
             (user?.uid === viewingSellerShop.shop.sellerId ? sellerVerification : null)
           }
-          publicBadge={
-            viewingSellerShop.publicBadge ||
-            publicBadgesMap[viewingSellerShop.shop.sellerId] ||
-            sellerVerificationService.getPublicSellerBadge(viewingSellerShop.shop.sellerId)
-          }
           initialCatalogueId={buyerShopInitialCatalogueId}
           highlightProductId={buyerShopHighlightProductId}
           isOwner={user?.uid === viewingSellerShop.shop.sellerId}
@@ -925,7 +870,11 @@ export const Market: React.FC = () => {
             shop={myShop}
             catalogues={myCatalogues}
             products={products}
-            verificationStatus={sellerProfile?.verificationStatus || (sellerVerification?.status === 'VERIFIED' ? 'verified' : 'unverified')}
+            verificationStatus={
+              (sellerVerification?.status === 'VERIFIED' || sellerVerification?.status === 'APPROVED' || sellerVerification?.hasActiveBadge || sellerVerification?.badgeStatus === 'ACTIVE')
+                ? 'verified'
+                : (sellerProfile?.verificationStatus || 'unverified')
+            }
             sellerVerification={sellerVerification}
             onApplyVerification={() => setIsVerificationModalOpen(true)}
             isLoadingVerification={isLoadingVerification}
@@ -1074,19 +1023,24 @@ export const Market: React.FC = () => {
                   </button>
 
                   {/* Verification Status Badge in Banner */}
-                  {sellerVerification?.status === 'VERIFIED' ? (
-                    <span className="py-2.5 px-3.5 bg-emerald-950/80 border border-emerald-400/50 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-xs">
+                  {(sellerVerification?.status === 'VERIFIED' || sellerVerification?.status === 'APPROVED' || sellerVerification?.hasActiveBadge || sellerVerification?.badgeStatus === 'ACTIVE') ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsVerificationModalOpen(true)}
+                      className="py-2.5 px-3.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-400/50 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer min-h-[44px]"
+                      title="Umehakikiwa Kikamilifu - Bonyeza kutazama beji na maelezo"
+                    >
                       <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                      <span>Muuzaji Aliyethibitishwa</span>
-                    </span>
-                  ) : sellerVerification?.status === 'PENDING_VERIFICATION' ? (
+                      <span>Umehakikiwa Kikamilifu (Beji Hai)</span>
+                    </button>
+                  ) : (sellerVerification?.status === 'PENDING_VERIFICATION' || sellerVerification?.status === 'UNDER_REVIEW' || sellerVerification?.status === 'PAYMENT_CONFIRMED' || sellerVerification?.status === 'SUBMITTED') ? (
                     <button
                       type="button"
                       onClick={() => setIsVerificationModalOpen(true)}
                       className="py-2.5 px-3.5 bg-amber-950/80 hover:bg-amber-900 border border-amber-400/50 text-amber-300 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
                     >
                       <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
-                      <span>Uhakiki Unasubiri</span>
+                      <span>Uhakiki Unasubiri Ukaguzi</span>
                     </button>
                   ) : (
                     <button
@@ -1217,7 +1171,6 @@ export const Market: React.FC = () => {
               cataloguesMap={allCataloguesMap}
               products={products}
               authoritativeVerificationsMap={sellerVerificationsMap}
-              publicBadgesMap={publicBadgesMap}
               onOpenShop={(sellerId, catalogueId, productId) =>
                 handleOpenBuyerShop(sellerId, catalogueId, productId)
               }
@@ -1482,7 +1435,6 @@ export const Market: React.FC = () => {
                       isOwner={user?.uid === prod.sellerId || isAdmin}
                       onViewDetails={(p) => setViewingProduct(p)}
                       onOpenShop={(sellerId) => handleOpenBuyerShop(sellerId)}
-                      publicBadge={publicBadgesMap[prod.sellerId] || sellerVerificationService.getPublicSellerBadge(prod.sellerId)}
                       onOpenShopCatalogue={(sellerId, catalogueId) =>
                         handleOpenBuyerShop(sellerId, catalogueId, prod.productId)
                       }

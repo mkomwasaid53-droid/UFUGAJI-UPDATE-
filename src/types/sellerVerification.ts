@@ -191,9 +191,12 @@ export interface PublicSellerVerificationBadge {
 export const VERIFICATION_FEE_CONFIG = {
   amount: 5000,
   currency: 'TZS' as const,
+  validityMonths: 3,
+  validityDays: 90,
   purpose: 'VERIFICATION_PROCESSING_FEE' as const,
-  label: 'Ada ya Kuchakata Maombi ya Uhakiki (Processing Fee)',
-  disclaimer: 'Lipa ada ya processing hakumaanishi verification imekubaliwa. Malipo haya ni ya ukaguzi na uchakataji wa taarifa zako na hayaleti beji ya moja kwa moja bila uhakiki wa kiutawala.'
+  label: 'Ada ya Uhakiki wa Beji (TSh 5,000 / Miezi 3)',
+  description: 'Ada ya uhakiki wa beji ni TSh 5,000 kwa miezi 3. Baada ya hapo muuzaji anatakiwa kuuhuisha beji.',
+  disclaimer: 'Lipa ada ya uchakataji hakumaanishi kuidhinishwa moja kwa moja. Baada ya malipo, utaingia kwenye foleni ya ukaguzi wa admin kupatiwa beji rasmi ikiwa vigezo vimekamilika.'
 } as const;
 
 export interface VerificationBadgeDisplay {

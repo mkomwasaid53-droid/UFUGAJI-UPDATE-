@@ -67,6 +67,7 @@ import {
   requestAiListingClassification
 } from '../../services/marketplaceAiClassificationService';
 import { AiClassificationResult } from '../../types/marketplaceAiClassification';
+import { persistImagePermanently } from '../../services/imageStorageService';
 
 interface ProductFormModalProps {
   initialProduct?: MarketplaceProduct | null;
@@ -468,22 +469,11 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
       try {
         const { dataUrl } = await compressImage(file, 1200, 1200, 0.85);
-        let finalUrl = dataUrl;
-        try {
-          const resp = await fetch('/api/marketplace/upload-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ dataUrl }),
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            if (data?.url) finalUrl = data.url;
-          }
-        } catch {
-          // If server upload fails, dataUrl remains as fallback
-        }
-
         const imageId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        
+        // Multi-layer permanent storage (IndexedDB + Server Disk)
+        const { url: finalUrl } = await persistImagePermanently(dataUrl, imageId);
+
         const isFirst = images.length === 0 && newImages.length === 0;
 
         newImages.push({

@@ -421,15 +421,16 @@ async function startServer() {
   // Upload a marketplace image (binary or base64 dataUrl)
   app.post('/api/marketplace/upload-image', (req, res) => {
     try {
-      const { dataUrl } = req.body;
+      const { dataUrl, imageId } = req.body;
       if (!dataUrl || typeof dataUrl !== 'string') {
         return res.status(400).json({ error: 'dataUrl inahitajika.' });
       }
 
-      const publicUrl = saveBase64ImageToDisk(dataUrl);
-      const imageId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const prefix = imageId ? `${imageId.replace(/[^a-zA-Z0-9_-]/g, '')}_` : 'img_';
+      const publicUrl = saveBase64ImageToDisk(dataUrl, prefix);
+      const resId = imageId || `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       res.json({
-        id: imageId,
+        id: resId,
         url: publicUrl,
         thumbnailUrl: publicUrl,
         isPrimary: req.body.isPrimary ?? false,
@@ -4127,19 +4128,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
       }
 
       const providerName = req.body.providerName || 'PLUSPESA';
-      const configPayload = req.body.config || {};
-      const updateResult = paymentService.updateProviderConfig(providerName, configPayload);
-      try {
-        sellerPaymentService.updateProviderConfig(providerName, configPayload);
-      } catch (err: any) {
-        console.warn('[server] Error syncing provider config to sellerPaymentService:', err.message);
-      }
-      try {
-        marketplacePaymentRequestService.updateProviderConfig(providerName, configPayload);
-      } catch (err: any) {
-        console.warn('[server] Error syncing provider config to marketplacePaymentRequestService:', err.message);
-      }
-
+      const updateResult = paymentService.updateProviderConfig(providerName, req.body.config || {});
       res.json({
         status: updateResult.success ? 'ok' : 'error',
         version: 'V1.8E',

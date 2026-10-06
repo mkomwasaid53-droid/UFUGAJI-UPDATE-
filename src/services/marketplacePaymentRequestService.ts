@@ -210,30 +210,6 @@ export class MarketplacePaymentRequestService {
     return provider;
   }
 
-  public updateProviderConfig(providerName: string, config: any): { success: boolean; error?: string } {
-    try {
-      const provider = this.getProvider(providerName);
-      if (provider.updateConfig) {
-        provider.updateConfig(config);
-        return { success: true };
-      }
-      return { success: false, error: `Provider ${providerName} does not support updateConfig` };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
-  }
-
-  public getProviderSafeConfig(providerName: string = 'PLUSPESA'): any {
-    const provider = this.getProvider(providerName);
-    if (provider.getSafeConfig) {
-      return provider.getSafeConfig();
-    }
-    return {
-      providerName: provider.providerName,
-      isConfigured: provider.isConfigured
-    };
-  }
-
   /**
    * Reset all in-memory, disk, and local caches for clean isolated testing.
    */
@@ -420,17 +396,19 @@ export class MarketplacePaymentRequestService {
     }
 
     // 5. AMOUNT & COMMERCIAL AUTHORITY (Requirement 4)
-    const quantity = Math.floor(Number(input.quantity));
-    if (isNaN(quantity) || quantity <= 0) {
+    const rawQty = Number(input.quantity);
+    if (isNaN(rawQty) || rawQty <= 0) {
       throw new Error('Idadi (Quantity) lazima iwe namba chanya (zaidi ya 0).');
     }
+    const quantity = Number.isInteger(rawQty) ? rawQty : Number(rawQty.toFixed(2));
 
-    const unitPrice = Math.floor(Number(input.unitPrice));
-    if (isNaN(unitPrice) || unitPrice <= 0) {
+    const rawPrice = Number(input.unitPrice);
+    if (isNaN(rawPrice) || rawPrice <= 0) {
       throw new Error('Bei kwa moja (Unit Price) lazima iwe namba chanya (zaidi ya 0).');
     }
+    const unitPrice = Math.round(rawPrice);
 
-    const totalAmount = quantity * unitPrice;
+    const totalAmount = Math.round(quantity * unitPrice);
     if (totalAmount < MARKETPLACE_PAYMENT_CONFIG.minAmount) {
       throw new Error(
         `Kiasi cha chini cha malipo ni TSh ${MARKETPLACE_PAYMENT_CONFIG.minAmount.toLocaleString()}.`

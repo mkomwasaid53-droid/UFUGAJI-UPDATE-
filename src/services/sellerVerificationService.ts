@@ -27,7 +27,6 @@ import {
   getSellerVerificationDisplay,
   VerificationDocumentReference
 } from '../types/sellerVerification';
-export type { PublicSellerVerificationBadge } from '../types/sellerVerification';
 import { PaymentProvider } from './payment/paymentProviderInterface';
 import { PlusPesaPaymentProvider } from './payment/plusPesaPaymentProvider';
 import { MockPaymentProvider } from './payment/mockPaymentProvider';
@@ -330,58 +329,17 @@ export class SellerVerificationService {
   /**
    * Returns a lightweight, safe public trust signal for Marketplace.
    * NEVER exposes internal review notes, national ID, or verification documents.
-   *
-   * STRICT BADGE ELIGIBILITY (V1.11C-CORRECTIVE-1):
-   * A seller may display "✓ Verified Seller" ONLY when:
-   * - status === 'APPROVED'
-   * - badgeStatus === 'ACTIVE'
-   * - hasActiveBadge === true
-   * - not suspended
-   * - not expired
-   * - not requiring re-verification
    */
   public getPublicSellerBadge(sellerUserId: string): PublicSellerVerificationBadge {
-    if (!sellerUserId) {
-      return {
-        sellerUserId: '',
-        isVerified: false,
-        badgeStatus: 'INACTIVE',
-        badgeLabel: 'Haijahakikiwa',
-        shortLabel: 'Bado',
-        notice: 'Muuzaji hajaidhinishwa na mfumo rasmi wa uhakiki wa Ufugaji Update.'
-      };
-    }
-
     const app = this.getVerificationBySellerId(sellerUserId);
-    const nowMs = Date.now();
-    const isExpired = Boolean(app?.expiresAt && new Date(app.expiresAt).getTime() < nowMs);
-    const isSuspended = Boolean(app?.status === 'SUSPENDED' || app?.badgeStatus === 'SUSPENDED');
-    const isReverificationReq = Boolean(app?.status === 'REVERIFICATION_REQUIRED' || app?.reverificationRequiredAt);
-
-    if (
-      !app ||
-      app.status !== 'APPROVED' ||
-      app.badgeStatus !== 'ACTIVE' ||
-      !app.hasActiveBadge ||
-      isExpired ||
-      isSuspended ||
-      isReverificationReq
-    ) {
-      const effectiveBadgeStatus: SellerVerificationBadgeStatus = isSuspended
-        ? 'SUSPENDED'
-        : (app ? app.badgeStatus : 'INACTIVE');
-
+    if (!app || app.badgeStatus !== 'ACTIVE') {
       return {
         sellerUserId,
         isVerified: false,
-        badgeStatus: effectiveBadgeStatus,
-        badgeLabel: isSuspended ? 'Uhakiki Umesitishwa' : isExpired ? 'Uhakiki Umekwisha' : 'Haijahakikiwa',
-        shortLabel: isSuspended ? 'Umesitishwa' : isExpired ? 'Umekwisha' : 'Bado',
-        notice: isSuspended
-          ? 'Uhakiki wa muuzaji huyu umesitishwa kiutawala na jopo la usimamizi.'
-          : isExpired
-          ? 'Muda wa uhakiki wa muuzaji huyu umekwisha na anasubiri kuhakikiwa upya.'
-          : 'Muuzaji hajaidhinishwa na mfumo rasmi wa uhakiki wa Ufugaji Update.'
+        badgeStatus: app ? app.badgeStatus : 'INACTIVE',
+        badgeLabel: 'Haijahakikiwa',
+        shortLabel: 'Bado',
+        notice: 'Muuzaji hajaidhinishwa na mfumo rasmi wa uhakiki wa Ufugaji Update.'
       };
     }
 
@@ -839,7 +797,7 @@ export class SellerVerificationService {
         currency: governedCurrency,
         customerPhone: normalizedPhone,
         providerNetwork: resolvedNetwork,
-        description: `Ada ya Uchakataji wa Uhakiki wa Muuzaji (Processing Fee) - TSh ${governedAmount.toLocaleString()} (${app.applicationNumber})`,
+        description: `Ada ya Uhakiki wa Muuzaji (TSh ${governedAmount.toLocaleString()} / Miezi 3) - ${app.applicationNumber}`,
         metadata: {
           productType: 'SELLER_VERIFICATION',
           verificationId,
@@ -1346,9 +1304,9 @@ export class SellerVerificationService {
     app.currentReviewVersion = (app.currentReviewVersion || 1) + 1;
     app.updatedAt = now;
 
-    // Optional 1-year expiry from approval
-    const oneYearLater = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
-    app.expiresAt = oneYearLater;
+    // 3-month (90 days) validity from approval (Fee is TSh 5,000 / 3 months)
+    const ninetyDaysLater = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+    app.expiresAt = ninetyDaysLater;
 
     applicationsStore.set(verificationId, app);
     persistToDisk();
@@ -1382,7 +1340,6 @@ export class SellerVerificationService {
       this.activateBadge({ verificationId, adminUserId });
     }
 
-    invalidatePublicVerificationCache(app.sellerUserId);
     return app;
   }
 
@@ -1408,7 +1365,6 @@ export class SellerVerificationService {
 
     if (app.badgeStatus === 'ACTIVE' && app.hasActiveBadge) {
       // Idempotent
-      invalidatePublicVerificationCache(app.sellerUserId);
       return app;
     }
 
@@ -1450,7 +1406,6 @@ export class SellerVerificationService {
       metadata: { verificationId }
     });
 
-    invalidatePublicVerificationCache(app.sellerUserId);
     return app;
   }
 
@@ -1517,7 +1472,6 @@ export class SellerVerificationService {
       metadata: { verificationId, reason }
     });
 
-    invalidatePublicVerificationCache(app.sellerUserId);
     return app;
   }
 
@@ -1584,7 +1538,6 @@ export class SellerVerificationService {
       metadata: { verificationId, reason: safeRejectionReason }
     });
 
-    invalidatePublicVerificationCache(app.sellerUserId);
     return app;
   }
 
@@ -1612,18 +1565,6 @@ export class SellerVerificationService {
     app.updatedAt = now;
 
     applicationsStore.set(verificationId, app);
-
-    Array.from(applicationsStore.values()).forEach((otherApp) => {
-      if (otherApp.sellerUserId === app.sellerUserId || otherApp.sellerId === app.sellerUserId) {
-        otherApp.status = 'SUSPENDED';
-        otherApp.badgeStatus = 'SUSPENDED';
-        otherApp.hasActiveBadge = false;
-        otherApp.suspensionReason = reason.trim();
-        otherApp.updatedAt = now;
-        applicationsStore.set(otherApp.verificationId, otherApp);
-      }
-    });
-
     persistToDisk();
 
     this.recordAuditEvent({
@@ -1652,7 +1593,6 @@ export class SellerVerificationService {
       metadata: { verificationId, reason }
     });
 
-    invalidatePublicVerificationCache(app.sellerUserId);
     return app;
   }
 
@@ -1791,99 +1731,15 @@ export class SellerVerificationService {
   // 7. UTILITIES & TESTING HELPERS
   // --------------------------------------------------------------------------
 
-  public _clearAllForTesting(clearDisk: boolean = true): void {
+  public _clearAllForTesting(): void {
     applicationsStore.clear();
     sellerToVerificationMap.clear();
     auditsStore.clear();
     verificationPaymentIntentsStore.clear();
     externalIdToVerificationIntentMap.clear();
     idempotencyKeyToVerificationMap.clear();
-    if (clearDisk) {
-      persistToDisk();
-    }
-    invalidatePublicVerificationCache();
-  }
-
-  public _clearMemoryOnlyForTesting(): void {
-    applicationsStore.clear();
-    sellerToVerificationMap.clear();
-    auditsStore.clear();
-    verificationPaymentIntentsStore.clear();
-    externalIdToVerificationIntentMap.clear();
-    idempotencyKeyToVerificationMap.clear();
-    invalidatePublicVerificationCache();
+    persistToDisk();
   }
 }
 
 export const sellerVerificationService = new SellerVerificationService();
-
-// In-memory client cache for public badges
-const publicBadgesCache = new Map<string, { badge: PublicSellerVerificationBadge; cachedAt: number }>();
-const BADGE_CACHE_TTL_MS = 60000; // 1 minute
-
-/**
- * Invalidate the public verification badge cache and dispatch a real-time
- * event for all Marketplace UI surfaces (Gulio, Seller Shop, Buyer Shop).
- */
-export function invalidatePublicVerificationCache(sellerUserId?: string): void {
-  if (sellerUserId) {
-    publicBadgesCache.delete(sellerUserId);
-  } else {
-    publicBadgesCache.clear();
-  }
-  if (typeof window !== 'undefined') {
-    try {
-      window.dispatchEvent(
-        new CustomEvent('seller_verification_updated', {
-          detail: { sellerUserId }
-        })
-      );
-    } catch {}
-  }
-}
-
-/**
- * Authoritative single public verification projection for all Marketplace surfaces (V1.11C-CORRECTIVE-1).
- * Never exposes sensitive verification fields, NIDA, TIN, or internal review notes.
- */
-export async function getPublicSellerVerificationStatus(
-  sellerUserId: string
-): Promise<PublicSellerVerificationBadge> {
-  if (!sellerUserId) {
-    return {
-      sellerUserId: '',
-      isVerified: false,
-      badgeStatus: 'INACTIVE',
-      badgeLabel: 'Haijahakikiwa',
-      shortLabel: 'Bado',
-      notice: 'Muuzaji hajaidhinishwa na mfumo rasmi wa uhakiki wa Ufugaji Update.'
-    };
-  }
-
-  // Check client cache if in browser
-  if (typeof window !== 'undefined') {
-    const cached = publicBadgesCache.get(sellerUserId);
-    if (cached && Date.now() - cached.cachedAt < BADGE_CACHE_TTL_MS) {
-      return cached.badge;
-    }
-
-    try {
-      const res = await fetch(`/api/seller/verification/public-badge/${encodeURIComponent(sellerUserId)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.badge) {
-          publicBadgesCache.set(sellerUserId, { badge: data.badge, cachedAt: Date.now() });
-          return data.badge;
-        }
-      }
-    } catch {
-      // Fallback to local service below
-    }
-  }
-
-  const badge = sellerVerificationService.getPublicSellerBadge(sellerUserId);
-  if (typeof window !== 'undefined') {
-    publicBadgesCache.set(sellerUserId, { badge, cachedAt: Date.now() });
-  }
-  return badge;
-}

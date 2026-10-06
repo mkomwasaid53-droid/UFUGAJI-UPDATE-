@@ -93,31 +93,51 @@ export function getLocalCachedProducts(): MarketplaceProduct[] {
 }
 
 
-// Helper to save products to local cache with automatic quota overflow protection
+// Helper to save products to local cache with persistent multi-layer storage protection
 export function saveProductsToLocalCache(products: MarketplaceProduct[]): void {
+  // Always persist all product images to IndexedDB in background so they are permanent
+  if (typeof window !== 'undefined' && (window as any).indexedDB) {
+    import('./imageStorageService').then(({ saveImageToIndexedDB }) => {
+      products.forEach((p) => {
+        if (p.imageUrl) {
+          saveImageToIndexedDB(p.imageUrl, p.imageUrl);
+          saveImageToIndexedDB(`prod_${p.productId}`, p.imageUrl);
+        }
+        if (Array.isArray(p.images)) {
+          p.images.forEach((img) => {
+            if (img && img.url) {
+              saveImageToIndexedDB(img.url, img.url);
+              saveImageToIndexedDB(`img_${img.id || p.productId}`, img.url);
+            }
+          });
+        }
+      });
+    }).catch(() => {});
+  }
+
   try {
     localStorage.setItem(LOCAL_PRODUCTS_CACHE_KEY, JSON.stringify(products));
   } catch (err) {
-    console.warn('Hitilafu ya kuhifadhi akiba ya bidhaa (Quota overflow protection iko kazini):', err);
+    console.warn('Hitilafu ya kuhifadhi akiba ya bidhaa kwenye localStorage:', err);
     try {
-      // If quota exceeded, sanitize images that are huge base64 strings to save space
-      const sanitized = products.map((p) => {
-        const hasBase64 = (p.imageUrl && p.imageUrl.startsWith('data:image/')) ||
-          (p.images && p.images.some((img) => img.url && img.url.startsWith('data:image/')));
-        if (!hasBase64) return p;
+      // In case localStorage quota is exceeded, strip only heavy embedded raw base64 dataUrls
+      // without inventing broken non-existent file paths
+      const safeProducts = products.map((p) => {
+        const isRawBase64 = p.imageUrl && p.imageUrl.startsWith('data:image/');
         return {
           ...p,
-          imageUrl: p.imageUrl && p.imageUrl.startsWith('data:image/') ? '' : p.imageUrl,
+          // Keep existing server URLs (/uploads/...) or IndexedDB reference
+          imageUrl: isRawBase64 ? '' : p.imageUrl,
           images: (p.images || []).map((img) => ({
             ...img,
-            url: img.url.startsWith('data:image/') ? '' : img.url,
+            url: img.url && img.url.startsWith('data:image/') ? '' : img.url,
             thumbnailUrl: img.thumbnailUrl && img.thumbnailUrl.startsWith('data:image/') ? '' : img.thumbnailUrl,
           })),
         };
       });
-      localStorage.setItem(LOCAL_PRODUCTS_CACHE_KEY, JSON.stringify(sanitized));
+      localStorage.setItem(LOCAL_PRODUCTS_CACHE_KEY, JSON.stringify(safeProducts));
     } catch (innerErr) {
-      console.warn('Haikuweza kuhifadhi hata baada ya kusafisha picha:', innerErr);
+      console.warn('Haikuweza kuhifadhi kwenye localStorage:', innerErr);
     }
   }
 }
@@ -1188,11 +1208,20 @@ export async function updateMarketplaceProduct(
 
   // 1. Update on Server Storage
   try {
-    await fetch('/api/marketplace/products', {
+    const resp = await fetch('/api/marketplace/products', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedProduct),
     });
+    if (resp.ok) {
+      const serverSaved = await resp.json();
+      if (serverSaved && serverSaved.imageUrl) {
+        updatedProduct.imageUrl = serverSaved.imageUrl;
+      }
+      if (serverSaved && Array.isArray(serverSaved.images)) {
+        updatedProduct.images = serverSaved.images;
+      }
+    }
   } catch (serverErr) {
     console.warn('Haikuweza kusasisha kwenye seva moja kwa moja:', serverErr);
   }
