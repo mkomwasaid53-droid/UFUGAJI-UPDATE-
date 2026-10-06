@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { DigitalShop, ShopCatalogue, MarketplaceProduct } from '../../types/marketplace';
 import { SellerVerification } from '../../types/sellerVerification';
+import { PublicSellerVerificationBadge, sellerVerificationService } from '../../services/sellerVerificationService';
 import { evaluateShopMarketplaceEligibility } from '../../services/marketplaceGovernanceEnforcement';
 import { ShopHeader } from './ShopHeader';
 import { ProductCard } from './ProductCard';
@@ -26,6 +27,7 @@ interface BuyerShopViewProps {
   products: MarketplaceProduct[];
   isOwner?: boolean;
   authoritativeVerification?: SellerVerification | null;
+  publicBadge?: PublicSellerVerificationBadge | null;
   initialCatalogueId?: string | null;
   highlightProductId?: string | null;
   onBackToMarket: () => void;
@@ -44,6 +46,7 @@ export const BuyerShopView: React.FC<BuyerShopViewProps> = ({
   products,
   isOwner = false,
   authoritativeVerification,
+  publicBadge,
   initialCatalogueId,
   highlightProductId,
   onBackToMarket,
@@ -235,6 +238,7 @@ export const BuyerShopView: React.FC<BuyerShopViewProps> = ({
         shop={shop}
         isOwner={isOwner}
         authoritativeVerification={authoritativeVerification}
+        publicBadge={publicBadge || sellerVerificationService.getPublicSellerBadge(shop.sellerId)}
         totalProducts={products.length}
         totalCatalogues={visibleCatalogues.length}
         onEditShop={onEditShop}

@@ -253,7 +253,7 @@ async function runCorrectiveTests() {
 
   // SIMULATE BROWSER REFRESH / SERVER RESTART:
   // Wipe all in-memory maps, then reload strictly from disk
-  sellerVerificationService._clearAllForTesting();
+  sellerVerificationService._clearAllForTesting(false);
   assert(sellerVerificationService.getAllApplications().length === 0, 'Test 6.3: Memory cleared for simulation');
 
   // Re-load from disk

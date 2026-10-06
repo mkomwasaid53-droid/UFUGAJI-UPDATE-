@@ -4127,7 +4127,19 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
       }
 
       const providerName = req.body.providerName || 'PLUSPESA';
-      const updateResult = paymentService.updateProviderConfig(providerName, req.body.config || {});
+      const configPayload = req.body.config || {};
+      const updateResult = paymentService.updateProviderConfig(providerName, configPayload);
+      try {
+        sellerPaymentService.updateProviderConfig(providerName, configPayload);
+      } catch (err: any) {
+        console.warn('[server] Error syncing provider config to sellerPaymentService:', err.message);
+      }
+      try {
+        marketplacePaymentRequestService.updateProviderConfig(providerName, configPayload);
+      } catch (err: any) {
+        console.warn('[server] Error syncing provider config to marketplacePaymentRequestService:', err.message);
+      }
+
       res.json({
         status: updateResult.success ? 'ok' : 'error',
         version: 'V1.8E',

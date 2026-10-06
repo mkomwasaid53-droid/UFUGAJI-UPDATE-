@@ -18,6 +18,8 @@ import {
   Star
 } from 'lucide-react';
 
+import { PublicSellerVerificationBadge, sellerVerificationService } from '../../services/sellerVerificationService';
+
 interface ShopCardProps {
   shop: DigitalShop;
   products?: MarketplaceProduct[];
@@ -25,6 +27,7 @@ interface ShopCardProps {
   onOpenShop: (sellerId: string) => void;
   verificationStatus?: 'verified' | 'unverified' | 'pending';
   authoritativeVerification?: SellerVerification | null;
+  publicBadge?: PublicSellerVerificationBadge | null;
 }
 
 export const ShopCard: React.FC<ShopCardProps> = ({
@@ -33,7 +36,8 @@ export const ShopCard: React.FC<ShopCardProps> = ({
   catalogues = [],
   onOpenShop,
   verificationStatus,
-  authoritativeVerification
+  authoritativeVerification,
+  publicBadge
 }) => {
   // Count active products
   const activeProducts = products.filter(
@@ -48,15 +52,16 @@ export const ShopCard: React.FC<ShopCardProps> = ({
     new Set(activeProducts.map((p) => p.category))
   ).slice(0, 3);
 
-  // Check authoritative verification - never infer from arbitrary products or unverified text
-  const isVerified =
-    authoritativeVerification?.status === 'VERIFIED' ||
-    (authoritativeVerification === undefined && verificationStatus === 'verified');
+  // V1.11C-CORRECTIVE-1: Single authoritative public verification projection
+  const effectivePublicBadge = publicBadge || sellerVerificationService.getPublicSellerBadge(shop.sellerId);
+  const isVerified = Boolean(
+    effectivePublicBadge && effectivePublicBadge.isVerified && effectivePublicBadge.badgeStatus === 'ACTIVE'
+  );
 
-  const isPending =
-    authoritativeVerification?.status === 'PENDING_VERIFICATION' ||
-    authoritativeVerification?.status === 'UNDER_REVIEW' ||
-    (authoritativeVerification === undefined && verificationStatus === 'pending');
+  const isPending = !isVerified && Boolean(
+    (authoritativeVerification && (authoritativeVerification.status === 'UNDER_REVIEW' || authoritativeVerification.status === 'SUBMITTED' || authoritativeVerification.status === 'PAYMENT_CONFIRMED')) ||
+    (verificationStatus === 'pending')
+  );
 
   const ownerDisplayName =
     authoritativeVerification?.displayName ||

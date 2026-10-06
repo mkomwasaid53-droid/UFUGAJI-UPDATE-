@@ -24,6 +24,7 @@
  */
 
 import { MarketplaceProduct, DigitalShop, ProductOwnershipValidation, ProductOwnershipState } from '../types/marketplace';
+import { sellerVerificationService } from './sellerVerificationService';
 
 // Pattern signatures for unverified regulatory or governmental claims in product descriptions
 const UNVERIFIED_AUTHORITY_PATTERNS = [
@@ -130,7 +131,13 @@ export function validateProductOwnership(
   // 5. Authoritative Seller Verification derivation
   // Verification belongs ONLY to the seller identity, NOT to the product itself
   const effectiveVerificationStatus = sellerVerificationStatus || product.sellerVerificationStatus;
-  const isSellerVerified = effectiveVerificationStatus === 'verified' || effectiveVerificationStatus === 'VERIFIED';
+  const publicBadge = sellerId ? sellerVerificationService.getPublicSellerBadge(sellerId) : null;
+  const isSellerVerified = Boolean(
+    (publicBadge && publicBadge.isVerified && publicBadge.badgeStatus === 'ACTIVE') ||
+    effectiveVerificationStatus === 'verified' ||
+    effectiveVerificationStatus === 'VERIFIED' ||
+    effectiveVerificationStatus === 'APPROVED'
+  );
 
   const authoritativeShopName = (shop && shop.shopName) || product.sellerBusinessName || product.sellerName || 'Duka Rasmi';
   const authoritativeSellerName = product.sellerName || (shop && shop.shopName) || 'Muuzaji';

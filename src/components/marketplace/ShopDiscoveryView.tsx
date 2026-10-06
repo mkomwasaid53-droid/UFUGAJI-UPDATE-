@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { DigitalShop, MarketplaceProduct, ShopCatalogue } from '../../types/marketplace';
 import { SellerVerification } from '../../types/sellerVerification';
+import { PublicSellerVerificationBadge, sellerVerificationService } from '../../services/sellerVerificationService';
 import { ShopCard } from './ShopCard';
 import { scoreShopRelevance } from '../../services/marketplaceService';
 import {
@@ -21,6 +22,7 @@ interface ShopDiscoveryViewProps {
   catalogues?: Record<string, ShopCatalogue[]>;
   cataloguesMap?: Record<string, ShopCatalogue[]>;
   authoritativeVerificationsMap?: Record<string, SellerVerification>;
+  publicBadgesMap?: Record<string, PublicSellerVerificationBadge>;
   onOpenShop: (sellerId: string, catalogueId?: string | null, productId?: string | null) => void;
   onGoToProducts?: () => void;
 }
@@ -31,6 +33,7 @@ export const ShopDiscoveryView: React.FC<ShopDiscoveryViewProps> = ({
   catalogues,
   cataloguesMap,
   authoritativeVerificationsMap = {},
+  publicBadgesMap = {},
   onOpenShop,
   onGoToProducts
 }) => {
@@ -67,11 +70,11 @@ export const ShopDiscoveryView: React.FC<ShopDiscoveryViewProps> = ({
       );
     }
 
-    // Filter by Verified Only (Authoritative Seller Verification Check)
+    // Filter by Verified Only (Authoritative Seller Verification Check - V1.11C-CORRECTIVE-1)
     if (verifiedOnly) {
       result = result.filter((s) => {
-        const verif = authoritativeVerificationsMap[s.sellerId];
-        return verif?.status === 'VERIFIED';
+        const badge = publicBadgesMap[s.sellerId] || sellerVerificationService.getPublicSellerBadge(s.sellerId);
+        return Boolean(badge && badge.isVerified && badge.badgeStatus === 'ACTIVE');
       });
     }
 
@@ -244,6 +247,7 @@ export const ShopDiscoveryView: React.FC<ShopDiscoveryViewProps> = ({
               catalogues={resolvedCatalogues[shop.sellerId] || []}
               onOpenShop={onOpenShop}
               authoritativeVerification={authoritativeVerificationsMap[shop.sellerId]}
+              publicBadge={publicBadgesMap[shop.sellerId] || sellerVerificationService.getPublicSellerBadge(shop.sellerId)}
             />
           ))}
         </div>

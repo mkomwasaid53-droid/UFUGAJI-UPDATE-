@@ -568,17 +568,23 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {selectedConversation.sellerUserId === currentUserId && (
-                  <button
-                    type="button"
-                    onClick={() => setIsPaymentRequestModalOpen(true)}
-                    className="py-1.5 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                    title="Tuma ombi la malipo kwa mnunuzi"
-                  >
-                    <CreditCard className="w-3.5 h-3.5" />
-                    <span>Request Payment</span>
-                  </button>
-                )}
+                {selectedConversation.sellerUserId === currentUserId && (() => {
+                  const hasActiveRequest = paymentRequests.some(
+                    (r) => r.status === 'PENDING_PAYMENT' || r.status === 'PROCESSING'
+                  );
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setIsPaymentRequestModalOpen(true)}
+                      disabled={hasActiveRequest}
+                      className="py-1.5 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                      title={hasActiveRequest ? 'Kuna ombi la malipo linalosubiri tayari katika mazungumzo haya' : 'Tuma ombi la malipo kwa mnunuzi'}
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>{hasActiveRequest ? 'Ombi Linasubiri' : 'Request Payment'}</span>
+                    </button>
+                  );
+                })()}
 
                 {onViewProduct && selectedConversation.productId && (
                   <button
@@ -789,6 +795,7 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
           onClose={() => setIsPaymentRequestModalOpen(false)}
           conversation={selectedConversation}
           currentUserId={currentUserId}
+          existingRequests={paymentRequests}
           onSuccess={async (newReq) => {
             setPaymentRequests((prev) => [newReq, ...prev]);
             try {

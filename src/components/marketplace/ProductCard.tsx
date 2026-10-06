@@ -6,6 +6,8 @@ import { resolvePriceStockTrust } from '../../services/productPriceStockService'
 import { resolveLocationDeliveryTrust } from '../../services/productLocationDeliveryService';
 import { resolveProductTrustSignals } from '../../services/marketplaceTrustService';
 import { evaluateProductMarketplaceEligibility } from '../../services/marketplaceGovernanceEnforcement';
+import { PublicSellerVerificationBadge } from '../../types/sellerVerification';
+import { sellerVerificationService } from '../../services/sellerVerificationService';
 import {
   MapPin,
   Tag,
@@ -32,6 +34,7 @@ interface ProductCardProps {
   product: MarketplaceProduct;
   isOwner?: boolean;
   isHighlighted?: boolean;
+  publicBadge?: PublicSellerVerificationBadge | null;
   onViewDetails: (product: MarketplaceProduct) => void;
   onOpenShop?: (sellerId: string) => void;
   onOpenShopCatalogue?: (sellerId: string, catalogueId?: string | null, productId?: string) => void;
@@ -45,6 +48,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   product,
   isOwner,
   isHighlighted,
+  publicBadge,
   onViewDetails,
   onOpenShop,
   onOpenShopCatalogue,
@@ -57,11 +61,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const isSoldOut = product.status === 'sold_out' || product.quantityAvailable === 0;
   const isInactive = product.status === 'inactive' || product.status === 'draft';
 
+  // V1.11C-CORRECTIVE-1: Single authoritative public verification projection
+  const effectivePublicBadge = publicBadge || sellerVerificationService.getPublicSellerBadge(product.sellerId);
+  const isSellerVerified = Boolean(effectivePublicBadge.isVerified && effectivePublicBadge.badgeStatus === 'ACTIVE');
+
   // V1.6G: Authoritative Unified Trust Signals derivation
   const trust = React.useMemo(() => resolveProductTrustSignals(product), [product]);
   const ownership = {
-    isSellerVerified: trust.sellerVerification.isVerified,
-    state: trust.sellerVerification.status === 'INCONSISTENT' ? 'INCONSISTENT' : trust.sellerVerification.isVerified ? 'VERIFIED' : 'UNVERIFIED',
+    isSellerVerified,
+    state: trust.sellerVerification.status === 'INCONSISTENT' ? 'INCONSISTENT' : isSellerVerified ? 'VERIFIED' : 'UNVERIFIED',
     authoritativeSellerName: product.sellerName || trust.sellerVerification.businessName || 'Muuzaji',
     authoritativeShopName: trust.shop.shopName || product.shopId || 'Duka'
   };

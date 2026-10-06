@@ -1,6 +1,7 @@
 import React from 'react';
 import { DigitalShop, VerificationStatus } from '../../types/marketplace';
-import { SellerVerification } from '../../types/sellerVerification';
+import { SellerVerification, PublicSellerVerificationBadge } from '../../types/sellerVerification';
+import { sellerVerificationService } from '../../services/sellerVerificationService';
 import {
   Store,
   MapPin,
@@ -14,13 +15,15 @@ import {
   Globe,
   Lock,
   UserCheck,
-  ShieldAlert
+  ShieldAlert,
+  AlertTriangle
 } from 'lucide-react';
 
 interface ShopHeaderProps {
   shop: DigitalShop;
   verificationStatus?: VerificationStatus;
   authoritativeVerification?: SellerVerification | null;
+  publicBadge?: PublicSellerVerificationBadge | null;
   isOwner?: boolean;
   totalProducts?: number;
   totalCatalogues?: number;
@@ -33,6 +36,7 @@ export const ShopHeader: React.FC<ShopHeaderProps> = ({
   shop,
   verificationStatus = 'unverified',
   authoritativeVerification,
+  publicBadge,
   isOwner = false,
   totalProducts = 0,
   totalCatalogues = 0,
@@ -40,15 +44,24 @@ export const ShopHeader: React.FC<ShopHeaderProps> = ({
   onPreviewAsBuyer,
   onTogglePublish,
 }) => {
-  // Authoritative check - never infer verification from client strings or default to verified
-  const isAuthoritativeVerified =
-    authoritativeVerification?.status === 'VERIFIED' ||
-    (authoritativeVerification === undefined && verificationStatus === 'verified');
+  // V1.11C-CORRECTIVE-1: Single authoritative public verification projection
+  const publicBadgeSignal = publicBadge || sellerVerificationService.getPublicSellerBadge(shop.sellerId);
+  const isAuthoritativeVerified = Boolean(
+    (publicBadgeSignal && publicBadgeSignal.isVerified && publicBadgeSignal.badgeStatus === 'ACTIVE') ||
+    (authoritativeVerification && authoritativeVerification.status === 'APPROVED' && authoritativeVerification.badgeStatus === 'ACTIVE' && authoritativeVerification.hasActiveBadge)
+  );
 
-  const isAuthoritativePending =
+  const isAuthoritativeSuspended = Boolean(
+    (publicBadgeSignal && publicBadgeSignal.badgeStatus === 'SUSPENDED') ||
+    (authoritativeVerification && (authoritativeVerification.status === 'SUSPENDED' || authoritativeVerification.badgeStatus === 'SUSPENDED'))
+  );
+
+  const isAuthoritativePending = !isAuthoritativeVerified && !isAuthoritativeSuspended && Boolean(
     authoritativeVerification?.status === 'PENDING_VERIFICATION' ||
     authoritativeVerification?.status === 'UNDER_REVIEW' ||
-    (authoritativeVerification === undefined && verificationStatus === 'pending');
+    authoritativeVerification?.status === 'SUBMITTED' ||
+    authoritativeVerification?.status === 'PAYMENT_CONFIRMED'
+  );
 
   const sellerOwnerName =
     authoritativeVerification?.displayName ||

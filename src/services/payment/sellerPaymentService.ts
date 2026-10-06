@@ -141,6 +141,30 @@ export class SellerPaymentService {
     this.defaultProviderName = name.toUpperCase();
   }
 
+  public updateProviderConfig(providerName: string, config: any): { success: boolean; error?: string } {
+    try {
+      const provider = this.getProvider(providerName);
+      if (provider.updateConfig) {
+        provider.updateConfig(config);
+        return { success: true };
+      }
+      return { success: false, error: `Provider ${providerName} haiauni updateConfig` };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  public getProviderSafeConfig(providerName: string = 'PLUSPESA'): any {
+    const provider = this.getProvider(providerName);
+    if (provider.getSafeConfig) {
+      return provider.getSafeConfig();
+    }
+    return {
+      providerName: provider.providerName,
+      isConfigured: provider.isConfigured
+    };
+  }
+
   /**
    * Initiates a real or test mobile payment request for Seller Monetization.
    *

@@ -72,7 +72,7 @@ export class PlusPesaPaymentProvider implements PaymentProvider {
       baseUrl: (customConfig?.baseUrl ?? env.PLUS_PESA_BASE_URL ?? 'https://app.pluspesa.com/api/v1').replace(/\/+$/, ''),
       environment: customConfig?.environment ?? env.PLUS_PESA_ENVIRONMENT ?? 'sandbox',
       callbackSecret: customConfig?.callbackSecret ?? env.PLUS_PESA_CALLBACK_SECRET,
-      callbackUrl: customConfig?.callbackUrl ?? env.PLUS_PESA_CALLBACK_URL ?? (env.APP_URL ? `${env.APP_URL.replace(/\/+$/, '')}/api/ai/payment/webhook/pluspesa` : undefined),
+      callbackUrl: customConfig?.callbackUrl ?? env.PLUS_PESA_CALLBACK_URL ?? (env.APP_URL ? `${env.APP_URL.replace(/\/+$/, '')}/api/webhooks/pluspesa` : undefined),
       timeoutMs: customConfig?.timeoutMs ?? 15000
     };
   }
