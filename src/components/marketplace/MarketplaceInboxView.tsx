@@ -21,14 +21,8 @@ import {
   ExternalLink,
   ShieldAlert,
   Search,
-  AlertCircle,
-  CreditCard
+  AlertCircle
 } from 'lucide-react';
-import { MarketplacePaymentRequest } from '../../types/marketplacePaymentRequest';
-import { marketplacePaymentRequestService } from '../../services/marketplacePaymentRequestService';
-import { MarketplacePaymentRequestModal } from './MarketplacePaymentRequestModal';
-import { MarketplaceBuyerPayModal } from './MarketplaceBuyerPayModal';
-import { MarketplacePaymentRequestCard } from './MarketplacePaymentRequestCard';
 
 interface MarketplaceInboxViewProps {
   currentUserId: string;
@@ -49,9 +43,6 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
   const [conversations, setConversations] = useState<MarketplaceConversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<MarketplaceConversation | null>(null);
   const [messages, setMessages] = useState<MarketplaceMessage[]>([]);
-  const [paymentRequests, setPaymentRequests] = useState<MarketplacePaymentRequest[]>([]);
-  const [isPaymentRequestModalOpen, setIsPaymentRequestModalOpen] = useState(false);
-  const [activePaymentRequestForPay, setActivePaymentRequestForPay] = useState<MarketplacePaymentRequest | null>(null);
   const [inputText, setInputText] = useState('');
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
