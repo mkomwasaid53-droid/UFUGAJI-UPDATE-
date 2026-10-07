@@ -91,6 +91,10 @@ import {
   initInboxStorage
 } from './src/services/marketplaceInboxService';
 import {
+  gumzoGroupService,
+  initGumzoStorage
+} from './src/services/gumzoGroupService';
+import {
   getSellerVerificationDisplay
 } from './src/types/sellerVerification';
 import {
@@ -136,6 +140,9 @@ initVerificationStorage(fs, path);
 
 // Authoritative marketplace inbox storage initialization (V1.11B)
 initInboxStorage(fs, path);
+
+// Authoritative Gumzo group persistent storage initialization (V9.1)
+initGumzoStorage();
 
 // Persistent marketplace products storage helpers
 function readMarketplaceProductsFromDisk(): any[] {
@@ -6269,6 +6276,162 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     } catch (err: any) {
       const status = err.message?.includes('Huruhusiwi') ? 403 : 500;
       return res.status(status).json({ error: err.message });
+    }
+  });
+
+  // ========================================================================
+  // GUMZO GROUP & MEMBERSHIP API (V9.1 — Community Livestock Groups)
+  // ========================================================================
+
+  // 1. List discoverable groups (or groups a user belongs to)
+  app.get('/api/gumzo/groups', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      const category = req.query.category as string | undefined;
+      const userOnly = req.query.userOnly === 'true';
+
+      if (userOnly) {
+        if (!callerUserId) {
+          return res.status(401).json({ error: 'Hujaingia kwenye mfumo kupata vikundi vyako.' });
+        }
+        const userGroups = gumzoGroupService.getUserGroups(callerUserId);
+        return res.json({ groups: userGroups, total: userGroups.length });
+      }
+
+      const groups = gumzoGroupService.getDiscoverableGroups(callerUserId, category);
+      return res.json({ groups, total: groups.length });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 2. Get group details + caller's membership
+  app.get('/api/gumzo/groups/:groupId', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+      const groupId = req.params.groupId;
+
+      const group = gumzoGroupService.getGroupById(groupId, callerUserId, isAdmin);
+      if (!group) {
+        return res.status(404).json({ error: 'Kikundi hakikupatikana au huna ruhusa ya kukiona.' });
+      }
+
+      const membership = callerUserId ? gumzoGroupService.getMembership(groupId, callerUserId) : null;
+      return res.json({ group, membership });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 3. Create a new group (Request)
+  app.post('/api/gumzo/groups', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Huruhusiwi kuunda kikundi bila kuingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+      const input = req.body.input || req.body;
+
+      const result = gumzoGroupService.createGroup({
+        input,
+        authenticatedUserId: callerUserId,
+        isPlatformAdmin: isAdmin
+      });
+
+      return res.status(201).json(result);
+    } catch (err: any) {
+      const status = err.message?.includes('Huruhusiwi') || err.message?.includes('Authenticated user') ? 401 : 400;
+      return res.status(status).json({ error: err.message });
+    }
+  });
+
+  // 4. Join group
+  app.post('/api/gumzo/groups/:groupId/join', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const membership = gumzoGroupService.joinGroup(req.params.groupId, callerUserId);
+      const group = gumzoGroupService.getGroupById(req.params.groupId, callerUserId);
+      return res.json({ membership, group });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  // 5. Leave group
+  app.post('/api/gumzo/groups/:groupId/leave', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const membership = gumzoGroupService.leaveGroup(req.params.groupId, callerUserId);
+      const group = gumzoGroupService.getGroupById(req.params.groupId, callerUserId);
+      return res.json({ membership, group });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  // 6. Admin update group status (PENDING_APPROVAL -> ACTIVE, SUSPENDED, etc.)
+  app.post('/api/gumzo/groups/:groupId/status', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const updated = gumzoGroupService.adminUpdateGroupStatus({
+        groupId: req.params.groupId,
+        newStatus: req.body.status,
+        adminUserId: callerUserId,
+        isPlatformAdmin: isAdmin,
+        reason: req.body.reason
+      });
+
+      return res.json(updated);
+    } catch (err: any) {
+      const status = err.message?.includes('Huruhusiwi') ? 403 : 400;
+      return res.status(status).json({ error: err.message });
+    }
+  });
+
+  // 7. Platform Admin assign Leadership Admin
+  app.post('/api/gumzo/groups/:groupId/leadership', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+
+      if (!callerUserId || !isAdmin) {
+        return res.status(403).json({ error: 'Mamlaka ya Platform Admin yanahitajika.' });
+      }
+
+      const updated = gumzoGroupService.assignLeadershipAdmin({
+        groupId: req.params.groupId,
+        leadershipAdminUserId: req.body.leadershipAdminUserId,
+        platformAdminUserId: callerUserId,
+        isPlatformAdmin: true
+      });
+
+      return res.json(updated);
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
     }
   });
 

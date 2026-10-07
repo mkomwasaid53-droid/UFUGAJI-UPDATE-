@@ -683,6 +683,104 @@ service cloud.firestore {
       // Update / Delete: Strictly administrators only (immutable chat audit)
       allow update, delete: if isAdmin();
     }
+
+    // ========================================================================
+    // 6. GUMZO GROUPS & MEMBERSHIPS (V9.1 — Community Livestock Groups)
+    // ========================================================================
+
+    match /gumzoGroups/{groupId} {
+      // Read: Admin, public active groups, founder, leadership admin, or active members
+      allow read: if isAdmin() ||
+        (resource != null && resource.data.status == 'ACTIVE' && resource.data.visibility == 'PUBLIC') ||
+        (isAuthenticated() && resource != null && resource.data.founderAdminUserId == request.auth.uid) ||
+        (isAuthenticated() && resource != null && resource.data.leadershipAdminUserId == request.auth.uid) ||
+        (isAuthenticated() && exists(/databases/$(database)/documents/gumzoGroups/$(groupId)/members/$(request.auth.uid)));
+
+      // Create: Authenticated user creating a group request
+      // Server-authoritative boundaries:
+      // - founderAdminUserId and createdBy must match request.auth.uid
+      // - Initial status must be PENDING_APPROVAL or DRAFT (only admin can create ACTIVE)
+      // - memberCount starts at 1
+      // - Cannot assign leadershipAdminUserId without platform admin
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        (
+          request.resource.data.founderAdminUserId == request.auth.uid &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.status in ['DRAFT', 'PENDING_APPROVAL'] &&
+          request.resource.data.memberCount == 1 &&
+          !('leadershipAdminUserId' in request.resource.data)
+        )
+      );
+
+      // Update:
+      // - Platform Admins have full governance rights
+      // - Leadership Admin can update status (suspend, active, archive)
+      // - Founder Admin can only update basic descriptive fields (name, description, coverImageUrl)
+      //   Founder CANNOT change status, memberCount, founderAdminUserId, or leadershipAdminUserId
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        (
+          resource != null &&
+          resource.data.leadershipAdminUserId == request.auth.uid &&
+          request.resource.data.founderAdminUserId == resource.data.founderAdminUserId
+        ) ||
+        (
+          resource != null &&
+          resource.data.founderAdminUserId == request.auth.uid &&
+          resource.data.status != 'SUSPENDED' &&
+          resource.data.status != 'ARCHIVED' &&
+          request.resource.data.status == resource.data.status &&
+          request.resource.data.memberCount == resource.data.memberCount &&
+          request.resource.data.founderAdminUserId == resource.data.founderAdminUserId &&
+          (!('leadershipAdminUserId' in request.resource.data) || request.resource.data.leadershipAdminUserId == resource.data.get('leadershipAdminUserId', null))
+        )
+      );
+
+      // Delete: Strictly administrators only
+      allow delete: if isAdmin();
+
+      // Subcollection: Members
+      match /members/{userId} {
+        // Read: Any member of the group, group admins, or platform admin
+        allow read: if isAuthenticated() && (
+          isAdmin() ||
+          userId == request.auth.uid ||
+          (resource != null && resource.data.status == 'ACTIVE')
+        );
+
+        // Create: User can join a public active group as MEMBER
+        allow create: if isAuthenticated() && (
+          isAdmin() ||
+          (
+            userId == request.auth.uid &&
+            request.resource.data.userId == request.auth.uid &&
+            request.resource.data.groupId == groupId &&
+            request.resource.data.role == 'MEMBER' &&
+            request.resource.data.status in ['PENDING', 'ACTIVE']
+          ) ||
+          (
+            // Founder creating initial membership during group creation
+            userId == request.auth.uid &&
+            request.resource.data.role == 'FOUNDER_ADMIN'
+          )
+        );
+
+        // Update: Role changes require admin/leadership authority; User can leave (status = LEFT)
+        allow update: if isAuthenticated() && (
+          isAdmin() ||
+          (
+            userId == request.auth.uid &&
+            request.resource.data.role == resource.data.role &&
+            request.resource.data.status == 'LEFT'
+          )
+        );
+
+        // Delete: Admin or user leaving
+        allow delete: if isAdmin() || (isAuthenticated() && userId == request.auth.uid);
+      }
+    }
   }
 }
+
 
