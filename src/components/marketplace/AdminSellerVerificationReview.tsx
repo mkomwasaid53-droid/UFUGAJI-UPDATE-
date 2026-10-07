@@ -128,7 +128,7 @@ export const AdminSellerVerificationReview: React.FC = () => {
 
   // Count stats directly from authoritative records
   const pendingCount = verifications.filter((v) =>
-    ['PENDING_VERIFICATION', 'SUBMITTED', 'PAYMENT_REQUIRED', 'PAYMENT_PENDING', 'PAYMENT_CONFIRMED'].includes(v.status)
+    ['PENDING_VERIFICATION', 'SUBMITTED'].includes(v.status)
   ).length;
   const underReviewCount = verifications.filter((v) => v.status === 'UNDER_REVIEW').length;
   const verifiedCount = verifications.filter((v) => v.status === 'VERIFIED' || v.status === 'APPROVED').length;

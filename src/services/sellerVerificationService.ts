@@ -23,53 +23,20 @@ import {
   SellerVerificationAuditEvent,
   VerificationAuditAction,
   PublicSellerVerificationBadge,
-  VERIFICATION_FEE_CONFIG,
   getSellerVerificationDisplay,
   VerificationDocumentReference
 } from '../types/sellerVerification';
-import { PaymentProvider } from './payment/paymentProviderInterface';
-import { PlusPesaPaymentProvider } from './payment/plusPesaPaymentProvider';
-import { MockPaymentProvider } from './payment/mockPaymentProvider';
-import {
-  normalizeTanzanianPhoneNumber,
-  generateVerificationPaymentExternalId,
-  resolvePlusPesaProvider
-} from './payment/paymentUtils';
 import {
   emitAppNotification,
   getLocalCachedNotifications
 } from './notificationService';
 
-export interface VerificationPaymentIntent {
-  paymentIntentId: string;
-  verificationId: string;
-  sellerUserId: string;
-  purpose: 'VERIFICATION_PROCESSING_FEE';
-  amount: number;
-  currency: 'TZS';
-  provider: string;
-  status: 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'EXPIRED';
-  externalId: string;
-  providerReference?: string;
-  providerUuid?: string;
-  customerPhone?: string;
-  providerNetwork?: string;
-  idempotencyKey?: string;
-  checkoutUrl?: string;
-  paymentInstructions?: string;
-  failureReason?: string;
-  createdAt: string;
-  updatedAt: string;
-  completedAt?: string;
-  metadata?: Record<string, any>;
-}
+export type { PublicSellerVerificationBadge } from '../types/sellerVerification';
 
 // In-memory data structures
 const applicationsStore = new Map<string, SellerVerificationApplication>(); // verificationId -> app
 const sellerToVerificationMap = new Map<string, string>(); // sellerUserId -> latest active verificationId
 const auditsStore = new Map<string, SellerVerificationAuditEvent[]>(); // verificationId -> audits[]
-const verificationPaymentIntentsStore = new Map<string, VerificationPaymentIntent>(); // paymentIntentId -> intent
-const externalIdToVerificationIntentMap = new Map<string, string>(); // externalId -> paymentIntentId
 const idempotencyKeyToVerificationMap = new Map<string, string>(); // idempotencyKey -> verificationId
 
 const isNode = typeof window === 'undefined';
@@ -78,7 +45,6 @@ let pathModule: any = null;
 
 const APPS_FILE_PATH = 'data/seller_verifications.json';
 const AUDITS_FILE_PATH = 'data/seller_verification_audits.json';
-const PAYMENTS_FILE_PATH = 'data/verification_payments.json';
 
 export function initVerificationStorage(customFs?: any, customPath?: any) {
   if (customFs && customPath) {
@@ -137,20 +103,6 @@ function loadFromDisk() {
         });
       }
     }
-
-    // 3. Payment intents
-    const payPath = pathModule.resolve(cwd, PAYMENTS_FILE_PATH);
-    if (fsModule.existsSync(payPath)) {
-      const data = JSON.parse(fsModule.readFileSync(payPath, 'utf8'));
-      if (Array.isArray(data)) {
-        data.forEach((intent: VerificationPaymentIntent) => {
-          verificationPaymentIntentsStore.set(intent.paymentIntentId, intent);
-          if (intent.externalId) {
-            externalIdToVerificationIntentMap.set(intent.externalId, intent.paymentIntentId);
-          }
-        });
-      }
-    }
   } catch (err) {
     console.warn('[sellerVerificationService] Disk load error:', err);
   }
@@ -171,44 +123,13 @@ function persistToDisk() {
     const auditsPath = pathModule.resolve(cwd, AUDITS_FILE_PATH);
     const allAudits = Array.from(auditsStore.values()).flat();
     fsModule.writeFileSync(auditsPath, JSON.stringify(allAudits, null, 2), 'utf8');
-
-    // 3. Payments
-    const payPath = pathModule.resolve(cwd, PAYMENTS_FILE_PATH);
-    fsModule.writeFileSync(payPath, JSON.stringify(Array.from(verificationPaymentIntentsStore.values()), null, 2), 'utf8');
   } catch (err) {
     console.warn('[sellerVerificationService] Disk persist error:', err);
   }
 }
 
 export class SellerVerificationService {
-  private providers = new Map<string, PaymentProvider>();
-  private defaultProviderName: string = 'PLUSPESA';
-
-  constructor() {
-    const plusPesa = new PlusPesaPaymentProvider();
-    const mock = new MockPaymentProvider();
-    this.registerProvider(plusPesa);
-    this.registerProvider(mock);
-    this.providers.set('MOCK', mock);
-  }
-
-  public registerProvider(provider: PaymentProvider): void {
-    this.providers.set(provider.providerName.toUpperCase(), provider);
-  }
-
-  public getProvider(name?: string): PaymentProvider {
-    const targetName = (name || this.defaultProviderName).toUpperCase();
-    if (targetName === 'MOCK' || targetName === 'MOCK_PROVIDER') {
-      return this.providers.get('MOCK') || this.providers.get('MOCK_PROVIDER')!;
-    }
-    const provider = this.providers.get(targetName);
-    if (!provider) {
-      const fallback = this.providers.get('PLUSPESA') || Array.from(this.providers.values())[0];
-      if (!fallback) throw new Error(`Hakuna payment provider iliyosajiliwa: ${targetName}`);
-      return fallback;
-    }
-    return provider;
-  }
+  constructor() {}
 
   // --------------------------------------------------------------------------
   // 1. QUERY APPLICATIONS & BADGES
@@ -487,9 +408,6 @@ export class SellerVerificationService {
       documentNotes: input.documentNotes?.trim() || undefined,
       notes: input.notes?.trim() || undefined,
       documents: structuredDocs,
-      processingFeeAmount: VERIFICATION_FEE_CONFIG.amount,
-      processingFeeCurrency: VERIFICATION_FEE_CONFIG.currency,
-      processingPaymentStatus: isEditingExistingDraft && existingApp ? existingApp.processingPaymentStatus : 'NOT_PAID',
       currentReviewVersion,
       badgeStatus: 'INACTIVE',
       hasActiveBadge: false,
@@ -609,10 +527,7 @@ export class SellerVerificationService {
     const previousStatus = app.status;
     const now = new Date().toISOString();
 
-    // If fee already paid (e.g. from prior confirmation or correction), move to PAYMENT_CONFIRMED, otherwise PAYMENT_REQUIRED
-    const nextStatus: SellerVerificationStatus = app.processingPaymentStatus === 'SUCCESS'
-      ? 'PAYMENT_CONFIRMED'
-      : 'PAYMENT_REQUIRED';
+    const nextStatus: SellerVerificationStatus = 'SUBMITTED';
 
     app.status = nextStatus;
     app.submittedAt = now;
@@ -642,7 +557,7 @@ export class SellerVerificationService {
       category: 'MODERATION',
       priority: 'NORMAL',
       title: 'Maombi ya Uhakiki Yamewasilishwa',
-      message: `Maombi yako namba ${app.applicationNumber} yamewasilishwa kikamilifu. ${nextStatus === 'PAYMENT_REQUIRED' ? 'Tafadhali kamilisha ada ya uchakataji (TSh 5,000).' : 'Maombi yataingia kwenye foleni ya ukaguzi.'}`,
+      message: `Maombi yako namba ${app.applicationNumber} yamewasilishwa kikamilifu na yataingia kwenye foleni ya ukaguzi wa wasimamizi.`,
       targetId: app.verificationId,
       targetType: 'SELLER',
       senderUserId: 'SYSTEM',
@@ -702,472 +617,12 @@ export class SellerVerificationService {
   }
 
   // --------------------------------------------------------------------------
-  // 4. PROCESSING FEE & PAYMENT INITIATION
-  // --------------------------------------------------------------------------
-
-  /**
-   * Initiates payment for the verification processing fee.
-   *
-   * STRICT BOUNDARIES:
-   * - Amount is strictly locked server-side to VERIFICATION_FEE_CONFIG.amount (5,000 TZS).
-   * - Client CANNOT alter fee, currency, or destination.
-   * - Purpose: VERIFICATION_PROCESSING_FEE.
-   * - Success of this payment DOES NOT grant verification approval or active badge!
-   */
-  public async initiateVerificationPayment(params: {
-    sellerUserId: string;
-    verificationId: string;
-    customerPhone: string;
-    providerNetwork?: string;
-    providerName?: string;
-    idempotencyKey?: string;
-    correlationId?: string;
-  }): Promise<{
-    success: boolean;
-    paymentIntent: VerificationPaymentIntent;
-    checkoutUrl?: string;
-    paymentInstructions?: string;
-    error?: string;
-    errorCode?: string;
-  }> {
-    const { sellerUserId, verificationId, customerPhone, providerNetwork, providerName, idempotencyKey, correlationId } = params;
-
-    const app = this.getVerificationById(verificationId);
-    if (!app) {
-      return {
-        success: false,
-        paymentIntent: null as any,
-        error: `Maombi ya uhakiki ${verificationId} hayakupatikana.`,
-        errorCode: 'VERIFICATION_NOT_FOUND'
-      };
-    }
-
-    if (app.sellerUserId !== sellerUserId) {
-      return {
-        success: false,
-        paymentIntent: null as any,
-        error: 'Ruhusa imekataliwa: Huwezi kulipia maombi ya muuzaji mwingine.',
-        errorCode: 'UNAUTHORIZED_SELLER'
-      };
-    }
-
-    // Check if fee already paid
-    if (app.processingPaymentStatus === 'SUCCESS') {
-      return {
-        success: false,
-        paymentIntent: null as any,
-        error: 'Ada ya uchakataji ya maombi haya tayari imelipwa kikamilifu.',
-        errorCode: 'FEE_ALREADY_PAID'
-      };
-    }
-
-    // Phone validation
-    const phoneValidation = normalizeTanzanianPhoneNumber(customerPhone);
-    if (!phoneValidation.isValid) {
-      return {
-        success: false,
-        paymentIntent: null as any,
-        error: phoneValidation.error || 'Namba ya simu ya malipo si sahihi.',
-        errorCode: 'INVALID_PHONE'
-      };
-    }
-
-    const normalizedPhone = phoneValidation.normalizedPhone!;
-    const resolvedNetwork = providerNetwork || phoneValidation.suggestedProvider || 'Mpesa';
-
-    // Provider resolution
-    const providerInstance = this.getProvider(providerName);
-    const governedAmount = VERIFICATION_FEE_CONFIG.amount; // 5,000 TZS
-    const governedCurrency = VERIFICATION_FEE_CONFIG.currency; // TZS
-
-    const paymentIntentId = `vpi_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    const externalId = generateVerificationPaymentExternalId(paymentIntentId);
-    const nowIso = new Date().toISOString();
-
-    let providerResult;
-    try {
-      providerResult = await providerInstance.createPaymentRequest({
-        paymentId: paymentIntentId,
-        externalId,
-        paymentIntentId,
-        userId: sellerUserId,
-        customerName: app.legalName || app.displayName || sellerUserId,
-        planId: 'VERIFICATION_PROCESSING_FEE',
-        amount: governedAmount,
-        currency: governedCurrency,
-        customerPhone: normalizedPhone,
-        providerNetwork: resolvedNetwork,
-        description: `Ada ya Uhakiki wa Muuzaji (TSh ${governedAmount.toLocaleString()} / Miezi 3) - ${app.applicationNumber}`,
-        metadata: {
-          productType: 'SELLER_VERIFICATION',
-          verificationId,
-          sellerUserId,
-          correlationId,
-          operator: phoneValidation.operator,
-          providerNetwork: resolvedNetwork
-        }
-      });
-    } catch (err: any) {
-      return {
-        success: false,
-        paymentIntent: null as any,
-        error: `Hitilafu ya mtoa huduma (${providerInstance.providerName}): ${err.message || 'Haikuweza kutuma ombi'}`,
-        errorCode: 'PROVIDER_ERROR'
-      };
-    }
-
-    if (!providerResult.success) {
-      return {
-        success: false,
-        paymentIntent: null as any,
-        error: providerResult.errorMessage || 'Mtoa huduma amekataa ombi la malipo.',
-        errorCode: 'PROVIDER_REJECTED'
-      };
-    }
-
-    const initialStatus = providerResult.normalizedStatus === 'SUCCESS'
-      ? 'SUCCESS'
-      : (providerResult.normalizedStatus || 'PROCESSING') as 'PENDING' | 'PROCESSING' | 'SUCCESS';
-
-    const intent: VerificationPaymentIntent = {
-      paymentIntentId,
-      verificationId,
-      sellerUserId,
-      purpose: 'VERIFICATION_PROCESSING_FEE',
-      amount: governedAmount,
-      currency: governedCurrency,
-      provider: providerInstance.providerName,
-      status: initialStatus,
-      externalId,
-      providerReference: providerResult.providerReference,
-      providerUuid: providerResult.providerUuid,
-      customerPhone: normalizedPhone,
-      providerNetwork: resolvedNetwork,
-      idempotencyKey,
-      checkoutUrl: providerResult.checkoutUrl,
-      paymentInstructions: providerResult.paymentInstructions,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      metadata: {
-        correlationId,
-        providerStatus: providerResult.providerStatus
-      }
-    };
-
-    verificationPaymentIntentsStore.set(paymentIntentId, intent);
-    externalIdToVerificationIntentMap.set(externalId, paymentIntentId);
-
-    // Update application state
-    const previousStatus = app.status;
-    app.status = initialStatus === 'SUCCESS' ? 'PAYMENT_CONFIRMED' : 'PAYMENT_PENDING';
-    app.paymentIntentId = paymentIntentId;
-    app.processingPaymentStatus = initialStatus;
-    if (initialStatus === 'SUCCESS') {
-      app.paymentConfirmedAt = nowIso;
-      app.paymentTransactionRef = providerResult.providerReference || externalId;
-    }
-    app.updatedAt = nowIso;
-    applicationsStore.set(verificationId, app);
-
-    persistToDisk();
-
-    this.recordAuditEvent({
-      verificationId,
-      sellerUserId,
-      actorUserId: sellerUserId,
-      actorRole: 'SELLER',
-      action: initialStatus === 'SUCCESS' ? 'VERIFICATION_PAYMENT_CONFIRMED' : 'VERIFICATION_PAYMENT_INITIATED',
-      previousStatus,
-      newStatus: app.status,
-      notes: `Malipo ya ada ya uchakataji (TSh ${governedAmount.toLocaleString()}) yameanzishwa kupitia ${providerInstance.providerName}`
-    });
-
-    if (initialStatus === 'SUCCESS') {
-      emitAppNotification({
-        recipientUserId: sellerUserId,
-        type: 'VERIFICATION_PAYMENT_CONFIRMED',
-        category: 'MODERATION',
-        priority: 'NORMAL',
-        title: 'Ada ya Uhakiki Imelipwa',
-        message: 'Malipo ya ada ya uchakataji yamepokelewa kikamilifu. Maombi yako yameingizwa kwenye foleni ya ukaguzi wa kiutawala.',
-        targetId: verificationId,
-        targetType: 'SELLER',
-        senderUserId: 'SYSTEM',
-        actionUrl: '/profile?tab=verification',
-        metadata: { verificationId, paymentIntentId }
-      });
-    }
-
-    return {
-      success: true,
-      paymentIntent: intent,
-      checkoutUrl: providerResult.checkoutUrl,
-      paymentInstructions: providerResult.paymentInstructions
-    };
-  }
-
-  // --------------------------------------------------------------------------
-  // 5. WEBHOOK & STATUS CONFIRMATION
-  // --------------------------------------------------------------------------
-
-  /**
-   * Processes verified provider callbacks / webhooks for verification fee payments.
-   *
-   * STRICT SEPARATION & BOUNDARY:
-   * - Enforces amount === 5000 and currency === TZS.
-   * - Validates externalId starts with UFUGAJI_VERIFICATION_.
-   * - Idempotent: safe against double callbacks.
-   * - DOES NOT APPROVE VERIFICATION! Moves to PAYMENT_CONFIRMED only.
-   */
-  public async processVerificationPaymentCallback(
-    providerName: string,
-    payload: any,
-    headers?: Record<string, string | string[] | undefined>,
-    correlationId?: string,
-    rawBody?: any
-  ): Promise<{
-    success: boolean;
-    isDuplicate: boolean;
-    verification?: SellerVerificationApplication;
-    paymentIntent?: VerificationPaymentIntent;
-    error?: string;
-    errorCode?: string;
-  }> {
-    const provider = this.getProvider(providerName);
-    const verification = await provider.verifyPaymentCallback(payload, headers, rawBody);
-
-    if (!verification.isValid) {
-      return {
-        success: false,
-        isDuplicate: false,
-        error: verification.errorMessage || 'Sahihi ya webhook ya uhakiki si sahihi.',
-        errorCode: 'SIGNATURE_VERIFICATION_FAILED'
-      };
-    }
-
-    // Resolve matching intent
-    let paymentIntent: VerificationPaymentIntent | undefined;
-    if (verification.externalId && externalIdToVerificationIntentMap.has(verification.externalId)) {
-      paymentIntent = verificationPaymentIntentsStore.get(externalIdToVerificationIntentMap.get(verification.externalId)!);
-    } else if (verification.internalPaymentId && verificationPaymentIntentsStore.has(verification.internalPaymentId)) {
-      paymentIntent = verificationPaymentIntentsStore.get(verification.internalPaymentId);
-    }
-
-    if (!paymentIntent) {
-      return {
-        success: false,
-        isDuplicate: false,
-        error: 'Dhamira ya malipo ya uhakiki haikupatikana.',
-        errorCode: 'PAYMENT_NOT_FOUND'
-      };
-    }
-
-    // Amount & Currency Validation
-    if (verification.amount !== undefined && verification.amount !== paymentIntent.amount) {
-      return {
-        success: false,
-        isDuplicate: false,
-        paymentIntent,
-        error: `Kiasi kilicholipwa (${verification.amount}) hakikulingana na ada ya uchakataji (${paymentIntent.amount} TZS).`,
-        errorCode: 'AMOUNT_MISMATCH'
-      };
-    }
-
-    if (verification.currency && verification.currency.toUpperCase() !== 'TZS') {
-      return {
-        success: false,
-        isDuplicate: false,
-        paymentIntent,
-        error: `Sarafu si sahihi (${verification.currency}). Lazima iwe TZS.`,
-        errorCode: 'CURRENCY_MISMATCH'
-      };
-    }
-
-    const app = this.getVerificationById(paymentIntent.verificationId);
-    if (!app) {
-      return {
-        success: false,
-        isDuplicate: false,
-        paymentIntent,
-        error: 'Maombi ya uhakiki hayakupatikana kwa malipo haya.',
-        errorCode: 'VERIFICATION_NOT_FOUND'
-      };
-    }
-
-    // Idempotency: if already confirmed as SUCCESS, return safe duplicate
-    if (paymentIntent.status === 'SUCCESS' && app.processingPaymentStatus === 'SUCCESS') {
-      return {
-        success: true,
-        isDuplicate: true,
-        verification: app,
-        paymentIntent
-      };
-    }
-
-    const normalizedStatus = verification.normalizedStatus;
-    paymentIntent.status = normalizedStatus as any;
-    paymentIntent.updatedAt = new Date().toISOString();
-    if (verification.providerReference) paymentIntent.providerReference = verification.providerReference;
-
-    const previousStatus = app.status;
-    const now = new Date().toISOString();
-
-    if (normalizedStatus === 'SUCCESS') {
-      paymentIntent.completedAt = now;
-      app.processingPaymentStatus = 'SUCCESS';
-      app.paymentTransactionRef = verification.providerReference || paymentIntent.externalId;
-      app.paymentConfirmedAt = now;
-      // IMPORTANT: Payment confirmation only moves to PAYMENT_CONFIRMED, NEVER to APPROVED!
-      app.status = 'PAYMENT_CONFIRMED';
-      app.updatedAt = now;
-
-      applicationsStore.set(app.verificationId, app);
-      verificationPaymentIntentsStore.set(paymentIntent.paymentIntentId, paymentIntent);
-      persistToDisk();
-
-      this.recordAuditEvent({
-        verificationId: app.verificationId,
-        sellerUserId: app.sellerUserId,
-        actorUserId: 'PAYMENT_WEBHOOK',
-        actorRole: 'PAYMENT_WEBHOOK',
-        action: 'VERIFICATION_PAYMENT_CONFIRMED',
-        previousStatus,
-        newStatus: 'PAYMENT_CONFIRMED',
-        correlationId,
-        notes: `Ada ya uchakataji (TSh ${paymentIntent.amount.toLocaleString()} TZS) imethibitishwa na mtoa huduma ${provider.providerName}`
-      });
-
-      emitAppNotification({
-        recipientUserId: app.sellerUserId,
-        type: 'VERIFICATION_PAYMENT_CONFIRMED',
-        category: 'MODERATION',
-        priority: 'NORMAL',
-        title: 'Ada ya Uhakiki Imelipwa',
-        message: 'Malipo ya ada ya uchakataji yamepokelewa kikamilifu. Maombi yako sasa yanasubiri kukaguliwa na timu ya usimamizi.',
-        targetId: app.verificationId,
-        targetType: 'SELLER',
-        senderUserId: 'SYSTEM',
-        actionUrl: '/profile?tab=verification',
-        metadata: { verificationId: app.verificationId, paymentIntentId: paymentIntent.paymentIntentId }
-      });
-    } else if (normalizedStatus === 'FAILED' || normalizedStatus === 'CANCELLED') {
-      paymentIntent.failureReason = verification.failureReason || 'Malipo hayakukamilika';
-      app.processingPaymentStatus = 'FAILED';
-      app.updatedAt = now;
-
-      applicationsStore.set(app.verificationId, app);
-      verificationPaymentIntentsStore.set(paymentIntent.paymentIntentId, paymentIntent);
-      persistToDisk();
-
-      this.recordAuditEvent({
-        verificationId: app.verificationId,
-        sellerUserId: app.sellerUserId,
-        actorUserId: 'PAYMENT_WEBHOOK',
-        actorRole: 'PAYMENT_WEBHOOK',
-        action: 'VERIFICATION_PAYMENT_FAILED',
-        previousStatus,
-        newStatus: app.status,
-        reason: paymentIntent.failureReason,
-        notes: `Malipo ya ada ya uchakataji yameshindwa: ${paymentIntent.failureReason}`
-      });
-
-      emitAppNotification({
-        recipientUserId: app.sellerUserId,
-        type: 'VERIFICATION_PAYMENT_FAILED',
-        category: 'MODERATION',
-        priority: 'HIGH',
-        title: 'Hitilafu ya Malipo ya Ada ya Uhakiki',
-        message: `Malipo ya ada ya uchakataji hayakukamilika (${paymentIntent.failureReason}). Tafadhali jaribu tena.`,
-        targetId: app.verificationId,
-        targetType: 'SELLER',
-        senderUserId: 'SYSTEM',
-        actionUrl: '/profile?tab=verification',
-        metadata: { verificationId: app.verificationId, paymentIntentId: paymentIntent.paymentIntentId }
-      });
-    }
-
-    return {
-      success: true,
-      isDuplicate: false,
-      verification: app,
-      paymentIntent
-    };
-  }
-
-  /**
-   * Checks or polls status for a verification payment intent.
-   * Access control enforced: owner or admin only.
-   */
-  public async checkOrPollVerificationPaymentStatus(
-    paymentIntentId: string,
-    requestingUserId?: string,
-    isAdmin?: boolean
-  ): Promise<{
-    success: boolean;
-    paymentIntent: VerificationPaymentIntent;
-    application: SellerVerificationApplication | null;
-    error?: string;
-  }> {
-    const paymentIntent = verificationPaymentIntentsStore.get(paymentIntentId);
-    if (!paymentIntent) {
-      return {
-        success: false,
-        paymentIntent: null as any,
-        application: null,
-        error: `Dhamira ya malipo ${paymentIntentId} haikupatikana.`
-      };
-    }
-
-    if (requestingUserId && requestingUserId !== paymentIntent.sellerUserId && !isAdmin) {
-      return {
-        success: false,
-        paymentIntent: null as any,
-        application: null,
-        error: 'Ruhusa imekataliwa: Huwezi kuangalia malipo ya muuzaji mwingine.'
-      };
-    }
-
-    // If still pending/processing, poll provider
-    if (paymentIntent.status === 'PENDING' || paymentIntent.status === 'PROCESSING') {
-      try {
-        const provider = this.getProvider(paymentIntent.provider);
-        const refToQuery = paymentIntent.providerReference || paymentIntent.externalId;
-        if (refToQuery) {
-          const providerStatus = await provider.getPaymentStatus(refToQuery);
-          if (providerStatus.success) {
-            const normalizedStatus = providerStatus.normalizedStatus || paymentIntent.status;
-            if (normalizedStatus === 'SUCCESS') {
-              await this.processVerificationPaymentCallback(paymentIntent.provider, {
-                paymentId: paymentIntent.paymentIntentId,
-                externalId: paymentIntent.externalId,
-                status: 'SUCCESS',
-                amount: paymentIntent.amount,
-                currency: paymentIntent.currency,
-                providerReference: providerStatus.providerReference
-              });
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[sellerVerificationService] Poll error:', err);
-      }
-    }
-
-    const app = this.getVerificationById(paymentIntent.verificationId);
-    return {
-      success: true,
-      paymentIntent,
-      application: app
-    };
-  }
-
-  // --------------------------------------------------------------------------
-  // 6. ADMIN REVIEW & GOVERNANCE WORKFLOW (SERVER-AUTHORITATIVE)
+  // 4. ADMIN REVIEW & GOVERNANCE WORKFLOW (SERVER-AUTHORITATIVE)
   // --------------------------------------------------------------------------
 
   /**
    * Action: START_REVIEW
-   * Moves application from PAYMENT_CONFIRMED (or SUBMITTED) to UNDER_REVIEW.
+   * Moves application from SUBMITTED to UNDER_REVIEW.
    */
   public startReview(params: {
     verificationId: string;
@@ -1304,7 +759,7 @@ export class SellerVerificationService {
     app.currentReviewVersion = (app.currentReviewVersion || 1) + 1;
     app.updatedAt = now;
 
-    // 3-month (90 days) validity from approval (Fee is TSh 5,000 / 3 months)
+    // 3-month (90 days) validity from approval
     const ninetyDaysLater = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
     app.expiresAt = ninetyDaysLater;
 
@@ -1731,14 +1186,14 @@ export class SellerVerificationService {
   // 7. UTILITIES & TESTING HELPERS
   // --------------------------------------------------------------------------
 
-  public _clearAllForTesting(): void {
+  public _clearAllForTesting(persist: boolean = true): void {
     applicationsStore.clear();
     sellerToVerificationMap.clear();
     auditsStore.clear();
-    verificationPaymentIntentsStore.clear();
-    externalIdToVerificationIntentMap.clear();
     idempotencyKeyToVerificationMap.clear();
-    persistToDisk();
+    if (persist) {
+      persistToDisk();
+    }
   }
 }
 

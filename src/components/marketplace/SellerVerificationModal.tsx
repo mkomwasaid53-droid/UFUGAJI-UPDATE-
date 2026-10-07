@@ -3,8 +3,7 @@ import {
   SellerVerification,
   SellerVerificationType,
   SellerVerificationApplicationInput,
-  VERIFICATION_TYPES_CONFIG,
-  VERIFICATION_FEE_CONFIG
+  VERIFICATION_TYPES_CONFIG
 } from '../../types/sellerVerification';
 import { TANZANIA_REGIONS } from '../../data/marketplaceData';
 import { sellerVerificationService } from '../../services/sellerVerificationService';
@@ -20,12 +19,9 @@ import {
   CheckCircle2,
   Info,
   Clock,
-  CreditCard,
-  Lock,
   RefreshCw,
   Award,
-  ChevronRight,
-  ArrowLeft
+  ChevronRight
 } from 'lucide-react';
 
 interface SellerVerificationModalProps {
@@ -36,7 +32,7 @@ interface SellerVerificationModalProps {
   onSuccess: (updated: SellerVerification) => void;
 }
 
-type ModalStep = 'FORM' | 'PAYMENT' | 'PROCESSING_PAYMENT' | 'PAYMENT_SUCCESS' | 'ALREADY_SUBMITTED' | 'VERIFIED_ACTIVE';
+type ModalStep = 'FORM' | 'ALREADY_SUBMITTED' | 'VERIFIED_ACTIVE';
 
 export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = ({
   isOpen,
@@ -63,12 +59,6 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
   const [documentNotes, setDocumentNotes] = useState(initialData?.documentNotes || '');
   const [notes, setNotes] = useState(initialData?.notes || '');
 
-  // Payment Fields
-  const [paymentNetwork, setPaymentNetwork] = useState<'M-Pesa' | 'Tigo Pesa' | 'Airtel Money' | 'HaloPesa'>('M-Pesa');
-  const [paymentPhone, setPaymentPhone] = useState(initialData?.phone || '');
-  const [pinNumber, setPinNumber] = useState('');
-  const [pinError, setPinError] = useState<string | null>(null);
-
   // Status & Loaders
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -82,10 +72,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
       if (initialData.verificationType) setVerificationType(initialData.verificationType);
       if (initialData.businessName) setBusinessName(initialData.businessName);
       if (initialData.displayName) setDisplayName(initialData.displayName);
-      if (initialData.phone) {
-        setPhone(initialData.phone);
-        if (!paymentPhone) setPaymentPhone(initialData.phone);
-      }
+      if (initialData.phone) setPhone(initialData.phone);
       if (initialData.location) setLocation(initialData.location);
       if (initialData.district) setDistrict(initialData.district);
       if (initialData.nationalId) setNationalId(initialData.nationalId);
@@ -99,22 +86,12 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
       const status = initialData.status;
       const isBadgeActive = initialData.badgeStatus === 'ACTIVE' || initialData.hasActiveBadge;
 
-      // Determine step based on authoritative flow rules:
-      // Form can only be filled ONCE unless admin requested corrections
       if (status === 'APPROVED' || isBadgeActive) {
         setStep('VERIFIED_ACTIVE');
-      } else if (status === 'PAYMENT_REQUIRED' || status === 'PAYMENT_PENDING') {
-        // Needs payment
-        setStep('PAYMENT');
-      } else if (status === 'PAYMENT_CONFIRMED' || status === 'UNDER_REVIEW' || status === 'SUBMITTED' || status === 'PENDING_VERIFICATION') {
-        // Form already submitted and fee paid or in queue; cannot fill again
+      } else if (status === 'UNDER_REVIEW' || status === 'SUBMITTED' || status === 'PENDING_VERIFICATION') {
         setStep('ALREADY_SUBMITTED');
       } else if (status === 'DRAFT' && initialData.correctionNotes) {
-        // Admin requested corrections: allowed to edit form!
         setStep('FORM');
-      } else if (status === 'EXPIRED') {
-        // Expired after 3 months: allowed to renew!
-        setStep('PAYMENT');
       } else {
         setStep('FORM');
       }
@@ -137,7 +114,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
     (nationalId.trim().length > 0 || tinNumber.trim().length > 0 || permitReference.trim().length > 0 || documentNotes.trim().length > 0)
   );
 
-  // 1. Submit Form & Transition to Payment
+  // Submit Form
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -183,71 +160,10 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
       const app = await sellerVerificationService.submitSellerVerificationApplication(sellerId, input, idempotencyKey);
       setCurrentApp(app);
       onSuccess(app);
-
-      // UI changes immediately to Payment Step!
-      setPaymentPhone(phone.trim());
-      setStep('PAYMENT');
+      setStep('ALREADY_SUBMITTED');
     } catch (err: any) {
       console.error('Hitilafu ya kuwasilisha fomu ya uhakiki:', err);
       setErrorMessage(err.message || 'Hitilafu imetokea wakati wa kutuma fomu. Hakikisha taarifa zote zimekamilika.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // 2. Execute Payment with PIN
-  const handlePaymentSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPinError(null);
-    setErrorMessage(null);
-
-    const cleanPin = pinNumber.trim();
-    if (cleanPin.length !== 4 || !/^\d{4}$/.test(cleanPin)) {
-      setPinError('Tafadhali weka namba 4 za siri (PIN ya malipo) kwa usahihi.');
-      return;
-    }
-
-    const targetVerificationId = currentApp?.verificationId || (initialData as any)?.verificationId;
-    if (!targetVerificationId) {
-      setErrorMessage('Namba ya maombi ya uhakiki haikupatikana. Tafadhali wasilisha fomu kwanza.');
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      setStep('PROCESSING_PAYMENT');
-
-      // Call authoritative initiate verification payment API
-      const payRes = await sellerVerificationService.initiateVerificationPayment({
-        sellerUserId: sellerId,
-        verificationId: targetVerificationId,
-        customerPhone: paymentPhone || phone || '0700000000',
-        providerNetwork: paymentNetwork,
-        providerName: 'PLUSPESA',
-        idempotencyKey: `pay_${targetVerificationId}_${Date.now()}`
-      });
-
-      // Confirm payment authoritatively
-      await sellerVerificationService.processVerificationPaymentCallback('PLUSPESA', {
-        paymentId: payRes.paymentIntent?.paymentIntentId,
-        externalId: payRes.paymentIntent?.externalId,
-        status: 'SUCCESS',
-        amount: VERIFICATION_FEE_CONFIG.amount,
-        currency: 'TZS',
-        providerReference: `PP_TZ_${cleanPin}_${Date.now().toString(36).toUpperCase()}`
-      });
-
-      const updated = sellerVerificationService.getVerificationById(targetVerificationId) || currentApp;
-      if (updated) {
-        setCurrentApp(updated);
-        onSuccess(updated);
-      }
-
-      setStep('PAYMENT_SUCCESS');
-    } catch (err: any) {
-      console.error('Hitilafu ya malipo ya uhakiki:', err);
-      setErrorMessage(err.message || 'Hitilafu ya kuchakata malipo. Tafadhali jaribu tena.');
-      setStep('PAYMENT');
     } finally {
       setIsSubmitting(false);
     }
@@ -268,7 +184,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                 Uhakiki wa Muuzaji (Verified Seller)
               </h3>
               <p className="text-xs text-amber-300 font-medium">
-                Ada ya Beji: TSh {VERIFICATION_FEE_CONFIG.amount.toLocaleString()} / Miezi {VERIFICATION_FEE_CONFIG.validityMonths}
+                Utambulisho na Uthibitisho Rasmi wa Muuzaji
               </p>
             </div>
           </div>
@@ -283,9 +199,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
           </button>
         </div>
 
-        {/* ========================================================================= */}
-        {/* STEP 1: FORM FILLING (Incomplete form cannot be submitted) */}
-        {/* ========================================================================= */}
+        {/* STEP 1: FORM FILLING */}
         {step === 'FORM' && (
           <form onSubmit={handleFormSubmit} className="flex flex-col flex-1 overflow-hidden">
             <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
@@ -294,10 +208,10 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
               <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-xs text-stone-800 space-y-1">
                 <div className="flex items-center gap-2 font-bold text-amber-950">
                   <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
-                  <span>Kanuni ya Fomu & Malipo ya Uhakiki</span>
+                  <span>Kanuni ya Uhakiki wa Muuzaji</span>
                 </div>
                 <p className="text-stone-600 leading-relaxed text-[11.5px]">
-                  Fomu hii inapaswa kujazwa mara moja tu kwa ukamilifu. Baada ya kujaza, utaendelea kwenye hatua ya kulipia ada ya uhakiki ya <strong>TSh 5,000 kwa miezi 3</strong>. Kisha utaingiza namba za siri na kusubiri beji baada ya ukaguzi wa admin.
+                  Fomu hii inapaswa kujazwa kwa ukamilifu. Baada ya kuwasilisha, taarifa zako zitaingia kwenye foleni ya ukaguzi wa wasimamizi wa jukwaa ili kupatiwa beji rasmi ya uaminifu.
                 </p>
               </div>
 
@@ -437,7 +351,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                 </div>
               </div>
 
-              {/* 3. Verification Credentials (Required: at least one) */}
+              {/* 3. Verification Credentials */}
               <div className="space-y-3 pt-1">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider">
@@ -529,7 +443,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                   className="py-2.5 px-6 bg-amber-700 hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer min-h-[44px]"
                 >
                   <Save className="w-4 h-4" />
-                  <span>{isSubmitting ? 'Inahifadhi...' : 'Endelea na Malipo ya Ada'}</span>
+                  <span>{isSubmitting ? 'Inawasilisha...' : 'Wasilisha Maombi ya Uhakiki'}</span>
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
@@ -537,214 +451,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
           </form>
         )}
 
-        {/* ========================================================================= */}
-        {/* STEP 2: PAYMENT UI (Lipia Ada ya Uhakiki TSh 5,000 / Miezi 3 na Namba ya Siri) */}
-        {/* ========================================================================= */}
-        {step === 'PAYMENT' && (
-          <form onSubmit={handlePaymentSubmit} className="flex flex-col flex-1 overflow-hidden">
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
-              
-              {/* Fee Breakdown Card */}
-              <div className="p-4 bg-gradient-to-br from-amber-900 to-stone-900 text-white rounded-2xl border border-amber-700/50 space-y-2 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-amber-300 uppercase tracking-wider">
-                    Ada ya Uhakiki wa Beji
-                  </span>
-                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30">
-                    Miezi {VERIFICATION_FEE_CONFIG.validityMonths} (90 Days)
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between pt-1">
-                  <span className="text-2xl sm:text-3xl font-black text-amber-400 font-mono">
-                    TSh {VERIFICATION_FEE_CONFIG.amount.toLocaleString()}
-                  </span>
-                  <span className="text-xs text-stone-300">
-                    kwa miezi {VERIFICATION_FEE_CONFIG.validityMonths}
-                  </span>
-                </div>
-                <p className="text-[11px] text-stone-300 leading-relaxed pt-1 border-t border-white/10">
-                  {VERIFICATION_FEE_CONFIG.description}
-                </p>
-              </div>
-
-              {errorMessage && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
-
-              {/* Network Selection */}
-              <div>
-                <label className="block text-xs font-bold text-stone-800 mb-1.5 uppercase tracking-wider">
-                  Chagua Mtandao wa Malipo <span className="text-rose-600">*</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['M-Pesa', 'Tigo Pesa', 'Airtel Money', 'HaloPesa'] as const).map((net) => (
-                    <button
-                      key={net}
-                      type="button"
-                      onClick={() => setPaymentNetwork(net)}
-                      className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer transition-all ${
-                        paymentNetwork === net
-                          ? 'border-amber-700 bg-amber-50 text-amber-950 ring-1 ring-amber-700'
-                          : 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
-                      }`}
-                    >
-                      <span>{net}</span>
-                      {paymentNetwork === net && <CheckCircle2 className="w-4 h-4 text-amber-700" />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Phone Input */}
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Namba ya Simu ya Malipo ({paymentNetwork}) <span className="text-rose-600">*</span>
-                </label>
-                <div className="relative">
-                  <Phone className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="tel"
-                    required
-                    value={paymentPhone}
-                    onChange={(e) => setPaymentPhone(e.target.value)}
-                    placeholder="Mfano: 0715 123 456"
-                    className="w-full pl-10 pr-3.5 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-xs sm:text-sm font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-600 focus:bg-white min-h-[44px]"
-                  />
-                </div>
-              </div>
-
-              {/* PIN / Namba za Siri */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold text-stone-800 uppercase tracking-wider">
-                    Namba ya Siri (PIN ya Simu) <span className="text-rose-600">*</span>
-                  </label>
-                  <span className="text-[10px] text-stone-500 font-medium">Namba 4 za siri</span>
-                </div>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={4}
-                    required
-                    value={pinNumber}
-                    onChange={(e) => {
-                      setPinNumber(e.target.value.replace(/[^0-9]/g, ''));
-                      setPinError(null);
-                    }}
-                    placeholder="Weka namba 4 za siri"
-                    className="w-full pl-10 pr-3.5 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-sm font-mono tracking-widest text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-600 focus:bg-white min-h-[44px]"
-                  />
-                </div>
-                {pinError && (
-                  <p className="text-xs text-rose-600 mt-1 flex items-center gap-1 font-medium">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>{pinError}</span>
-                  </p>
-                )}
-                <p className="text-[11px] text-stone-500 mt-1.5 leading-relaxed">
-                  Ingiza namba yako ya siri kuthibitisha ombi la malipo ya ada ya uhakiki. Baada ya hapo maombi yako yataingia kwenye ukaguzi.
-                </p>
-              </div>
-
-            </div>
-
-            {/* Payment Footer */}
-            <div className="p-4 bg-stone-50 border-t border-stone-200 flex items-center justify-between gap-2.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setStep('FORM')}
-                disabled={isSubmitting}
-                className="py-2.5 px-3.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Rudi Kwenye Fomu</span>
-              </button>
-
-              <button
-                type="submit"
-                disabled={isSubmitting || pinNumber.length !== 4}
-                className="py-2.5 px-6 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer min-h-[44px]"
-              >
-                <CreditCard className="w-4 h-4" />
-                <span>Thibitisha & Lipa TSh 5,000</span>
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* ========================================================================= */}
-        {/* STEP: PROCESSING PAYMENT */}
-        {/* ========================================================================= */}
-        {step === 'PROCESSING_PAYMENT' && (
-          <div className="p-8 sm:p-12 text-center space-y-4 flex flex-col items-center justify-center flex-1">
-            <RefreshCw className="w-12 h-12 text-amber-700 animate-spin" />
-            <div className="space-y-1">
-              <h4 className="text-base font-bold text-stone-900">
-                Inachakata Malipo ya Ada (TSh 5,000)...
-              </h4>
-              <p className="text-xs text-stone-600 max-w-sm">
-                Tafadhali subiri wakati mtandao wa {paymentNetwork} unathibitisha namba zako za siri na kukamilisha muamala.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* STEP: PAYMENT SUCCESS & WAITING FOR ADMIN APPROVAL */}
-        {/* ========================================================================= */}
-        {step === 'PAYMENT_SUCCESS' && (
-          <div className="p-6 sm:p-8 space-y-5 flex flex-col flex-1 overflow-y-auto">
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-800 border-2 border-emerald-300 flex items-center justify-center mx-auto shadow-sm">
-                <CheckCircle2 className="w-9 h-9 text-emerald-700" />
-              </div>
-              <h4 className="text-lg font-black text-stone-900">
-                Malipo ya TSh 5,000 Yamekamilika!
-              </h4>
-              <p className="text-xs text-stone-600 max-w-md mx-auto leading-relaxed">
-                Ada ya uhakiki imepokelewa rasmi. Maombi yako sasa yanasubiri kukaguliwa na admin.
-              </p>
-            </div>
-
-            <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl text-xs text-emerald-950 space-y-2">
-              <div className="flex items-center gap-2 font-bold text-emerald-900">
-                <Clock className="w-4 h-4 text-emerald-700 shrink-0" />
-                <span>Hatua Zinazofuata:</span>
-              </div>
-              <ul className="space-y-1.5 pl-6 list-disc text-stone-700 text-[11.5px]">
-                <li>Admin atakagua taarifa na nyaraka ulizowasilisha.</li>
-                <li>Ikiwa uhakiki umekubaliwa, duka lako litapatiwa beji rasmi ya <strong>"Verified Seller"</strong>.</li>
-                <li>Beji itakuwa hai kwa muda wa <strong>miezi 3 (TSh 5,000 / 3 miezi)</strong>. Baada ya muda huo muuzaji anapaswa kuuhuisha beji.</li>
-                <li>Fomu imefungwa na haipaswi kujazwa tena isipokuwa pale admin atakapoomba marekebisho.</li>
-              </ul>
-            </div>
-
-            <div className="p-4 bg-stone-50 border border-stone-200 rounded-2xl text-xs text-stone-700 space-y-1">
-              <span className="font-semibold block text-stone-500 text-[10px] uppercase">Namba ya Maombi:</span>
-              <p className="font-mono font-bold text-stone-900">{currentApp?.applicationNumber || 'VER-2026'}</p>
-              <p className="text-[11px] text-stone-600">Biashara: {businessName || currentApp?.businessName}</p>
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-full sm:w-auto px-6 py-2.5 bg-stone-900 hover:bg-black text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
-              >
-                Funga
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* STEP: ALREADY SUBMITTED (Form only filled once constraint) */}
-        {/* ========================================================================= */}
+        {/* STEP: ALREADY SUBMITTED */}
         {step === 'ALREADY_SUBMITTED' && (
           <div className="p-6 sm:p-8 space-y-5 flex flex-col flex-1 overflow-y-auto">
             <div className="text-center space-y-2">
@@ -755,7 +462,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                 Maombi Yako Yameshawasilishwa (Fomu Imejazwa)
               </h4>
               <p className="text-xs text-stone-600 max-w-md mx-auto leading-relaxed">
-                Fomu ya uhakiki inajazwa mara moja tu. Maombi yako tayari yamepokelewa na yanasubiri ukaguzi wa wasimamizi wa jukwaa ili kupatiwa beji rasmi.
+                Maombi yako ya uhakiki yamepokelewa kikamilifu na yanasubiri ukaguzi wa wasimamizi wa jukwaa ili kupatiwa beji rasmi ya uaminifu.
               </p>
             </div>
 
@@ -763,7 +470,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
               <div className="flex items-center justify-between pb-2 border-b border-stone-200">
                 <span className="text-stone-500 font-medium">Hali ya Sasa:</span>
                 <span className="font-bold text-indigo-900 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
-                  {currentApp?.status === 'UNDER_REVIEW' ? 'Inakaguliwa na Wasimamizi' : 'Ada Imelipwa — Foleni ya Ukaguzi'}
+                  {currentApp?.status === 'UNDER_REVIEW' ? 'Inakaguliwa na Wasimamizi' : 'Yamewasilishwa — Foleni ya Ukaguzi'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -771,8 +478,8 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                 <span className="font-mono font-bold text-stone-800">{currentApp?.applicationNumber || 'VER-2026'}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-stone-500">Ada ya Uhakiki:</span>
-                <span className="font-bold text-emerald-700">TSh 5,000 / Miezi 3 (Imelipwa)</span>
+                <span className="text-stone-500">Aina ya Uhakiki:</span>
+                <span className="font-semibold text-stone-800">{currentTypeConfig?.labelSwahili || 'Uhakiki'}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-stone-500">Biashara:</span>
@@ -783,7 +490,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
             <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-950 flex items-start gap-2">
               <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
               <p className="leading-relaxed text-[11px]">
-                Huwezi kubadilisha taarifa hizi kwa sasa isipokuwa pale ambapo admin ataomba marekebisho. Ukaguzi ukikamilika utapata taarifa hapa.
+                Taarifa hizi zimehifadhiwa salama. Wasimamizi watakapokagua maombi yako utapokea taarifa rasmi.
               </p>
             </div>
 
@@ -799,9 +506,7 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* STEP: VERIFIED ACTIVE (Badge is already active) */}
-        {/* ========================================================================= */}
+        {/* STEP: VERIFIED ACTIVE */}
         {step === 'VERIFIED_ACTIVE' && (
           <div className="p-6 sm:p-8 space-y-5 flex flex-col flex-1 overflow-y-auto">
             <div className="text-center space-y-2">
@@ -822,10 +527,6 @@ export const SellerVerificationModal: React.FC<SellerVerificationModalProps> = (
                 <span className="font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300">
                   Beji Ipo Hai (Active)
                 </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-stone-600 font-medium">Muda wa Uhai:</span>
-                <span className="font-bold text-stone-900">Miezi 3 (TSh 5,000 / 3 miezi)</span>
               </div>
               {currentApp?.expiresAt && (
                 <div className="flex items-center justify-between">

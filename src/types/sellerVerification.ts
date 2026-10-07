@@ -196,7 +196,7 @@ export const VERIFICATION_FEE_CONFIG = {
   purpose: 'VERIFICATION_PROCESSING_FEE' as const,
   label: 'Ada ya Uhakiki wa Beji (TSh 5,000 / Miezi 3)',
   description: 'Ada ya uhakiki wa beji ni TSh 5,000 kwa miezi 3. Baada ya hapo muuzaji anatakiwa kuuhuisha beji.',
-  disclaimer: 'Lipa ada ya uchakataji hakumaanishi kuidhinishwa moja kwa moja. Baada ya malipo, utaingia kwenye foleni ya ukaguzi wa admin kupatiwa beji rasmi ikiwa vigezo vimekamilika.'
+  disclaimer: 'Lipa ada ya uchakataji hakumaanishi verification imekubaliwa au kuidhinishwa moja kwa moja. Baada ya malipo, utaingia kwenye foleni ya ukaguzi wa admin kupatiwa beji rasmi ikiwa vigezo vimekamilika.'
 } as const;
 
 export interface VerificationBadgeDisplay {

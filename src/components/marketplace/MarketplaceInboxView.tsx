@@ -88,19 +88,13 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
     const loadMessages = async () => {
       try {
         setIsLoadingMessages(true);
-        const [msgs, reqs] = await Promise.all([
-          marketplaceInboxService.getMessagesForConversation(
-            selectedConversation.conversationId,
-            currentUserId
-          ),
-          marketplacePaymentRequestService
-            .listPaymentRequestsForConversation(selectedConversation.conversationId, currentUserId)
-            .catch(() => [])
-        ]);
+        const msgs = await marketplaceInboxService.getMessagesForConversation(
+          selectedConversation.conversationId,
+          currentUserId
+        );
 
         if (isMounted) {
           setMessages(msgs);
-          setPaymentRequests(reqs);
         }
 
         // Mark as read if user has unread messages
@@ -559,23 +553,6 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {selectedConversation.sellerUserId === currentUserId && (() => {
-                  const hasActiveRequest = paymentRequests.some(
-                    (r) => r.status === 'PENDING_PAYMENT' || r.status === 'PROCESSING'
-                  );
-                  return (
-                    <button
-                      type="button"
-                      onClick={() => setIsPaymentRequestModalOpen(true)}
-                      disabled={hasActiveRequest}
-                      className="py-1.5 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                      title={hasActiveRequest ? 'Kuna ombi la malipo linalosubiri tayari katika mazungumzo haya' : 'Tuma ombi la malipo kwa mnunuzi'}
-                    >
-                      <CreditCard className="w-3.5 h-3.5" />
-                      <span>{hasActiveRequest ? 'Ombi Linasubiri' : 'Request Payment'}</span>
-                    </button>
-                  );
-                })()}
 
                 {onViewProduct && selectedConversation.productId && (
                   <button
@@ -663,31 +640,6 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
               ) : (
                 messages.map((msg) => {
                   const isMine = msg.senderUserId === currentUserId;
-
-                  // Render Payment Request Card if message is of type PAYMENT_REQUEST
-                  if (msg.messageType === 'PAYMENT_REQUEST' || msg.paymentRequestId) {
-                    const req =
-                      paymentRequests.find((r) => r.paymentRequestId === msg.paymentRequestId) ||
-                      msg.paymentRequestSnapshot;
-                    if (req) {
-                      return (
-                        <div key={msg.messageId} className="w-full my-1">
-                          <MarketplacePaymentRequestCard
-                            request={req}
-                            currentUserId={currentUserId}
-                            onPayClick={(r) => setActivePaymentRequestForPay(r)}
-                            onStatusUpdated={(updated) => {
-                              setPaymentRequests((prev) =>
-                                prev.map((item) =>
-                                  item.paymentRequestId === updated.paymentRequestId ? updated : item
-                                )
-                              );
-                            }}
-                          />
-                        </div>
-                      );
-                    }
-                  }
 
                   return (
                     <div
@@ -778,45 +730,8 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
           </div>
         )}
       </div>
-
-      {/* Payment Request Creation Modal (Verified Seller) */}
-      {selectedConversation && (
-        <MarketplacePaymentRequestModal
-          isOpen={isPaymentRequestModalOpen}
-          onClose={() => setIsPaymentRequestModalOpen(false)}
-          conversation={selectedConversation}
-          currentUserId={currentUserId}
-          existingRequests={paymentRequests}
-          onSuccess={async (newReq) => {
-            setPaymentRequests((prev) => [newReq, ...prev]);
-            try {
-              const latestMsgs = await marketplaceInboxService.getMessagesForConversation(
-                selectedConversation.conversationId,
-                currentUserId
-              );
-              setMessages(latestMsgs);
-            } catch {}
-          }}
-        />
-      )}
-
-      {/* Buyer Pay Modal */}
-      {activePaymentRequestForPay && (
-        <MarketplaceBuyerPayModal
-          isOpen={!!activePaymentRequestForPay}
-          onClose={() => setActivePaymentRequestForPay(null)}
-          paymentRequest={activePaymentRequestForPay}
-          currentUserId={currentUserId}
-          onPaymentSuccess={(updated) => {
-            setPaymentRequests((prev) =>
-              prev.map((item) =>
-                item.paymentRequestId === updated.paymentRequestId ? updated : item
-              )
-            );
-          }}
-        />
-      )}
     </div>
   );
 };
+
 

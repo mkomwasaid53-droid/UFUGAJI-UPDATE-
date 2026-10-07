@@ -91,11 +91,6 @@ import {
   initInboxStorage
 } from './src/services/marketplaceInboxService';
 import {
-  marketplacePaymentRequestService,
-  initPaymentRequestStorage
-} from './src/services/marketplacePaymentRequestService';
-import {
-  VERIFICATION_FEE_CONFIG,
   getSellerVerificationDisplay
 } from './src/types/sellerVerification';
 import {
@@ -141,9 +136,6 @@ initVerificationStorage(fs, path);
 
 // Authoritative marketplace inbox storage initialization (V1.11B)
 initInboxStorage(fs, path);
-
-// Authoritative marketplace payment requests storage initialization (V1.11C)
-initPaymentRequestStorage(fs, path);
 
 // Persistent marketplace products storage helpers
 function readMarketplaceProductsFromDisk(): any[] {
@@ -3873,36 +3865,6 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
       });
     }
 
-    // Check if this callback belongs to a Marketplace Payment Request (V1.11C)
-    const isMarketplacePayment = typeof incomingExternalId === 'string' && incomingExternalId.startsWith('UFUGAJI_MARKETPLACE_PAYMENT_');
-
-    if (isMarketplacePayment) {
-      const mprResult = await marketplacePaymentRequestService.handlePaymentWebhook(
-        provider,
-        req.body,
-        req.headers,
-        correlationId,
-        rawBody
-      );
-
-      if (!mprResult.success) {
-        return res.status(400).json({
-          status: 'error',
-          version: 'V1.11C',
-          product: 'MARKETPLACE_PAYMENT_REQUEST',
-          error: mprResult.error
-        });
-      }
-
-      return res.json({
-        status: 'ok',
-        version: 'V1.11C',
-        product: 'MARKETPLACE_PAYMENT_REQUEST',
-        isDuplicate: mprResult.isDuplicate,
-        paymentStatus: mprResult.paymentRequest?.status
-      });
-    }
-
     // Never log raw secrets or HMAC. Process verified status change for AI Premium.
     const result = await paymentService.processProviderCallback(
       provider,
@@ -3965,36 +3927,6 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
         isDuplicate: sellerResult.isDuplicate,
         lifecycleRenewed: sellerResult.lifecycleRenewed,
         paymentStatus: sellerResult.paymentIntent?.status
-      });
-    }
-
-    // Check if this callback belongs to a Marketplace Payment Request (V1.11C)
-    const isMarketplacePayment = typeof incomingExternalId === 'string' && incomingExternalId.startsWith('UFUGAJI_MARKETPLACE_PAYMENT_');
-
-    if (isMarketplacePayment) {
-      const mprResult = await marketplacePaymentRequestService.handlePaymentWebhook(
-        'PLUSPESA',
-        req.body,
-        req.headers,
-        correlationId,
-        rawBody
-      );
-
-      if (!mprResult.success) {
-        return res.status(400).json({
-          status: 'error',
-          version: 'V1.11C',
-          product: 'MARKETPLACE_PAYMENT_REQUEST',
-          error: mprResult.error
-        });
-      }
-
-      return res.json({
-        status: 'ok',
-        version: 'V1.11C',
-        product: 'MARKETPLACE_PAYMENT_REQUEST',
-        isDuplicate: mprResult.isDuplicate,
-        paymentStatus: mprResult.paymentRequest?.status
       });
     }
 
@@ -6022,51 +5954,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     }
   });
 
-  // 4. Initiate Verification Fee Payment (Strict 5,000 TZS server-side boundary)
-  app.post('/api/seller/verification/pay', async (req, res) => {
-    try {
-      const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
-      const {
-        sellerUserId: bodyUserId,
-        verificationId,
-        customerPhone,
-        providerNetwork,
-        providerName,
-        idempotencyKey
-      } = req.body || {};
-      const targetUserId = (isAdmin && bodyUserId) ? bodyUserId : (callerUserId || bodyUserId);
-
-      if (!targetUserId || !verificationId) {
-        return res.status(400).json({
-          error: 'Taarifa za muuzaji na namba ya maombi zinahitajika.'
-        });
-      }
-
-      if (callerUserId && callerUserId !== targetUserId && !isAdmin) {
-        return res.status(403).json({
-          error: 'Ruhusa imekataliwa: Huwezi kulipia maombi ya muuzaji mwingine.'
-        });
-      }
-
-      const result = await sellerVerificationService.initiateVerificationPayment({
-        sellerUserId: targetUserId,
-        verificationId,
-        customerPhone: customerPhone || '0700000000',
-        providerNetwork,
-        providerName,
-        idempotencyKey
-      });
-
-      return res.json({
-        status: result.success ? 'ok' : 'error',
-        ...result
-      });
-    } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Hitilafu ya kuanzisha malipo' });
-    }
-  });
-
-  // 5. Public Seller Badge Signal (Zero leak of sensitive documents or NIDA)
+  // 4. Public Seller Badge Signal (Zero leak of sensitive documents or NIDA)
   app.get('/api/seller/verification/public-badge/:sellerUserId', (req, res) => {
     try {
       const { sellerUserId } = req.params;
@@ -6233,17 +6121,6 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     }
   });
 
-  // 10. Webhook / Provider Callback for Verification Payment
-  app.post('/api/verification/payment/callback', async (req, res) => {
-    try {
-      const { provider = 'PLUSPESA', payload = req.body } = req.body || {};
-      const result = await sellerVerificationService.processVerificationPaymentCallback(provider, payload);
-      return res.json(result);
-    } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Hitilafu ya kuchakata callback ya malipo' });
-    }
-  });
-
   // ============================================================================
   // MARKETPLACE INBOX API (V1.11B — Buyer <-> Seller <-> Product Conversation)
   // ============================================================================
@@ -6392,253 +6269,6 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     } catch (err: any) {
       const status = err.message?.includes('Huruhusiwi') ? 403 : 500;
       return res.status(status).json({ error: err.message });
-    }
-  });
-
-  // ==========================================================================
-  // V1.11C: MARKETPLACE PAYMENT REQUEST API ENDPOINTS
-  // ==========================================================================
-
-  // 1. Create Payment Request (Verified Seller Only)
-  app.post('/api/marketplace/inbox/conversations/:id/payment-requests', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.callerUserId;
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo. Tafadhali ingia ili uweze kuomba malipo.' });
-      }
-
-      const input = {
-        conversationId: req.params.id,
-        quantity: req.body.quantity,
-        unitPrice: req.body.unitPrice,
-        description: req.body.description,
-      };
-
-      // Load product from disk if available to inject
-      let injectedProduct: any = undefined;
-      const products = readMarketplaceProductsFromDisk();
-      if (req.body.productId) {
-        injectedProduct = products.find((p) => p.id === req.body.productId || p.productId === req.body.productId);
-      }
-
-      const paymentRequest = await marketplacePaymentRequestService.createPaymentRequest(
-        input,
-        callerUserId,
-        injectedProduct
-      );
-      return res.status(201).json(paymentRequest);
-    } catch (err: any) {
-      const isForbidden =
-        err.message?.includes('Malipo kupitia jukwaa yanapatikana') ||
-        err.message?.includes('Huruhusiwi') ||
-        err.message?.includes('Huwezi') ||
-        err.message?.includes('hairuhusiwi');
-      const status = isForbidden ? 403 : 400;
-      return res.status(status).json({ error: err.message });
-    }
-  });
-
-  // 2. List Payment Requests for a Conversation (Participant Authorized)
-  app.get('/api/marketplace/inbox/conversations/:id/payment-requests', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
-      const requests = await marketplacePaymentRequestService.listPaymentRequestsForConversation(
-        req.params.id,
-        callerUserId,
-        isAdmin
-      );
-      return res.json(requests);
-    } catch (err: any) {
-      const status = err.message?.includes('Huruhusiwi') ? 403 : 400;
-      return res.status(status).json({ error: err.message });
-    }
-  });
-
-  // 3. Get Payment Request by ID (Participant Authorized)
-  app.get('/api/marketplace/payment-requests/:id', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
-      const request = await marketplacePaymentRequestService.getPaymentRequest(
-        req.params.id,
-        callerUserId,
-        isAdmin
-      );
-      if (!request) {
-        return res.status(404).json({ error: 'Ombi la malipo halijapatikana.' });
-      }
-      return res.json(request);
-    } catch (err: any) {
-      const status = err.message?.includes('Huruhusiwi') ? 403 : 400;
-      return res.status(status).json({ error: err.message });
-    }
-  });
-
-  // 4. Initiate Payment (Buyer Only - PlusPesa / Mobile Money)
-  app.post('/api/marketplace/payment-requests/:id/pay', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.callerUserId;
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo. Tafadhali ingia ili uweze kulipa.' });
-      }
-
-      const input = {
-        paymentRequestId: req.params.id,
-        buyerPhone: req.body.buyerPhone,
-        providerNetwork: req.body.providerNetwork,
-      };
-
-      const result = await marketplacePaymentRequestService.initiatePayment(
-        input,
-        callerUserId,
-        req.body.providerName
-      );
-      return res.json(result);
-    } catch (err: any) {
-      const isForbidden = err.message?.includes('Huruhusiwi') || err.message?.includes('Ni mnunuzi pekee');
-      const status = isForbidden ? 403 : 400;
-      return res.status(status).json({ error: err.message });
-    }
-  });
-
-  // 5. Check / Poll Payment Status
-  app.get('/api/marketplace/payment-requests/:id/status', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
-      const request = await marketplacePaymentRequestService.getPaymentStatus(
-        req.params.id,
-        callerUserId,
-        req.query.provider as string,
-        isAdmin
-      );
-      return res.json(request);
-    } catch (err: any) {
-      const status = err.message?.includes('Huruhusiwi') ? 403 : 400;
-      return res.status(status).json({ error: err.message });
-    }
-  });
-
-  // 6. Cancel Payment Request (Seller Only)
-  app.post('/api/marketplace/payment-requests/:id/cancel', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.callerUserId;
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
-      }
-
-      const cancelled = await marketplacePaymentRequestService.cancelPaymentRequest(
-        req.params.id,
-        callerUserId,
-        req.body.reason
-      );
-      return res.json(cancelled);
-    } catch (err: any) {
-      const status = err.message?.includes('Huruhusiwi') || err.message?.includes('pekee') ? 403 : 400;
-      return res.status(status).json({ error: err.message });
-    }
-  });
-
-  // 7. Retry Payment (Buyer Only - After Failure)
-  app.post('/api/marketplace/payment-requests/:id/retry', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.callerUserId;
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
-      }
-
-      const result = await marketplacePaymentRequestService.retryPayment(
-        req.params.id,
-        callerUserId,
-        {
-          buyerPhone: req.body.buyerPhone,
-          providerNetwork: req.body.providerNetwork,
-        }
-      );
-      return res.json(result);
-    } catch (err: any) {
-      const status = err.message?.includes('Huruhusiwi') || err.message?.includes('pekee') ? 403 : 400;
-      return res.status(status).json({ error: err.message });
-    }
-  });
-
-  // 8. Get Audit Trail (Participant or Admin)
-  app.get('/api/marketplace/payment-requests/:id/audits', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
-      const audits = await marketplacePaymentRequestService.getAuditLogs(
-        req.params.id,
-        callerUserId,
-        isAdmin
-      );
-      return res.json(audits);
-    } catch (err: any) {
-      const status = err.message?.includes('Huruhusiwi') ? 403 : 400;
-      return res.status(status).json({ error: err.message });
-    }
-  });
-
-  // 9. Dedicated Marketplace Payment Webhook Endpoint
-  app.post('/api/marketplace/payment/webhook/:provider', async (req, res) => {
-    const { provider } = req.params;
-    const correlationId = (req.headers['x-correlation-id'] as string) || `wh_mpr_${Date.now()}`;
-    const rawBody = (req as any).rawBody;
-
-    try {
-      const result = await marketplacePaymentRequestService.handlePaymentWebhook(
-        provider,
-        req.body,
-        req.headers,
-        correlationId,
-        rawBody
-      );
-
-      if (!result.success) {
-        return res.status(400).json({
-          status: 'error',
-          version: 'V1.11C',
-          error: result.error,
-        });
-      }
-
-      return res.json({
-        status: 'ok',
-        version: 'V1.11C',
-        isDuplicate: result.isDuplicate,
-        paymentStatus: result.paymentRequest?.status,
-      });
-    } catch (err: any) {
-      return res.status(500).json({
-        status: 'error',
-        version: 'V1.11C',
-        error: err.message || 'Hitilafu ya seva kuchakata webhook ya malipo',
-      });
     }
   });
 

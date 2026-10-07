@@ -1033,7 +1033,7 @@ export const Market: React.FC = () => {
                       <ShieldCheck className="w-4 h-4 text-emerald-400" />
                       <span>Umehakikiwa Kikamilifu (Beji Hai)</span>
                     </button>
-                  ) : (sellerVerification?.status === 'PENDING_VERIFICATION' || sellerVerification?.status === 'UNDER_REVIEW' || sellerVerification?.status === 'PAYMENT_CONFIRMED' || sellerVerification?.status === 'SUBMITTED') ? (
+                  ) : (sellerVerification?.status === 'PENDING_VERIFICATION' || sellerVerification?.status === 'UNDER_REVIEW' || sellerVerification?.status === 'SUBMITTED') ? (
                     <button
                       type="button"
                       onClick={() => setIsVerificationModalOpen(true)}

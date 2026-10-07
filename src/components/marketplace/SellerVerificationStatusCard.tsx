@@ -95,49 +95,8 @@ export const SellerVerificationStatusCard: React.FC<SellerVerificationStatusCard
     );
   }
 
-  // 2. PAYMENT REQUIRED / PAYMENT PENDING STATE
-  if (status === 'PAYMENT_REQUIRED' || status === 'PAYMENT_PENDING') {
-    return (
-      <div className="bg-gradient-to-br from-amber-50/90 via-white to-amber-100/40 border border-amber-300 rounded-2xl p-4 sm:p-5 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-          <div className="flex items-start gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-900 border border-amber-300 flex items-center justify-center shrink-0">
-              <Clock className="w-6 h-6 text-amber-800" />
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-sm font-bold text-stone-900">
-                  Ada ya Uchakataji Inahitajika (TSh 5,000)
-                </h4>
-                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> Ada ya Uchakataji
-                </span>
-              </div>
-              <p className="text-xs text-stone-600 leading-relaxed max-w-xl">
-                Maombi yako yamewasilishwa. Ili kuingia kwenye foleni ya ukaguzi wa kiutawala, kamilisha ada ya uchakataji ya <strong>TSh 5,000 (Processing Fee)</strong>.
-              </p>
-              <div className="text-[11px] text-amber-800 bg-amber-50 rounded-xl px-3 py-1.5 border border-amber-200 inline-flex items-center gap-1.5">
-                <Info className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                <span>Ada hii ni ya ukaguzi wa taarifa na nyaraka; haimaanishi utoaji wa beji moja kwa moja.</span>
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onApply}
-            className="self-start sm:self-center px-4 py-2.5 bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 transition-colors cursor-pointer shrink-0 min-h-[44px]"
-          >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Kamilisha / Lipia Ada</span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // 3. PAYMENT CONFIRMED / SUBMITTED STATE
-  if (status === 'PAYMENT_CONFIRMED' || status === 'SUBMITTED' || status === 'PENDING_VERIFICATION') {
+  // 2. SUBMITTED STATE
+  if (status === 'SUBMITTED' || status === 'PENDING_VERIFICATION') {
     return (
       <div className="bg-gradient-to-br from-indigo-50/80 via-white to-indigo-50/40 border border-indigo-200 rounded-2xl p-4 sm:p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -148,18 +107,18 @@ export const SellerVerificationStatusCard: React.FC<SellerVerificationStatusCard
             <div className="space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="text-sm font-bold text-stone-900">
-                  Ada Imepokelewa — Foleni ya Ukaguzi
+                  Maombi Yamewasilishwa — Foleni ya Ukaguzi
                 </h4>
                 <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-300 inline-flex items-center gap-1">
                   <Clock className="w-3 h-3" /> Inasubiri Ukaguzi
                 </span>
               </div>
               <p className="text-xs text-stone-600 leading-relaxed max-w-xl">
-                Malipo ya ada ya uchakataji yamekamilika. Maombi yako namba <strong>{verification?.applicationNumber || ''}</strong> yameingia kwenye foleni rasmi ya ukaguzi wa wasimamizi.
+                Maombi yako namba <strong>{verification?.applicationNumber || ''}</strong> yamepokelewa kikamilifu na yameingia kwenye foleni rasmi ya ukaguzi wa wasimamizi.
               </p>
               <div className="text-[11px] text-stone-500 bg-stone-100/80 rounded-xl px-3 py-1.5 border border-stone-200 inline-flex items-center gap-1.5">
                 <Info className="w-3.5 h-3.5 text-stone-500 shrink-0" />
-                <span>Bidhaa zako zitaendelea kuonekana sokoni kawaida wakati uhakiki unakamilishwa.</span>
+                <span>Bidhaa zako zitaendelea kuonekana sokoni kawaida wakati maombi yanahakikiwa.</span>
               </div>
             </div>
           </div>

@@ -7,7 +7,7 @@ export type ConversationStatus = 'ACTIVE' | 'CLOSED' | 'BLOCKED';
 
 export type MessageSenderRole = 'BUYER' | 'SELLER';
 
-export type MessageType = 'TEXT' | 'PAYMENT_REQUEST';
+export type MessageType = 'TEXT';
 
 export interface MarketplaceConversation {
   conversationId: string;
@@ -40,8 +40,6 @@ export interface MarketplaceMessage {
   senderRole: MessageSenderRole;
   text: string;
   messageType: MessageType;
-  paymentRequestId?: string;
-  paymentRequestSnapshot?: any;
   createdAt: string;
   readAt: string | null;
   deletedAt: string | null;
@@ -69,6 +67,5 @@ export interface SendMessageInput {
   senderUserId: string;
   text: string;
   messageType?: MessageType;
-  paymentRequestId?: string;
-  paymentRequestSnapshot?: any;
 }
+

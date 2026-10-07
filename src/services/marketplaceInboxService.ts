@@ -440,8 +440,6 @@ export class MarketplaceInboxService {
       senderRole,
       text: cleanText,
       messageType: input.messageType || 'TEXT',
-      paymentRequestId: input.paymentRequestId,
-      paymentRequestSnapshot: input.paymentRequestSnapshot,
       createdAt: now,
       readAt: null,
       deletedAt: null,

@@ -597,7 +597,7 @@ service cloud.firestore {
         isAdmin() ||
         (
           request.resource.data.sellerUserId == request.auth.uid &&
-          request.resource.data.status in ['DRAFT', 'SUBMITTED', 'PAYMENT_REQUIRED', 'PAYMENT_PENDING'] &&
+          request.resource.data.status in ['DRAFT', 'SUBMITTED'] &&
           request.resource.data.badgeStatus == 'INACTIVE' &&
           request.resource.data.hasActiveBadge == false &&
           !('reviewedBy' in request.resource.data) &&
@@ -614,8 +614,8 @@ service cloud.firestore {
           resource != null &&
           resource.data.sellerUserId == request.auth.uid &&
           request.resource.data.sellerUserId == resource.data.sellerUserId &&
-          resource.data.status in ['DRAFT', 'REVERIFICATION_REQUIRED', 'PAYMENT_REQUIRED', 'PAYMENT_PENDING'] &&
-          request.resource.data.status in ['DRAFT', 'SUBMITTED', 'PAYMENT_REQUIRED', 'PAYMENT_PENDING'] &&
+          resource.data.status in ['DRAFT', 'REVERIFICATION_REQUIRED'] &&
+          request.resource.data.status in ['DRAFT', 'SUBMITTED'] &&
           request.resource.data.badgeStatus == resource.data.badgeStatus &&
           request.resource.data.hasActiveBadge == resource.data.hasActiveBadge &&
           (!('reviewedBy' in request.resource.data) || request.resource.data.reviewedBy == resource.data.get('reviewedBy', null)) &&
@@ -637,16 +637,7 @@ service cloud.firestore {
       allow update, delete: if false; // Immutable audit trail
     }
 
-    // 3. Verification Payment Intents (Locked to fee; owner and admin read; Admin write only)
-    match /verificationPaymentIntents/{paymentIntentId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        (resource != null && resource.data.sellerUserId == request.auth.uid)
-      );
-      allow write: if isAdmin();
-    }
-
-    // 4. Public Seller Verification Badges (Safe public signal for marketplace buyers; Admin/server write)
+    // 3. Public Seller Verification Badges (Safe public signal for marketplace buyers; Admin/server write)
     match /sellerVerificationPublicBadges/{sellerUserId} {
       allow read: if true; // Public trust signal
       allow write: if isAdmin();
