@@ -26,6 +26,57 @@ export type GumzoGroupRole =
   | 'LEADERSHIP_ADMIN'
   | 'MEMBER';
 
+export type GumzoPostStatus =
+  | 'DRAFT'
+  | 'PUBLISHED'
+  | 'HIDDEN'
+  | 'DELETED';
+
+export type GumzoPostVisibility = 'VISIBLE' | 'HIDDEN';
+
+export interface GumzoMediaItem {
+  id: string;
+  type: 'image' | 'video' | 'file';
+  url: string;
+  thumbnailUrl?: string;
+  caption?: string;
+  sizeBytes?: number;
+}
+
+export interface GumzoPost {
+  postId: string;
+  groupId: string;
+  authorUserId: string;
+  authorRole: 'FOUNDER_ADMIN' | 'LEADERSHIP_ADMIN';
+  content: string;
+  media: GumzoMediaItem[];
+  status: GumzoPostStatus;
+  visibility: GumzoPostVisibility;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt?: string;
+  deletedAt?: string;
+  createdBy: string;
+  updatedBy: string;
+  isPinned?: boolean;
+}
+
+export interface CreateGumzoPostInput {
+  groupId: string;
+  content: string;
+  media?: GumzoMediaItem[];
+  status?: 'DRAFT' | 'PUBLISHED';
+  visibility?: GumzoPostVisibility;
+}
+
+export interface UpdateGumzoPostInput {
+  content?: string;
+  media?: GumzoMediaItem[];
+  status?: GumzoPostStatus;
+  visibility?: GumzoPostVisibility;
+  isPinned?: boolean;
+}
+
 export type GumzoMembershipStatus =
   | 'PENDING'
   | 'ACTIVE'
@@ -300,3 +351,150 @@ export function canAccessGumzoGroup(
     reason: isMember || Boolean(userRole) ? undefined : 'Kikundi hiki ni cha faragha kwa wanachama pekee.',
   };
 }
+
+/**
+ * V9.2 Post Authorization Helpers
+ */
+
+/**
+ * Only FOUNDER_ADMIN and LEADERSHIP_ADMIN can create posts.
+ * Platform admins acting on behalf of the platform are treated as authorized leaders.
+ * Ordinary members can NEVER create posts (returns false).
+ */
+export function canUserCreatePost(
+  userId: string | null | undefined,
+  group: GumzoGroup,
+  membership?: GumzoMembership | null,
+  isPlatformAdmin = false
+): { allowed: boolean; role?: 'FOUNDER_ADMIN' | 'LEADERSHIP_ADMIN'; reason?: string } {
+  if (!userId) {
+    return { allowed: false, reason: 'Tafadhali ingia kwenye mfumo kuandika post.' };
+  }
+  if (!group) {
+    return { allowed: false, reason: 'Kikundi hakikupatikana.' };
+  }
+
+  // Suspended or archived groups do not allow new posts
+  if (group.status === 'SUSPENDED') {
+    return { allowed: false, reason: 'Kikundi kimesimamishwa. Machapisho mapya hayaruhusiwi.' };
+  }
+  if (group.status === 'ARCHIVED') {
+    return { allowed: false, reason: 'Kikundi kiko kwenye kumbukumbu (Archived). Machapisho mapya hayaruhusiwi.' };
+  }
+  if (group.status === 'REJECTED') {
+    return { allowed: false, reason: 'Kikundi hiki hakikukubaliwa.' };
+  }
+
+  if (isPlatformAdmin) {
+    return { allowed: true, role: 'LEADERSHIP_ADMIN' };
+  }
+
+  // Founder Admin check
+  if (isGroupFounderAdmin(userId, group)) {
+    return { allowed: true, role: 'FOUNDER_ADMIN' };
+  }
+
+  // Leadership Admin check
+  if (isGroupLeadershipAdmin(userId, group)) {
+    return { allowed: true, role: 'LEADERSHIP_ADMIN' };
+  }
+
+  if (membership) {
+    if (membership.role === 'FOUNDER_ADMIN' && membership.status === 'ACTIVE') {
+      return { allowed: true, role: 'FOUNDER_ADMIN' };
+    }
+    if (membership.role === 'LEADERSHIP_ADMIN' && membership.status === 'ACTIVE') {
+      return { allowed: true, role: 'LEADERSHIP_ADMIN' };
+    }
+    if (membership.role === 'MEMBER') {
+      return {
+        allowed: false,
+        reason: 'Wanachama hawaruhusiwi kuanzisha mada au machapisho. Ni viongozi pekee (Admin) wanaoweza kuandika.',
+      };
+    }
+  }
+
+  return {
+    allowed: false,
+    reason: 'Huna mamlaka ya uongozi (Admin) katika kikundi hiki kuandika chapisho.',
+  };
+}
+
+/**
+ * Post editing authorization:
+ * - Author can edit their own post
+ * - Leadership Admin / Platform Admin can edit/moderate
+ */
+export function canUserEditPost(
+  userId: string | null | undefined,
+  post: GumzoPost,
+  group: GumzoGroup,
+  isPlatformAdmin = false
+): boolean {
+  if (!userId || !post || !group) return false;
+  if (post.status === 'DELETED') return false; // Deleted posts cannot be edited
+  if (isPlatformAdmin) return true;
+  if (post.authorUserId === userId) return true;
+  if (isGroupLeadershipAdmin(userId, group)) return true;
+  return false;
+}
+
+/**
+ * Post deletion/removal authorization:
+ * - Author can delete/soft-delete their own post
+ * - Founder admin can remove posts in their group
+ * - Leadership admin / Platform admin can remove posts
+ */
+export function canUserDeletePost(
+  userId: string | null | undefined,
+  post: GumzoPost,
+  group: GumzoGroup,
+  isPlatformAdmin = false
+): boolean {
+  if (!userId || !post || !group) return false;
+  if (isPlatformAdmin) return true;
+  if (post.authorUserId === userId) return true;
+  if (isGroupFounderAdmin(userId, group)) return true;
+  if (isGroupLeadershipAdmin(userId, group)) return true;
+  return false;
+}
+
+/**
+ * Post visibility decision:
+ * Checks both group access rules and post status/visibility rules.
+ */
+export function canUserViewPost(
+  userId: string | null | undefined,
+  post: GumzoPost,
+  group: GumzoGroup,
+  membership?: GumzoMembership | null,
+  isPlatformAdmin = false
+): boolean {
+  if (!post || !group) return false;
+
+  // Platform admin can view everything for audit/governance
+  if (isPlatformAdmin) return true;
+
+  // Deleted posts: not visible in normal feed
+  if (post.status === 'DELETED') return false;
+
+  const isAuthor = Boolean(userId && post.authorUserId === userId);
+  const isLeader = Boolean(
+    userId && (isGroupFounderAdmin(userId, group) || isGroupLeadershipAdmin(userId, group))
+  );
+
+  // Drafts: only author or group admin can view
+  if (post.status === 'DRAFT') {
+    return isAuthor || isLeader;
+  }
+
+  // Hidden: only group admins can view
+  if (post.status === 'HIDDEN' || post.visibility === 'HIDDEN') {
+    return isAuthor || isLeader;
+  }
+
+  // Published & Visible: must satisfy group-level access rules
+  const groupAccess = canAccessGumzoGroup(userId, group, membership, isPlatformAdmin);
+  return groupAccess.canViewContent;
+}
+

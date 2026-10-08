@@ -87,6 +87,15 @@ export const Header: React.FC = () => {
               {isAdmin && (
                 <div className="flex items-center space-x-1.5">
                   <Link
+                    to="/admin?tab=community"
+                    id="header-gumzo-admin-link"
+                    title="Idhini & Utawala wa Vikundi vya Gumzo"
+                    className="px-2 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-emerald-100 font-bold text-xs flex items-center gap-1 transition-colors"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
+                    <span className="hidden md:inline">Gumzo</span>
+                  </Link>
+                  <Link
                     to="/admin?tab=readiness"
                     id="header-readiness-link"
                     title="Dashibodi ya Utayari (Ad Readiness V1.9B)"

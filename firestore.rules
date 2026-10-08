@@ -779,6 +779,91 @@ service cloud.firestore {
         // Delete: Admin or user leaving
         allow delete: if isAdmin() || (isAuthenticated() && userId == request.auth.uid);
       }
+
+      // Subcollection: Posts (V9.2 Gumzo Admin Posts)
+      // «Only authorized Gumzo admins can create new posts. Members cannot create posts.»
+      match /posts/{postId} {
+        // Read: Viewable if group content is accessible, and post is not DELETED
+        allow read: if isAdmin() || (
+          resource != null && resource.data.status != 'DELETED' && (
+            (resource.data.status == 'PUBLISHED' && resource.data.visibility == 'VISIBLE') ||
+            (isAuthenticated() && (
+              resource.data.authorUserId == request.auth.uid ||
+              get(/databases/$(database)/documents/gumzoGroups/$(groupId)).data.founderAdminUserId == request.auth.uid ||
+              get(/databases/$(database)/documents/gumzoGroups/$(groupId)).data.leadershipAdminUserId == request.auth.uid
+            ))
+          )
+        );
+
+        // Create: Strictly FOUNDER_ADMIN or LEADERSHIP_ADMIN. Members are REJECTED!
+        // Group must be active and not suspended/archived.
+        allow create: if isAuthenticated() && (
+          isAdmin() || (
+            request.resource.data.authorUserId == request.auth.uid &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.groupId == groupId &&
+            request.resource.data.status in ['DRAFT', 'PUBLISHED'] &&
+            request.resource.data.visibility in ['VISIBLE', 'HIDDEN'] &&
+            (
+              request.resource.data.authorRole == 'FOUNDER_ADMIN' &&
+              get(/databases/$(database)/documents/gumzoGroups/$(groupId)).data.founderAdminUserId == request.auth.uid
+            ) ||
+            (
+              request.resource.data.authorRole == 'LEADERSHIP_ADMIN' &&
+              get(/databases/$(database)/documents/gumzoGroups/$(groupId)).data.leadershipAdminUserId == request.auth.uid
+            )
+          )
+        );
+
+        // Update: Author can edit content/status; Group Leaders can hide/moderate
+        allow update: if isAuthenticated() && (
+          isAdmin() || (
+            resource != null &&
+            resource.data.status != 'DELETED' &&
+            request.resource.data.groupId == groupId &&
+            request.resource.data.authorUserId == resource.data.authorUserId &&
+            (
+              // Author editing
+              (resource.data.authorUserId == request.auth.uid) ||
+              // Group leadership moderating
+              (get(/databases/$(database)/documents/gumzoGroups/$(groupId)).data.leadershipAdminUserId == request.auth.uid) ||
+              (get(/databases/$(database)/documents/gumzoGroups/$(groupId)).data.founderAdminUserId == request.auth.uid)
+            )
+          )
+        );
+
+        // Delete: Soft-delete allowed by author or leaders; Hard delete by platform admin
+        allow delete: if isAdmin() || (
+          isAuthenticated() && (
+            resource.data.authorUserId == request.auth.uid ||
+            get(/databases/$(database)/documents/gumzoGroups/$(groupId)).data.founderAdminUserId == request.auth.uid ||
+            get(/databases/$(database)/documents/gumzoGroups/$(groupId)).data.leadershipAdminUserId == request.auth.uid
+          )
+        );
+      }
+    }
+
+    // Direct collection query fallback for Gumzo posts
+    match /gumzoPosts/{postId} {
+      allow read: if isAdmin() || (
+        resource != null && resource.data.status != 'DELETED' && (
+          (resource.data.status == 'PUBLISHED' && resource.data.visibility == 'VISIBLE') ||
+          (isAuthenticated() && resource.data.authorUserId == request.auth.uid)
+        )
+      );
+
+      // Create: Admin only
+      allow create: if isAuthenticated() && (
+        isAdmin() || (
+          request.resource.data.authorUserId == request.auth.uid &&
+          request.resource.data.authorRole in ['FOUNDER_ADMIN', 'LEADERSHIP_ADMIN']
+        )
+      );
+
+      allow update, delete: if isAuthenticated() && (
+        isAdmin() ||
+        (resource != null && resource.data.authorUserId == request.auth.uid)
+      );
     }
   }
 }

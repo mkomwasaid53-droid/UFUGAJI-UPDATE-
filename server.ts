@@ -95,6 +95,10 @@ import {
   initGumzoStorage
 } from './src/services/gumzoGroupService';
 import {
+  gumzoPostService,
+  initGumzoPostsStorage
+} from './src/services/gumzoPostService';
+import {
   getSellerVerificationDisplay
 } from './src/types/sellerVerification';
 import {
@@ -142,7 +146,10 @@ initVerificationStorage(fs, path);
 initInboxStorage(fs, path);
 
 // Authoritative Gumzo group persistent storage initialization (V9.1)
-initGumzoStorage();
+initGumzoStorage(fs, path);
+
+// Authoritative Gumzo posts persistent storage initialization (V9.2)
+initGumzoPostsStorage(fs, path);
 
 // Persistent marketplace products storage helpers
 function readMarketplaceProductsFromDisk(): any[] {
@@ -6485,6 +6492,142 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
       return res.json(updated);
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
+    }
+  });
+
+  // ========================================================================
+  // GUMZO ADMIN POSTS API (V9.2 — Community Group Admin Posts)
+  // «Only authorized Gumzo admins can create new posts. Members cannot create posts.»
+  // ========================================================================
+
+  // 1. Get group posts (Feed)
+  app.get('/api/gumzo/groups/:groupId/posts', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const groupId = req.params.groupId;
+      const includeDrafts = req.query.includeDrafts === 'true';
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+      const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
+
+      const result = gumzoPostService.getGroupPosts({
+        groupId,
+        callerUserId,
+        isPlatformAdmin: isAdmin,
+        includeDrafts,
+        limit,
+        offset
+      });
+
+      return res.json(result);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 2. Get single post by ID
+  app.get('/api/gumzo/groups/:groupId/posts/:postId', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+
+      const post = gumzoPostService.getPostById(req.params.postId, callerUserId, isAdmin);
+      if (!post || post.groupId !== req.params.groupId) {
+        return res.status(404).json({ error: 'Chapisho halikupatikana au huna ruhusa ya kukiona.' });
+      }
+
+      return res.json(post);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 3. Create post (STRICT ADMIN ONLY: FOUNDER_ADMIN or LEADERSHIP_ADMIN)
+  // Members receive strict 403 / PERMISSION_DENIED
+  app.post('/api/gumzo/groups/:groupId/posts', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.authorUserId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Huruhusiwi kuandika chapisho bila kuingia kwenye mfumo (401 Authenticated user required).' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const input = {
+        groupId: req.params.groupId,
+        content: req.body.content,
+        media: req.body.media,
+        status: req.body.status,
+        visibility: req.body.visibility
+      };
+
+      const post = gumzoPostService.createPost({
+        input,
+        authenticatedUserId: callerUserId,
+        isPlatformAdmin: isAdmin
+      });
+
+      return res.status(201).json(post);
+    } catch (err: any) {
+      const msg = err.message || '';
+      const isForbidden = msg.includes('Wanachama hawaruhusiwi') ||
+        msg.includes('Mamlaka ya uongozi') ||
+        msg.includes('403') ||
+        msg.includes('PERMISSION_DENIED');
+      const isUnauth = msg.includes('401') || msg.includes('Authenticated user required');
+
+      const statusCode = isForbidden ? 403 : isUnauth ? 401 : 400;
+      return res.status(statusCode).json({ error: msg });
+    }
+  });
+
+  // 4. Update/Edit post (Author or Group Leader)
+  app.patch('/api/gumzo/groups/:groupId/posts/:postId', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const updated = gumzoPostService.updatePost({
+        postId: req.params.postId,
+        input: req.body,
+        authenticatedUserId: callerUserId,
+        isPlatformAdmin: isAdmin
+      });
+
+      return res.json(updated);
+    } catch (err: any) {
+      const isForbidden = err.message?.includes('Huruhusiwi') || err.message?.includes('PERMISSION_DENIED');
+      return res.status(isForbidden ? 403 : 400).json({ error: err.message });
+    }
+  });
+
+  // 5. Delete post (Soft-delete: Author, Founder, or Leadership Admin)
+  app.delete('/api/gumzo/groups/:groupId/posts/:postId', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const deleted = gumzoPostService.deletePost({
+        postId: req.params.postId,
+        authenticatedUserId: callerUserId,
+        isPlatformAdmin: isAdmin,
+        reason: (req.query.reason as string) || (req.body?.reason as string)
+      });
+
+      return res.json(deleted);
+    } catch (err: any) {
+      const isForbidden = err.message?.includes('Huruhusiwi') || err.message?.includes('PERMISSION_DENIED');
+      return res.status(isForbidden ? 403 : 400).json({ error: err.message });
     }
   });
 

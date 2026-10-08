@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Users,
   Search,
@@ -8,7 +9,8 @@ import {
   RefreshCw,
   AlertCircle,
   Sparkles,
-  Info
+  Info,
+  ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { GumzoGroup, GumzoMembership, GUMZO_CATEGORIES } from '../types/gumzo';
@@ -18,7 +20,7 @@ import { GumzoGroupDetail } from '../components/gumzo/GumzoGroupDetail';
 import { CreateGumzoGroupModal } from '../components/gumzo/CreateGumzoGroupModal';
 
 export const Community: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const currentUserId = user?.uid || '';
 
   const [activeTab, setActiveTab] = useState<'MY_GROUPS' | 'DISCOVER'>('DISCOVER');
@@ -137,6 +139,16 @@ export const Community: React.FC = () => {
                 <Plus className="w-4 h-4" />
                 <span>Anzisha Kikundi Kipya</span>
               </button>
+
+              {isAdmin && (
+                <Link
+                  to="/admin?tab=community"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer min-h-[40px]"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Usimamizi wa Vikundi (Admin Panel)</span>
+                </Link>
+              )}
             </div>
           </div>
 

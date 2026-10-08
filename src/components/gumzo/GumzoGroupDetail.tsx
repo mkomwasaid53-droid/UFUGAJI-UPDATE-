@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Users,
@@ -15,17 +15,25 @@ import {
   Loader2,
   Info,
   ShieldCheck,
-  ExternalLink
+  ExternalLink,
+  PlusCircle,
+  RefreshCw,
+  Sparkles
 } from 'lucide-react';
 import {
   GumzoGroup,
   GumzoMembership,
   GumzoGroupStatus,
+  GumzoPost,
   GUMZO_CATEGORIES,
-  canAccessGumzoGroup
+  canAccessGumzoGroup,
+  canUserCreatePost
 } from '../../types/gumzo';
 import { gumzoGroupService } from '../../services/gumzoGroupService';
+import { gumzoPostService } from '../../services/gumzoPostService';
 import { useAuth } from '../../context/AuthContext';
+import { CreateGumzoPostModal } from './CreateGumzoPostModal';
+import { GumzoPostCard } from './GumzoPostCard';
 
 interface GumzoGroupDetailProps {
   group: GumzoGroup;
@@ -44,7 +52,43 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
 }) => {
   const [membership, setMembership] = useState<GumzoMembership | null>(initialMembership || null);
   const [memberCount, setMemberCount] = useState<number>(group.memberCount);
-  const [isJoining, setIsJoining] = useState(false);
+  const [posts, setPosts] = useState<GumzoPost[]>([]);
+  const [isLoadingPosts, setIsLoadingPosts] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
+  // Authoritative admin posting check
+  const postAuth = canUserCreatePost(currentUserId, group, membership, isAdmin);
+
+  const loadPosts = async () => {
+    try {
+      setIsLoadingPosts(true);
+      const res = await gumzoPostService.fetchBrowserGroupPosts({
+        groupId: group.groupId,
+        callerUserId: currentUserId,
+      });
+      setPosts(res.posts || []);
+    } catch (err) {
+      console.warn('Failed to fetch group posts:', err);
+    } finally {
+      setIsLoadingPosts(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPosts();
+  }, [group.groupId, currentUserId]);
+
+  const handlePostCreated = () => {
+    loadPosts();
+  };
+
+  const handlePostUpdated = (updated: GumzoPost) => {
+    setPosts((prev) => prev.map((p) => (p.postId === updated.postId ? updated : p)));
+  };
+
+  const handlePostDeleted = (deletedPostId: string) => {
+    setPosts((prev) => prev.filter((p) => p.postId !== deletedPostId));
+  };
   const [isLeaving, setIsLeaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -377,22 +421,121 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
             </div>
           )}
 
-          {/* Honest V9.1 Placeholder for discussions (Per Requirement 16 & 26: DO NOT build posts in V9.1) */}
-          <div className="pt-4 border-t border-stone-100">
-            <div className="p-8 bg-stone-50 border border-dashed border-stone-200 rounded-2xl text-center space-y-2">
-              <div className="w-10 h-10 rounded-xl bg-white border border-stone-200 flex items-center justify-center mx-auto text-stone-400">
-                <MessageSquare className="w-5 h-5" />
+          {/* V9.2 — GUMZO ADMIN POSTS FEED & CONTROLS */}
+          <div className="pt-6 border-t border-stone-100 space-y-4">
+            {/* Feed Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-stone-900">
+                    Machapisho ya Viongozi (Admin Posts)
+                  </h3>
+                  <p className="text-[11px] text-stone-500">
+                    Mada na miongozo rasmi kutoka kwa viongozi wa kikundi hiki
+                  </p>
+                </div>
               </div>
-              <h4 className="text-sm font-bold text-stone-800">
-                Mijadala ya Kikundi (Awamu ya V9.2/V9.3)
-              </h4>
-              <p className="text-xs text-stone-500 max-w-sm mx-auto leading-relaxed">
-                Posts and discussions will appear here. Machapisho ya viongozi na maoni ya wanachama yatawezeshwa katika awamu inayofuata ya Gumzo.
-              </p>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadPosts}
+                  disabled={isLoadingPosts}
+                  className="p-2 text-stone-400 hover:text-stone-700 bg-stone-50 border border-stone-200 rounded-xl hover:bg-stone-100 transition-colors cursor-pointer"
+                  title="Onyesha upya machapisho"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin' : ''}`} />
+                </button>
+
+                {/* Only authorized Gumzo admins see the Create Post button */}
+                {postAuth.allowed && (
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs min-h-[38px]"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>+ Andika Post</span>
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Member informational banner explaining admin-led principle */}
+            {!postAuth.allowed && accessDecision.canViewContent && (
+              <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-600 flex items-center gap-2">
+                <Info className="w-4 h-4 text-stone-400 shrink-0" />
+                <span>
+                  <strong>Mfumo wa Uongozi wa Gumzo:</strong> Viongozi pekee (Founder & Leadership Admin) wanaweza kuanzisha mada au machapisho. Wanachama watatoa maoni (Comments) kwenye machapisho haya kuanzia Awamu ya V9.3.
+                </span>
+              </div>
+            )}
+
+            {/* Posts List */}
+            {isLoadingPosts ? (
+              <div className="p-12 text-center space-y-2">
+                <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-700" />
+                <p className="text-xs text-stone-500 font-medium">Inapakia machapisho ya kikundi...</p>
+              </div>
+            ) : posts.length === 0 ? (
+              <div className="p-10 bg-stone-50/80 border border-dashed border-stone-200 rounded-2xl text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-white border border-stone-200 flex items-center justify-center mx-auto text-stone-400 shadow-2xs">
+                  <MessageSquare className="w-6 h-6 text-stone-300" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-sm font-bold text-stone-800">
+                    Bado Hakuna Machapisho Katika Kikundi Hiki
+                  </h4>
+                  <p className="text-xs text-stone-500 max-w-md mx-auto leading-relaxed">
+                    {postAuth.allowed
+                      ? 'Wewe ni kiongozi wa kikundi hiki! Bonyeza kitufe cha "+ Andika Post" kuanzisha mada ya kwanza ya ufugaji, kutoa mwongozo au taarifa kwa wanachama.'
+                      : 'Kikundi hiki hakijapokea mada au machapisho rasmi kutoka kwa viongozi wake bado. Endelea kufuatilia.'}
+                  </p>
+                </div>
+                {postAuth.allowed && (
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>Anzisha Mada ya Kwanza</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3.5">
+                {posts.map((post) => (
+                  <GumzoPostCard
+                    key={post.postId}
+                    post={post}
+                    group={group}
+                    currentUserId={currentUserId}
+                    isPlatformAdmin={isAdmin}
+                    onPostUpdated={handlePostUpdated}
+                    onPostDeleted={handlePostDeleted}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Admin Post Creation Modal */}
+      {isCreateModalOpen && (
+        <CreateGumzoPostModal
+          group={group}
+          currentUserId={currentUserId}
+          userRole={membership?.role}
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          onPostCreated={handlePostCreated}
+        />
+      )}
     </div>
   );
 };
