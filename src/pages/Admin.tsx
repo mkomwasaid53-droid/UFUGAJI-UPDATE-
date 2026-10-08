@@ -37,6 +37,7 @@ import { AdminReportsAndAppeals } from '../components/marketplace/AdminReportsAn
 import { AdminGovernanceInbox } from '../components/notifications/AdminGovernanceInbox';
 import { AdminAiPremiumManagement } from '../components/admin/AdminAiPremiumManagement';
 import { AdminSellerMonetization } from '../components/marketplace/AdminSellerMonetization';
+import { AdminGumzoGroupManagement } from '../components/admin/AdminGumzoGroupManagement';
 
 export const Admin: React.FC = () => {
   const { currentUser, role, isAdmin } = useAuth();
@@ -53,7 +54,7 @@ export const Admin: React.FC = () => {
     if (urlTab === 'doctors') return 'doctors';
     if (urlTab === 'sellers') return 'sellers';
     if (urlTab === 'market') return 'market';
-    if (urlTab === 'community') return 'community';
+    if (urlTab === 'community' || urlTab === 'gumzo' || urlTab === 'groups') return 'community';
     if (urlTab === 'stats') return 'stats';
     return 'readiness'; // Default to readiness if requested or default
   });
@@ -72,7 +73,7 @@ export const Admin: React.FC = () => {
       setActiveTab('sellers');
     } else if (urlTab === 'market') {
       setActiveTab('market');
-    } else if (urlTab === 'community') {
+    } else if (urlTab === 'community' || urlTab === 'gumzo' || urlTab === 'groups') {
       setActiveTab('community');
     } else if (urlTab === 'stats') {
       setActiveTab('stats');
@@ -236,23 +237,23 @@ export const Admin: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => handleTabSelect('stats')}
+            onClick={() => handleTabSelect('community')}
             className={`p-3 rounded-xl transition-all text-left flex items-start gap-2.5 cursor-pointer ${
-              activeTab === 'stats' || activeTab === 'community'
+              activeTab === 'community' || activeTab === 'stats'
                 ? 'bg-white shadow-sm ring-2 ring-amber-500/80 text-stone-900'
                 : 'bg-white/60 hover:bg-white text-stone-600 hover:text-stone-900'
             }`}
           >
             <div className={`p-2 rounded-lg ${
-              activeTab === 'stats' || activeTab === 'community'
+              activeTab === 'community' || activeTab === 'stats'
                 ? 'bg-blue-600 text-white'
                 : 'bg-stone-100 text-stone-600'
             }`}>
-              <BarChart3 className="w-4 h-4" />
+              <ShieldCheck className="w-4 h-4" />
             </div>
             <div>
-              <span className="text-xs font-bold block leading-tight">Takwimu & Jamii</span>
-              <span className="text-[10px] text-stone-500 block">Ripoti na Mijadala</span>
+              <span className="text-xs font-bold block leading-tight">Jamii & Gumzo</span>
+              <span className="text-[10px] text-stone-500 block">Idhini & Utawala wa Vikundi</span>
             </div>
           </button>
         </div>
@@ -363,6 +364,18 @@ export const Admin: React.FC = () => {
           {(activeTab === 'stats' || activeTab === 'community') && (
             <>
               <button
+                onClick={() => handleTabSelect('community')}
+                className={`py-1.5 px-3 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'community'
+                    ? 'bg-blue-700 text-white shadow-xs'
+                    : 'text-stone-600 hover:bg-stone-200/70 hover:text-stone-900'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Usimamizi wa Vikundi vya Gumzo (V9.1)</span>
+              </button>
+
+              <button
                 onClick={() => handleTabSelect('stats')}
                 className={`py-1.5 px-3 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                   activeTab === 'stats'
@@ -372,18 +385,6 @@ export const Admin: React.FC = () => {
               >
                 <BarChart3 className="w-3.5 h-3.5" />
                 <span>Takwimu za Mfumo</span>
-              </button>
-
-              <button
-                onClick={() => handleTabSelect('community')}
-                className={`py-1.5 px-3 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  activeTab === 'community'
-                    ? 'bg-blue-700 text-white shadow-xs'
-                    : 'text-stone-600 hover:bg-stone-200/70 hover:text-stone-900'
-                }`}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Mijadala ya Jamii</span>
               </button>
             </>
           )}
@@ -630,19 +631,9 @@ export const Admin: React.FC = () => {
         </div>
       )}
 
-      {/* Tab Content: Community Moderation */}
+      {/* Tab Content: Community & Gumzo Groups Governance (V9.1) */}
       {activeTab === 'community' && (
-        <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-xs space-y-3">
-          <h3 className="text-sm font-bold text-stone-900">Usimamizi wa Jamii na Gumzo</h3>
-          <p className="text-xs text-stone-500">
-            Muundo wa kudhibiti mada na maoni yasiyofaa kwenye jukwaa la wafugaji (Community Moderation).
-          </p>
-          <div className="p-4 bg-stone-50 rounded-xl border border-stone-200 text-center space-y-1">
-            <MessageSquare className="w-8 h-8 text-blue-700 mx-auto mb-1 opacity-75" />
-            <p className="text-xs font-semibold text-stone-700">Mada zote zinafuata miongozo</p>
-            <p className="text-[11px] text-stone-500">Ripoti za maudhui kutoka kwa watumiaji zitaonekana hapa kwa ajili ya kufutwa au kufungiwa.</p>
-          </div>
-        </div>
+        <AdminGumzoGroupManagement />
       )}
 
       {/* Tab Content: Platform Statistics (Clearly labeled as Demo Data) */}

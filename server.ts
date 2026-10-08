@@ -6306,6 +6306,59 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     }
   });
 
+  // 1b. Admin list all groups (with status filter, search, category, and lifecycle counts)
+  app.get('/api/gumzo/admin/groups', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+
+      if (!isAdmin) {
+        return res.status(403).json({ error: 'Mamlaka ya Admin yanahitajika kutazama orodha ya vikundi vyote.' });
+      }
+
+      const status = req.query.status as string | undefined;
+      const category = req.query.category as string | undefined;
+      const search = (req.query.search as string | undefined)?.toLowerCase().trim();
+
+      const allGroups = gumzoGroupService.getAllGroups();
+
+      // Counts across all groups before filtering
+      const counts = {
+        total: allGroups.length,
+        pending: allGroups.filter((g) => g.status === 'PENDING_APPROVAL').length,
+        active: allGroups.filter((g) => g.status === 'ACTIVE').length,
+        suspended: allGroups.filter((g) => g.status === 'SUSPENDED').length,
+        rejected: allGroups.filter((g) => g.status === 'REJECTED').length,
+        archived: allGroups.filter((g) => g.status === 'ARCHIVED').length,
+        draft: allGroups.filter((g) => g.status === 'DRAFT').length,
+      };
+
+      let filtered = [...allGroups];
+      if (status && status !== 'ALL') {
+        filtered = filtered.filter((g) => g.status === status);
+      }
+      if (category && category !== 'all') {
+        filtered = filtered.filter((g) => g.categoryId === category);
+      }
+      if (search) {
+        filtered = filtered.filter((g) =>
+          g.name.toLowerCase().includes(search) ||
+          g.description.toLowerCase().includes(search) ||
+          g.founderAdminUserId.toLowerCase().includes(search) ||
+          g.groupId.toLowerCase().includes(search)
+        );
+      }
+
+      // Sort newest first
+      filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      return res.json({ groups: filtered, total: filtered.length, counts });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   // 2. Get group details + caller's membership
   app.get('/api/gumzo/groups/:groupId', async (req, res) => {
     try {
@@ -6389,7 +6442,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
   app.post('/api/gumzo/groups/:groupId/status', async (req, res) => {
     try {
       const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.adminUserId;
       const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
 
       if (!callerUserId) {
@@ -6415,7 +6468,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
   app.post('/api/gumzo/groups/:groupId/leadership', async (req, res) => {
     try {
       const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.platformAdminUserId;
       const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
 
       if (!callerUserId || !isAdmin) {

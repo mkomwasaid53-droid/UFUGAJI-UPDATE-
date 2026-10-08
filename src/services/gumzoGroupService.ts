@@ -603,6 +603,182 @@ export class GumzoGroupService {
     return this.leaveGroup(groupId, userId);
   }
 
+  public async fetchBrowserAdminGroups(options?: {
+    statusFilter?: string;
+    categoryFilter?: string;
+    search?: string;
+    callerUserId?: string;
+    token?: string | null;
+    userRole?: string;
+  }): Promise<{
+    groups: GumzoGroup[];
+    total: number;
+    counts: {
+      total: number;
+      pending: number;
+      active: number;
+      suspended: number;
+      rejected: number;
+      archived: number;
+      draft: number;
+    };
+  }> {
+    const { statusFilter, categoryFilter, search, callerUserId, token, userRole } = options || {};
+    if (typeof window !== 'undefined') {
+      try {
+        const params = new URLSearchParams();
+        if (statusFilter && statusFilter !== 'ALL') params.append('status', statusFilter);
+        if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter);
+        if (search) params.append('search', search);
+
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (callerUserId) headers['x-user-id'] = callerUserId;
+        if (userRole) headers['x-user-role'] = userRole;
+        headers['x-is-admin'] = 'true';
+
+        const res = await fetch(`/api/gumzo/admin/groups?${params.toString()}`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.groups) {
+            data.groups.forEach((g: GumzoGroup) => groupsStore.set(g.groupId, g));
+            return {
+              groups: data.groups,
+              total: data.total ?? data.groups.length,
+              counts: data.counts ?? {
+                total: data.groups.length,
+                pending: data.groups.filter((g: any) => g.status === 'PENDING_APPROVAL').length,
+                active: data.groups.filter((g: any) => g.status === 'ACTIVE').length,
+                suspended: data.groups.filter((g: any) => g.status === 'SUSPENDED').length,
+                rejected: data.groups.filter((g: any) => g.status === 'REJECTED').length,
+                archived: data.groups.filter((g: any) => g.status === 'ARCHIVED').length,
+                draft: data.groups.filter((g: any) => g.status === 'DRAFT').length,
+              },
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('[gumzoGroupService] fetchBrowserAdminGroups error, using local fallback:', err);
+      }
+    }
+
+    // In-memory fallback
+    let all = this.getAllGroups();
+    const counts = {
+      total: all.length,
+      pending: all.filter((g) => g.status === 'PENDING_APPROVAL').length,
+      active: all.filter((g) => g.status === 'ACTIVE').length,
+      suspended: all.filter((g) => g.status === 'SUSPENDED').length,
+      rejected: all.filter((g) => g.status === 'REJECTED').length,
+      archived: all.filter((g) => g.status === 'ARCHIVED').length,
+      draft: all.filter((g) => g.status === 'DRAFT').length,
+    };
+    if (statusFilter && statusFilter !== 'ALL') {
+      all = all.filter((g) => g.status === statusFilter);
+    }
+    if (categoryFilter && categoryFilter !== 'all') {
+      all = all.filter((g) => g.categoryId === categoryFilter);
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      all = all.filter((g) =>
+        g.name.toLowerCase().includes(q) ||
+        g.description.toLowerCase().includes(q) ||
+        g.groupId.toLowerCase().includes(q)
+      );
+    }
+    all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return { groups: all, total: all.length, counts };
+  }
+
+  public async postBrowserUpdateGroupStatus(params: {
+    groupId: string;
+    newStatus: GumzoGroupStatus;
+    adminUserId: string;
+    token?: string | null;
+    reason?: string;
+    userRole?: string;
+  }): Promise<GumzoGroup> {
+    const { groupId, newStatus, adminUserId, token, reason, userRole } = params;
+    if (typeof window !== 'undefined') {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (adminUserId) headers['x-user-id'] = adminUserId;
+        if (userRole) headers['x-user-role'] = userRole;
+        headers['x-is-admin'] = 'true';
+
+        const res = await fetch(`/api/gumzo/groups/${encodeURIComponent(groupId)}/status`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ status: newStatus, reason, adminUserId }),
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          groupsStore.set(updated.groupId, updated);
+          return updated;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Imeshindwa kubadilisha hali ya kikundi.');
+        }
+      } catch (err: any) {
+        if (err.message && !err.message.includes('fetch')) {
+          throw err;
+        }
+      }
+    }
+    return this.adminUpdateGroupStatus({
+      groupId,
+      newStatus,
+      adminUserId,
+      isPlatformAdmin: true,
+      reason,
+    });
+  }
+
+  public async postBrowserAssignLeadershipAdmin(params: {
+    groupId: string;
+    leadershipAdminUserId: string;
+    platformAdminUserId: string;
+    token?: string | null;
+    userRole?: string;
+  }): Promise<GumzoGroup> {
+    const { groupId, leadershipAdminUserId, platformAdminUserId, token, userRole } = params;
+    if (typeof window !== 'undefined') {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (platformAdminUserId) headers['x-user-id'] = platformAdminUserId;
+        if (userRole) headers['x-user-role'] = userRole;
+        headers['x-is-admin'] = 'true';
+
+        const res = await fetch(`/api/gumzo/groups/${encodeURIComponent(groupId)}/leadership`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ leadershipAdminUserId, platformAdminUserId }),
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          groupsStore.set(updated.groupId, updated);
+          return updated;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Imeshindwa kuteua Leadership Admin.');
+        }
+      } catch (err: any) {
+        if (err.message && !err.message.includes('fetch')) {
+          throw err;
+        }
+      }
+    }
+    return this.assignLeadershipAdmin({
+      groupId,
+      leadershipAdminUserId,
+      platformAdminUserId,
+      isPlatformAdmin: true,
+    });
+  }
+
   /**
    * 12. TESTING & ISOLATION HELPERS
    */
@@ -615,10 +791,12 @@ export class GumzoGroupService {
   }
 
   public getAllGroups(): GumzoGroup[] {
+    if (isNode) loadFromDisk();
     return Array.from(groupsStore.values());
   }
 
   public getAllMemberships(): GumzoMembership[] {
+    if (isNode) loadFromDisk();
     return Array.from(membershipsStore.values());
   }
 }

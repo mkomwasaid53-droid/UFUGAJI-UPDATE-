@@ -13,15 +13,19 @@ import {
   LogOut,
   UserPlus,
   Loader2,
-  Info
+  Info,
+  ShieldCheck,
+  ExternalLink
 } from 'lucide-react';
 import {
   GumzoGroup,
   GumzoMembership,
+  GumzoGroupStatus,
   GUMZO_CATEGORIES,
   canAccessGumzoGroup
 } from '../../types/gumzo';
 import { gumzoGroupService } from '../../services/gumzoGroupService';
+import { useAuth } from '../../context/AuthContext';
 
 interface GumzoGroupDetailProps {
   group: GumzoGroup;
@@ -44,12 +48,39 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
   const [isLeaving, setIsLeaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const { isAdmin } = useAuth();
+  const [isAdminActing, setIsAdminActing] = useState(false);
+  const [adminSuccessMsg, setAdminSuccessMsg] = useState<string | null>(null);
+
   const categoryDef = GUMZO_CATEGORIES.find((c) => c.categoryId === group.categoryId);
-  const accessDecision = canAccessGumzoGroup(currentUserId, group, membership);
+  const accessDecision = canAccessGumzoGroup(currentUserId, group, membership, isAdmin);
 
   const isFounder = membership?.role === 'FOUNDER_ADMIN' || group.founderAdminUserId === currentUserId;
   const isLeadership = membership?.role === 'LEADERSHIP_ADMIN' || group.leadershipAdminUserId === currentUserId;
   const isMember = (membership?.role === 'MEMBER' || isFounder || isLeadership) && membership?.status === 'ACTIVE';
+
+  const handleAdminStatusChange = async (nextStatus: GumzoGroupStatus, reason?: string) => {
+    try {
+      setIsAdminActing(true);
+      setActionError(null);
+      setAdminSuccessMsg(null);
+      const updated = await gumzoGroupService.postBrowserUpdateGroupStatus({
+        groupId: group.groupId,
+        newStatus: nextStatus,
+        adminUserId: currentUserId || 'admin',
+        reason: reason || 'Marekebisho kutoka ukurasa wa kikundi na Msimamizi Mkuu',
+        userRole: 'admin',
+      });
+      if (onGroupUpdated) {
+        onGroupUpdated(updated);
+      }
+      setAdminSuccessMsg(`Hali ya kikundi imebadilishwa kuwa: ${nextStatus}`);
+    } catch (err: any) {
+      setActionError(err.message || 'Hitilafu ya kubadilisha hali ya kikundi.');
+    } finally {
+      setIsAdminActing(false);
+    }
+  };
 
   const handleJoin = async () => {
     if (!currentUserId) {
@@ -208,6 +239,82 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
             <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
               <span>{actionError}</span>
+            </div>
+          )}
+
+          {adminSuccessMsg && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{adminSuccessMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdminSuccessMsg(null)}
+                className="text-stone-400 hover:text-stone-700 text-xs px-2"
+              >
+                Funga
+              </button>
+            </div>
+          )}
+
+          {/* Admin Governance Quick Controls Bar */}
+          {isAdmin && (
+            <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-stone-900">
+                <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+                <div>
+                  <span className="font-bold">Mamlaka ya Msimamizi Mkuu (Admin):</span>{' '}
+                  <span className="text-stone-600">
+                    Hali ya sasa ni: <strong className="text-stone-900 font-mono">{group.status}</strong>
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {group.status !== 'ACTIVE' && (
+                  <button
+                    type="button"
+                    onClick={() => handleAdminStatusChange('ACTIVE')}
+                    disabled={isAdminActing}
+                    className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-bold rounded-xl transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                  >
+                    {isAdminActing ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                    <span>{group.status === 'PENDING_APPROVAL' ? 'Idhinisha (ACTIVE)' : 'Rejesha (ACTIVE)'}</span>
+                  </button>
+                )}
+
+                {group.status === 'ACTIVE' && (
+                  <button
+                    type="button"
+                    onClick={() => handleAdminStatusChange('SUSPENDED', 'Imesimamishwa na Msimamizi Mkuu')}
+                    disabled={isAdminActing}
+                    className="px-3 py-1.5 bg-rose-700 hover:bg-rose-800 disabled:opacity-50 text-white font-bold rounded-xl transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                  >
+                    {isAdminActing ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                    <span>Simamisha (SUSPENDED)</span>
+                  </button>
+                )}
+
+                {group.status === 'PENDING_APPROVAL' && (
+                  <button
+                    type="button"
+                    onClick={() => handleAdminStatusChange('REJECTED', 'Ombi halikukidhi vigezo vya jukwaa')}
+                    disabled={isAdminActing}
+                    className="px-3 py-1.5 bg-stone-700 hover:bg-stone-800 disabled:opacity-50 text-white font-bold rounded-xl transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                  >
+                    {isAdminActing ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                    <span>Kataa (REJECTED)</span>
+                  </button>
+                )}
+
+                <a
+                  href="/admin?tab=community"
+                  className="px-3 py-1.5 bg-white border border-stone-300 text-stone-700 hover:text-stone-900 font-semibold rounded-xl hover:bg-stone-50 transition-colors inline-flex items-center gap-1"
+                >
+                  <span>Paneli ya Admin</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
             </div>
           )}
 
