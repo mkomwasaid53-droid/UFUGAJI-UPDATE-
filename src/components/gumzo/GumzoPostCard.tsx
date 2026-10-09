@@ -17,15 +17,18 @@ import {
 import {
   GumzoPost,
   GumzoGroup,
+  GumzoMembership,
   canUserEditPost,
   canUserDeletePost
 } from '../../types/gumzo';
 import { gumzoPostService } from '../../services/gumzoPostService';
+import { GumzoCommentSection } from './GumzoCommentSection';
 
 interface GumzoPostCardProps {
   post: GumzoPost;
   group: GumzoGroup;
   currentUserId: string;
+  membership?: GumzoMembership | null;
   isPlatformAdmin?: boolean;
   onPostUpdated: (updated: GumzoPost) => void;
   onPostDeleted: (deletedPostId: string) => void;
@@ -35,11 +38,13 @@ export const GumzoPostCard: React.FC<GumzoPostCardProps> = ({
   post,
   group,
   currentUserId,
+  membership,
   isPlatformAdmin = false,
   onPostUpdated,
   onPostDeleted,
 }) => {
   const [showMenu, setShowMenu] = useState(false);
+  const [showComments, setShowComments] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
   const [isSaving, setIsSaving] = useState(false);
@@ -327,6 +332,14 @@ export const GumzoPostCard: React.FC<GumzoPostCardProps> = ({
                     loading="lazy"
                   />
                 )}
+                {med.type === 'video' && (
+                  <video
+                    src={med.url}
+                    controls
+                    className="w-full max-h-96 bg-black rounded-lg"
+                    preload="metadata"
+                  />
+                )}
                 {med.caption && (
                   <p className="text-[11px] text-stone-500 italic p-2 bg-stone-50 border-t border-stone-100">
                     {med.caption}
@@ -338,16 +351,45 @@ export const GumzoPostCard: React.FC<GumzoPostCardProps> = ({
         )}
       </div>
 
-      {/* Footer info: V9.2 indicates that member comments will arrive in V9.3 */}
-      <div className="px-4 sm:px-5 py-2.5 bg-stone-50/70 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
-        <span className="inline-flex items-center gap-1 text-[11px] text-stone-400">
-          <MessageSquare className="w-3 h-3" />
-          <span>Maoni ya wanachama (Comments) yatawezeshwa Awamu ya V9.3</span>
-        </span>
+      {/* V9.3 — Comments Action Bar & Section */}
+      <div className="px-4 sm:px-5 py-2.5 bg-stone-50/70 border-t border-stone-100 flex items-center justify-between text-xs text-stone-600">
+        <button
+          type="button"
+          onClick={() => setShowComments((prev) => !prev)}
+          className="inline-flex items-center gap-1.5 font-bold text-emerald-800 hover:text-emerald-950 transition-colors cursor-pointer py-1 px-2 -ml-2 rounded-lg hover:bg-stone-100"
+        >
+          <MessageSquare className="w-3.5 h-3.5 text-emerald-700" />
+          <span>
+            {typeof post.commentCount === 'number' && post.commentCount > 0
+              ? `${post.commentCount} Maoni`
+              : 'Toa Maoni (Comments)'}
+          </span>
+        </button>
         <span className="text-[11px] text-stone-400">
           Mada Rasmi ya Uongozi
         </span>
       </div>
+
+      {showComments && (
+        <div className="px-4 sm:px-5 pb-4">
+          <GumzoCommentSection
+            groupId={group.groupId}
+            group={group}
+            post={post}
+            currentUserId={currentUserId}
+            membership={membership}
+            isAdmin={Boolean(isPlatformAdmin)}
+            isGroupAdmin={Boolean(
+              group.founderAdminUserId === currentUserId ||
+              group.leadershipAdminUserId === currentUserId ||
+              isPlatformAdmin
+            )}
+            onCommentCountChanged={(newCount) => {
+              onPostUpdated({ ...post, commentCount: newCount });
+            }}
+          />
+        </div>
+      )}
     </article>
   );
 };

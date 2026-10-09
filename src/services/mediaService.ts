@@ -8,6 +8,9 @@ import {
 } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 import { ProductImage, ProductVideo } from '../types/marketplace';
+import { InboxMediaAttachment } from '../types/marketplaceInbox';
+import { GumzoMediaItem } from '../types/gumzo';
+import { persistImagePermanently } from './imageStorageService';
 import {
   saveVideoToIndexedDB,
   saveVideoToFirestoreChunks,
@@ -510,18 +513,20 @@ export async function uploadProductImage(
     return {
       id: imageId,
       url: downloadUrl,
+      storagePath,
       thumbnailUrl: downloadUrl,
       caption: caption || '',
       isPrimary: Boolean(isPrimary),
       uploadedAt: now,
     };
   } catch (err) {
-    console.warn('Firebase Storage upload notice (using optimized fallback data url):', err);
-    // Graceful fallback to dataUrl so user is never blocked
+    console.warn('Firebase Storage upload notice (using persistent server storage fallback):', err);
+    const serverPersist = await persistImagePermanently(dataUrl, imageId, sellerUid, productId);
     return {
       id: imageId,
-      url: dataUrl,
-      thumbnailUrl: dataUrl,
+      url: serverPersist.url,
+      storagePath: serverPersist.storagePath || `marketplace/products/${sellerUid}/${productId}/${imageId}.jpg`,
+      thumbnailUrl: serverPersist.url,
       caption: caption || '',
       isPrimary: Boolean(isPrimary),
       uploadedAt: now,
@@ -630,4 +635,194 @@ export async function deleteMediaFile(storageUrlOrPath: string): Promise<void> {
   } catch (err) {
     console.warn('Hitilafu ya kufuta picha kwenye Storage:', err);
   }
+}
+
+/**
+ * Uploads media attachment for private Marketplace Inbox conversation
+ */
+export async function uploadMarketplaceInboxMedia(params: {
+  conversationId: string;
+  file: File | Blob;
+  callerUserId: string;
+  token?: string | null;
+  onProgress?: (progressPercent: number) => void;
+}): Promise<InboxMediaAttachment> {
+  const { conversationId, file, callerUserId, token, onProgress } = params;
+
+  const fileName = (file as File).name || 'attachment';
+  const fileType = file.type || 'image/jpeg';
+  const isVideo = fileType.startsWith('video/') || fileName.match(/\.(mp4|mov|webm|3gp|m4v)$/i);
+  const mediaType: 'image' | 'video' = isVideo ? 'video' : 'image';
+
+  // Size limit checks
+  const maxBytes = isVideo ? 50 * 1024 * 1024 : 15 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    const maxMb = isVideo ? '50MB' : '15MB';
+    throw new Error(`Faili limezidi ukubwa unaoruhusiwa wa ${maxMb} (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
+  }
+
+  onProgress?.(20);
+
+  const formData = new FormData();
+  formData.append('media', file, fileName);
+  formData.append('type', mediaType);
+
+  const headers: Record<string, string> = {};
+  if (callerUserId) headers['x-user-id'] = callerUserId;
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  onProgress?.(50);
+
+  const res = await fetch(`/api/marketplace/inbox/${encodeURIComponent(conversationId)}/upload`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  onProgress?.(90);
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || 'Imeshindikana kupakia kiambatisho kwenye ujumbe.');
+  }
+
+  const data = await res.json();
+  onProgress?.(100);
+
+  return {
+    mediaId: data.mediaId,
+    type: data.type || mediaType,
+    url: data.url,
+    storagePath: data.storagePath,
+    fileName: data.fileName || fileName,
+    fileSizeBytes: data.fileSizeBytes || file.size,
+    mimeType: data.mimeType || fileType,
+    thumbnailUrl: data.thumbnailUrl || (mediaType === 'image' ? data.url : undefined),
+  };
+}
+
+/**
+ * Uploads media attachment for Gumzo Admin Post (FOUNDER_ADMIN or LEADERSHIP_ADMIN)
+ */
+export async function uploadGumzoPostMedia(params: {
+  groupId: string;
+  file: File | Blob;
+  callerUserId: string;
+  caption?: string;
+  token?: string | null;
+  onProgress?: (progressPercent: number) => void;
+}): Promise<GumzoMediaItem> {
+  const { groupId, file, callerUserId, caption, token, onProgress } = params;
+
+  const fileName = (file as File).name || 'media';
+  const fileType = file.type || 'image/jpeg';
+  const isVideo = fileType.startsWith('video/') || fileName.match(/\.(mp4|mov|webm|3gp|m4v)$/i);
+  const mediaType: 'image' | 'video' = isVideo ? 'video' : 'image';
+
+  const maxBytes = isVideo ? 50 * 1024 * 1024 : 15 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    const maxMb = isVideo ? '50MB' : '15MB';
+    throw new Error(`Faili limezidi ukubwa unaoruhusiwa wa ${maxMb} (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
+  }
+
+  onProgress?.(25);
+
+  const formData = new FormData();
+  formData.append('media', file, fileName);
+  formData.append('type', mediaType);
+  if (caption) formData.append('caption', caption);
+
+  const headers: Record<string, string> = {};
+  if (callerUserId) headers['x-user-id'] = callerUserId;
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  onProgress?.(60);
+
+  const res = await fetch(`/api/gumzo/groups/${encodeURIComponent(groupId)}/posts/upload-media`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  onProgress?.(90);
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || 'Imeshindikana kupakia faili la chapisho.');
+  }
+
+  const data = await res.json();
+  onProgress?.(100);
+
+  return {
+    id: data.id || `med_${Date.now()}`,
+    type: data.type || mediaType,
+    url: data.url,
+    storagePath: data.storagePath,
+    caption: caption || data.caption || undefined,
+    sizeBytes: data.sizeBytes || file.size,
+  };
+}
+
+/**
+ * Uploads media attachment for Gumzo Member Comment (ACTIVE MEMBER or Group Admin)
+ */
+export async function uploadGumzoCommentMedia(params: {
+  groupId: string;
+  file: File | Blob;
+  callerUserId: string;
+  caption?: string;
+  token?: string | null;
+  onProgress?: (progressPercent: number) => void;
+}): Promise<GumzoMediaItem> {
+  const { groupId, file, callerUserId, caption, token, onProgress } = params;
+
+  const fileName = (file as File).name || 'media';
+  const fileType = file.type || 'image/jpeg';
+  const isVideo = fileType.startsWith('video/') || fileName.match(/\.(mp4|mov|webm|3gp|m4v)$/i);
+  const mediaType: 'image' | 'video' = isVideo ? 'video' : 'image';
+
+  const maxBytes = isVideo ? 50 * 1024 * 1024 : 15 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    const maxMb = isVideo ? '50MB' : '15MB';
+    throw new Error(`Faili limezidi ukubwa unaoruhusiwa wa ${maxMb} (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
+  }
+
+  onProgress?.(25);
+
+  const formData = new FormData();
+  formData.append('media', file, fileName);
+  formData.append('type', mediaType);
+  if (caption) formData.append('caption', caption);
+
+  const headers: Record<string, string> = {};
+  if (callerUserId) headers['x-user-id'] = callerUserId;
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  onProgress?.(60);
+
+  const res = await fetch(`/api/gumzo/groups/${encodeURIComponent(groupId)}/comments/upload-media`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  onProgress?.(90);
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || 'Imeshindikana kupakia faili la maoni.');
+  }
+
+  const data = await res.json();
+  onProgress?.(100);
+
+  return {
+    id: data.id || `med_cmt_${Date.now()}`,
+    type: data.type || mediaType,
+    url: data.url,
+    storagePath: data.storagePath,
+    caption: caption || data.caption || undefined,
+    sizeBytes: data.sizeBytes || file.size,
+  };
 }

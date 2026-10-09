@@ -5,6 +5,7 @@ export type { SellerVerification, SellerVerificationStatus, SellerVerificationTy
 export interface ProductImage {
   id: string;
   url: string;
+  storagePath?: string;
   thumbnailUrl?: string;
   isPrimary?: boolean;
   caption?: string;

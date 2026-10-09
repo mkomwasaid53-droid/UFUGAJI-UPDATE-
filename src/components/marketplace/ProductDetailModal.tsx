@@ -286,6 +286,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [imageErrorMap, setImageErrorMap] = useState<Record<string, boolean>>({});
 
   if (!product || !currentProduct || !priceStock || !locDelivery) return null;
 
@@ -428,13 +429,21 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           {allImages.length > 0 ? (
             <div className="space-y-2">
               <div className="relative w-full h-56 sm:h-72 bg-stone-950 rounded-2xl overflow-hidden border border-stone-200 flex items-center justify-center group">
-                <img
-                  src={activeImage?.url}
-                  alt={product.title}
-                  className="w-full h-full object-contain cursor-pointer"
-                  onClick={() => setIsLightboxOpen(true)}
-                  referrerPolicy="no-referrer"
-                />
+                {activeImage?.url && !imageErrorMap[activeImage.id || activeImage.url] && !activeImage.url.startsWith('blob:') ? (
+                  <img
+                    src={activeImage.url}
+                    alt={product.title}
+                    className="w-full h-full object-contain cursor-pointer"
+                    onClick={() => setIsLightboxOpen(true)}
+                    referrerPolicy="no-referrer"
+                    onError={() => setImageErrorMap((prev) => ({ ...prev, [activeImage.id || activeImage.url]: true }))}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-stone-400 space-y-1.5 py-8">
+                    <Package className="w-10 h-10 text-stone-600" />
+                    <span className="text-xs font-medium">Bila Picha Halisi</span>
+                  </div>
+                )}
 
                 {/* Lightbox Trigger Button */}
                 <button

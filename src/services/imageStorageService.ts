@@ -88,9 +88,16 @@ export async function getImageFromIndexedDB(id: string): Promise<string | null> 
 /**
  * Ensure image upload is permanently saved to server disk and IndexedDB
  */
-export async function persistImagePermanently(dataUrl: string, imageId?: string): Promise<{
+export async function persistImagePermanently(
+  dataUrl: string,
+  imageId?: string,
+  sellerId?: string,
+  productId?: string,
+  token?: string
+): Promise<{
   url: string;
   id: string;
+  storagePath?: string;
 }> {
   const resolvedId = imageId || `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -99,16 +106,28 @@ export async function persistImagePermanently(dataUrl: string, imageId?: string)
 
   // 2. Upload to server disk
   let publicUrl = dataUrl;
+  let resolvedStoragePath = sellerId ? `marketplace/products/${sellerId}/${productId || 'general'}/${resolvedId}.jpg` : undefined;
+
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (sellerId) headers['x-user-id'] = sellerId;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     const resp = await fetch('/api/marketplace/upload-image', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataUrl, imageId: resolvedId }),
+      headers,
+      body: JSON.stringify({
+        dataUrl,
+        imageId: resolvedId,
+        sellerId,
+        productId,
+      }),
     });
     if (resp.ok) {
       const serverData = await resp.json();
       if (serverData?.url) {
         publicUrl = serverData.url;
+        resolvedStoragePath = serverData.storagePath || resolvedStoragePath;
         // Also save the server URL reference in IndexedDB
         await saveImageToIndexedDB(publicUrl, dataUrl);
       }
@@ -119,6 +138,7 @@ export async function persistImagePermanently(dataUrl: string, imageId?: string)
 
   return {
     url: publicUrl,
-    id: resolvedId
+    id: resolvedId,
+    storagePath: resolvedStoragePath,
   };
 }

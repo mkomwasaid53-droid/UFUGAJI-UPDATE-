@@ -7,7 +7,18 @@ export type ConversationStatus = 'ACTIVE' | 'CLOSED' | 'BLOCKED';
 
 export type MessageSenderRole = 'BUYER' | 'SELLER';
 
-export type MessageType = 'TEXT';
+export type MessageType = 'TEXT' | 'MEDIA' | 'TEXT_WITH_MEDIA';
+
+export interface InboxMediaAttachment {
+  mediaId: string;
+  type: 'image' | 'video';
+  url: string;
+  storagePath?: string;
+  fileName?: string;
+  fileSizeBytes?: number;
+  mimeType?: string;
+  thumbnailUrl?: string;
+}
 
 export interface MarketplaceConversation {
   conversationId: string;
@@ -40,6 +51,7 @@ export interface MarketplaceMessage {
   senderRole: MessageSenderRole;
   text: string;
   messageType: MessageType;
+  media?: InboxMediaAttachment;
   createdAt: string;
   readAt: string | null;
   deletedAt: string | null;
@@ -65,7 +77,8 @@ export interface CreateConversationInput {
 export interface SendMessageInput {
   conversationId: string;
   senderUserId: string;
-  text: string;
+  text?: string;
   messageType?: MessageType;
+  media?: InboxMediaAttachment;
 }
 

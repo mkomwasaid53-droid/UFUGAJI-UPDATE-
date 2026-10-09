@@ -21,8 +21,15 @@ import {
   ExternalLink,
   ShieldAlert,
   Search,
-  AlertCircle
+  AlertCircle,
+  Paperclip,
+  Image as ImageIcon,
+  Video as VideoIcon,
+  X as XIcon,
+  Loader2,
+  CheckCircle2
 } from 'lucide-react';
+import { uploadMarketplaceInboxMedia } from '../../services/mediaService';
 
 interface MarketplaceInboxViewProps {
   currentUserId: string;
@@ -49,6 +56,14 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Attachment states
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<'image' | 'video' | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -133,30 +148,88 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isVideo = file.type.startsWith('video/') || file.name.match(/\.(mp4|mov|webm|3gp|m4v)$/i);
+    const maxBytes = isVideo ? 50 * 1024 * 1024 : 15 * 1024 * 1024;
+    const maxLabel = isVideo ? '50MB' : '15MB';
+
+    if (file.size > maxBytes) {
+      setErrorMsg(`Faili limezidi ukubwa unaoruhusiwa wa ${maxLabel} (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
+      return;
+    }
+
+    setErrorMsg(null);
+    setSelectedFile(file);
+    setFileType(isVideo ? 'video' : 'image');
+    setFilePreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handleClearAttachment = () => {
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+    setSelectedFile(null);
+    setFilePreviewUrl(null);
+    setFileType(null);
+    setUploadProgress(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   // Send message
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputText).trim();
-    if (!text || !selectedConversation || isSending) return;
+    if ((!text && !selectedFile) || !selectedConversation || isSending) return;
 
     try {
       setIsSending(true);
       setErrorMsg(null);
+
+      let mediaAttachment: any = undefined;
+
+      if (selectedFile) {
+        setIsUploading(true);
+        setUploadProgress(20);
+        try {
+          mediaAttachment = await uploadMarketplaceInboxMedia({
+            conversationId: selectedConversation.conversationId,
+            file: selectedFile,
+            callerUserId: currentUserId,
+            onProgress: (pct) => setUploadProgress(pct),
+          });
+        } catch (uploadErr: any) {
+          setIsUploading(false);
+          setUploadProgress(null);
+          setErrorMsg(uploadErr.message || 'Hitilafu wakati wa kupakia faili kwenye ujumbe.');
+          return;
+        } finally {
+          setIsUploading(false);
+        }
+      }
+
       const newMsg = await marketplaceInboxService.sendMessage(
         {
           conversationId: selectedConversation.conversationId,
           senderUserId: currentUserId,
-          text
+          text,
+          media: mediaAttachment,
         },
         currentUserId
       );
 
       setMessages((prev) => [...prev, newMsg]);
       setInputText('');
+      handleClearAttachment();
 
       // Update conversation in list
+      const summary = text || (mediaAttachment?.type === 'video' ? '📹 Video' : '📷 Picha');
       const updatedConv: MarketplaceConversation = {
         ...selectedConversation,
-        lastMessage: text.slice(0, 100),
+        lastMessage: summary.slice(0, 100),
         lastMessageAt: newMsg.createdAt,
         updatedAt: newMsg.createdAt,
         buyerUnreadCount:
@@ -647,13 +720,41 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
                       className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}
                     >
                       <div
-                        className={`max-w-[80%] sm:max-w-[70%] rounded-2xl p-3 text-xs leading-relaxed shadow-2xs ${
+                        className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 text-xs leading-relaxed shadow-2xs ${
                           isMine
                             ? 'bg-emerald-700 text-white rounded-br-xs'
                             : 'bg-white text-stone-900 border border-stone-200 rounded-bl-xs'
                         }`}
                       >
-                        <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                        {/* Media Attachment if present */}
+                        {msg.media && (
+                          <div className="mb-2 rounded-xl overflow-hidden bg-black/10">
+                            {msg.media.type === 'video' ? (
+                              <video
+                                src={msg.media.url}
+                                controls
+                                className="max-h-64 w-full object-contain bg-black rounded-lg"
+                                preload="metadata"
+                              />
+                            ) : (
+                              <img
+                                src={msg.media.url}
+                                alt={msg.media.fileName || 'Kiambatisho cha picha'}
+                                className="max-h-64 w-full object-contain rounded-lg bg-black/5"
+                                loading="lazy"
+                              />
+                            )}
+                            {msg.media.fileName && (
+                              <div className="p-1 px-2 text-[10px] opacity-75 truncate">
+                                {msg.media.fileName}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {msg.text && (
+                          <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1 mt-1 text-[10px] text-stone-400 px-1">
@@ -687,7 +788,68 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
                 <span>Mazungumzo yamefungwa. Bonyeza "Fungua Upya" ili kuendelea.</span>
               </div>
             ) : (
-              <div className="p-3 bg-white border-t border-stone-200">
+              <div className="p-3 bg-white border-t border-stone-200 space-y-2">
+                {/* Hidden File Picker */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+
+                {/* Attachment Preview Card */}
+                {selectedFile && filePreviewUrl && (
+                  <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 overflow-hidden">
+                      <div className="w-10 h-10 rounded-lg overflow-hidden bg-black flex items-center justify-center shrink-0">
+                        {fileType === 'video' ? (
+                          <VideoIcon className="w-5 h-5 text-amber-400" />
+                        ) : (
+                          <img
+                            src={filePreviewUrl}
+                            alt="Hakikisho"
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                      </div>
+                      <div className="truncate">
+                        <div className="text-xs font-bold text-stone-800 truncate">
+                          {selectedFile.name}
+                        </div>
+                        <div className="text-[10px] text-stone-500">
+                          {(selectedFile.size / (1024 * 1024)).toFixed(1)} MB • {fileType === 'video' ? 'Video' : 'Picha'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleClearAttachment}
+                      className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-stone-200 transition-colors cursor-pointer"
+                      title="Ondoa kiambatisho"
+                    >
+                      <XIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Upload Progress Bar */}
+                {isUploading && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] text-emerald-800 font-bold">
+                      <span>Inapakia faili kwenye ujumbe wa siri...</span>
+                      <span>{uploadProgress || 20}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-stone-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-600 transition-all duration-300"
+                        style={{ width: `${uploadProgress || 20}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -695,21 +857,42 @@ export const MarketplaceInboxView: React.FC<MarketplaceInboxViewProps> = ({
                   }}
                   className="flex items-center gap-2"
                 >
+                  {/* File Attachment Button */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isSending}
+                    className={`p-2.5 rounded-xl border transition-colors cursor-pointer flex items-center justify-center shrink-0 min-h-[44px] min-w-[44px] ${
+                      selectedFile
+                        ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                        : 'bg-stone-50 border-stone-300 text-stone-600 hover:bg-stone-100 hover:text-emerald-700'
+                    }`}
+                    title="Ambatanisha picha au video"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </button>
+
                   <input
                     type="text"
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
-                    placeholder="Andika ujumbe hapa..."
+                    placeholder={selectedFile ? 'Weka maelezo ya hiari au bonyeza Tuma...' : 'Andika ujumbe hapa...'}
                     disabled={isSending}
                     className="flex-1 px-4 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white min-h-[44px]"
                   />
                   <button
                     type="submit"
-                    disabled={!inputText.trim() || isSending}
+                    disabled={(!inputText.trim() && !selectedFile) || isSending}
                     className="py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[44px] shrink-0"
                   >
-                    <span>Tuma</span>
-                    <Send className="w-3.5 h-3.5" />
+                    {isSending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <span>Tuma</span>
+                        <Send className="w-3.5 h-3.5" />
+                      </>
+                    )}
                   </button>
                 </form>
               </div>

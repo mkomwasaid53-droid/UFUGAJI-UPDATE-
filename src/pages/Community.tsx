@@ -46,19 +46,21 @@ export const Community: React.FC = () => {
         selectedCategory === 'all' ? undefined : selectedCategory,
         currentUserId
       );
-      setDiscoverGroups(discover);
+      setDiscoverGroups(discover || []);
 
-      // 2. If logged in, load user's memberships and my groups
+      // 2. If logged in, load user's memberships and my groups from server
       if (currentUserId) {
-        const userMemList = gumzoGroupService.getUserMemberships(currentUserId);
+        const token = user ? await user.getIdToken().catch(() => null) : null;
+        const { memberships, groups: userGroups } = await gumzoGroupService.fetchBrowserUserMemberships(
+          currentUserId,
+          token
+        );
         const map: Record<string, GumzoMembership> = {};
-        userMemList.forEach((m) => {
+        (memberships || []).forEach((m) => {
           map[m.groupId] = m;
         });
         setMembershipsMap(map);
-
-        const mine = gumzoGroupService.getUserGroups(currentUserId);
-        setMyGroups(mine);
+        setMyGroups(userGroups || []);
       } else {
         setMyGroups([]);
         setMembershipsMap({});

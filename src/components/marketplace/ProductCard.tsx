@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { MarketplaceProduct } from '../../types/marketplace';
 import { formatTshPrice } from '../../services/marketplaceService';
 import { validateProductOwnership } from '../../services/productOwnershipService';
@@ -63,6 +63,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   // V1.11C-CORRECTIVE-1: Single authoritative public verification projection
   const effectivePublicBadge = publicBadge || sellerVerificationService.getPublicSellerBadge(product.sellerId);
+
+  const [imgError, setImgError] = useState(false);
   const isSellerVerified = Boolean(effectivePublicBadge.isVerified && effectivePublicBadge.badgeStatus === 'ACTIVE');
 
   // V1.6G: Authoritative Unified Trust Signals derivation
@@ -127,20 +129,29 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           onClick={() => onViewDetails(product)}
           className="relative w-full h-36 bg-stone-100 rounded-xl overflow-hidden border border-stone-200 cursor-pointer group/img flex items-center justify-center"
         >
-          {product.imageUrl ? (
-            <img
-              src={product.imageUrl}
-              alt={product.title}
-              className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
-              referrerPolicy="no-referrer"
-              loading="lazy"
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center text-stone-600 space-y-1">
-              <Package className="w-8 h-8 text-stone-500" />
-              <span className="text-[10px] font-medium">Bila Picha</span>
-            </div>
-          )}
+          {(() => {
+            const displayUrl = (!imgError && product.imageUrl && !product.imageUrl.startsWith('blob:'))
+              ? product.imageUrl
+              : (!imgError && product.images && product.images.length > 0 && product.images[0]?.url && !product.images[0]?.url.startsWith('blob:'))
+              ? product.images[0]?.url
+              : null;
+
+            return displayUrl ? (
+              <img
+                src={displayUrl}
+                alt={product.title}
+                className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                onError={() => setImgError(true)}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center text-stone-600 space-y-1">
+                <Package className="w-8 h-8 text-stone-500" />
+                <span className="text-[10px] font-medium">Bila Picha</span>
+              </div>
+            );
+          })()}
 
           {/* Image count pill if multiple */}
           {product.images && product.images.length > 1 && (

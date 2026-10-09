@@ -99,15 +99,16 @@ export function saveProductsToLocalCache(products: MarketplaceProduct[]): void {
   if (typeof window !== 'undefined' && (window as any).indexedDB) {
     import('./imageStorageService').then(({ saveImageToIndexedDB }) => {
       products.forEach((p) => {
-        if (p.imageUrl) {
-          saveImageToIndexedDB(p.imageUrl, p.imageUrl);
+        if (p.imageUrl && (p.imageUrl.startsWith('data:image/') || p.imageUrl.startsWith('blob:'))) {
           saveImageToIndexedDB(`prod_${p.productId}`, p.imageUrl);
+          saveImageToIndexedDB(p.imageUrl, p.imageUrl);
         }
         if (Array.isArray(p.images)) {
           p.images.forEach((img) => {
-            if (img && img.url) {
+            if (img && img.url && (img.url.startsWith('data:image/') || img.url.startsWith('blob:'))) {
               saveImageToIndexedDB(img.url, img.url);
               saveImageToIndexedDB(`img_${img.id || p.productId}`, img.url);
+              saveImageToIndexedDB(`prod_${p.productId}`, img.url);
             }
           });
         }
@@ -120,18 +121,18 @@ export function saveProductsToLocalCache(products: MarketplaceProduct[]): void {
   } catch (err) {
     console.warn('Hitilafu ya kuhifadhi akiba ya bidhaa kwenye localStorage:', err);
     try {
-      // In case localStorage quota is exceeded, strip only heavy embedded raw base64 dataUrls
-      // without inventing broken non-existent file paths
+      // In case localStorage quota is exceeded, replace heavy raw base64 dataUrls
+      // with permanent IndexedDB references rather than blanking them out completely
       const safeProducts = products.map((p) => {
         const isRawBase64 = p.imageUrl && p.imageUrl.startsWith('data:image/');
         return {
           ...p,
-          // Keep existing server URLs (/uploads/...) or IndexedDB reference
-          imageUrl: isRawBase64 ? '' : p.imageUrl,
+          // Keep existing server URLs (/uploads/...) or safe IndexedDB reference
+          imageUrl: isRawBase64 ? `idb:prod_${p.productId}` : p.imageUrl,
           images: (p.images || []).map((img) => ({
             ...img,
-            url: img.url && img.url.startsWith('data:image/') ? '' : img.url,
-            thumbnailUrl: img.thumbnailUrl && img.thumbnailUrl.startsWith('data:image/') ? '' : img.thumbnailUrl,
+            url: img.url && img.url.startsWith('data:image/') ? `idb:img_${img.id || p.productId}` : img.url,
+            thumbnailUrl: img.thumbnailUrl && img.thumbnailUrl.startsWith('data:image/') ? `idb:img_${img.id || p.productId}` : img.thumbnailUrl,
           })),
         };
       });
@@ -219,14 +220,32 @@ export async function fetchMarketplaceProducts(options?: {
     if (isRealProduct(p)) productMap.set(p.productId, p);
   }
 
-  // Add server-persisted products
+  // Add server-persisted products (preserving local image if server has none or blank)
   for (const p of serverProducts) {
-    if (isRealProduct(p)) productMap.set(p.productId, p);
+    if (isRealProduct(p)) {
+      const local = productMap.get(p.productId);
+      if (local) {
+        if (!p.imageUrl && local.imageUrl) p.imageUrl = local.imageUrl;
+        if ((!p.images || p.images.length === 0) && local.images && local.images.length > 0) {
+          p.images = local.images;
+        }
+      }
+      productMap.set(p.productId, p);
+    }
   }
 
   // Add remote Firestore products
   for (const p of remoteProducts) {
-    if (isRealProduct(p)) productMap.set(p.productId, p);
+    if (isRealProduct(p)) {
+      const existing = productMap.get(p.productId);
+      if (existing) {
+        if (!p.imageUrl && existing.imageUrl) p.imageUrl = existing.imageUrl;
+        if ((!p.images || p.images.length === 0) && existing.images && existing.images.length > 0) {
+          p.images = existing.images;
+        }
+      }
+      productMap.set(p.productId, p);
+    }
   }
 
   // Sync each merged product with authoritative moderation and seller governance state

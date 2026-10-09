@@ -1,0 +1,392 @@
+[
+  {
+    "commentId": "cmt_1791545793541_k0u2fl",
+    "groupId": "grp_1791545793533_oypx2s",
+    "postId": "pst_1791545793535_1f7gyt",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mfugaji Said",
+    "content": "Asante kwa elimu nzuri! Je, chanjo hii inafaa pia kwa kuku wa kienyeji?",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:36:33.541Z",
+    "updatedAt": "2026-10-09T11:36:33.541Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791545793543_91hcos",
+    "groupId": "grp_1791545793533_oypx2s",
+    "postId": "pst_1791545793535_1f7gyt",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mwanachama Mjanja",
+    "content": "Najaribu kughushi mamlaka ya Mwanzilishi.",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:36:33.543Z",
+    "updatedAt": "2026-10-09T11:36:33.543Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791545793544_2j31pr",
+    "groupId": "grp_1791545793533_oypx2s",
+    "postId": "pst_1791545793535_1f7gyt",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Marekebisho: Nilipiga picha hii asubuhi ya leo.",
+    "media": [
+      {
+        "id": "cmt_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_comments/grp_1791545793533_oypx2s/cmt_med_001.jpg",
+        "storagePath": "gumzo/comments/grp_1791545793533_oypx2s/cmt_med_001.jpg",
+        "caption": "Picha ya vyombo vya maji",
+        "sizeBytes": 180000,
+        "mimeType": "image/jpeg"
+      }
+    ],
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:36:33.544Z",
+    "updatedAt": "2026-10-09T11:36:33.547Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "isEdited": true
+  },
+  {
+    "commentId": "cmt_1791545793546_ljb6g7",
+    "groupId": "grp_1791545793533_oypx2s",
+    "postId": "pst_1791545793535_1f7gyt",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Video ya tabia ya vifaranga:",
+    "media": [
+      {
+        "id": "cmt_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_comments/grp_1791545793533_oypx2s/cmt_med_002.mp4",
+        "storagePath": "gumzo/comments/grp_1791545793533_oypx2s/cmt_med_002.mp4",
+        "sizeBytes": 4200000,
+        "mimeType": "video/mp4"
+      }
+    ],
+    "status": "DELETED",
+    "createdAt": "2026-10-09T11:36:33.546Z",
+    "updatedAt": "2026-10-09T11:36:33.549Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "deletedAt": "2026-10-09T11:36:33.549Z",
+    "deletedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791545878588_spcyrm",
+    "groupId": "grp_1791545878576_13erj9",
+    "postId": "pst_1791545878579_nzded4",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mfugaji Said",
+    "content": "Asante kwa elimu nzuri! Je, chanjo hii inafaa pia kwa kuku wa kienyeji?",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:37:58.588Z",
+    "updatedAt": "2026-10-09T11:37:58.588Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791545878594_qsfb0o",
+    "groupId": "grp_1791545878576_13erj9",
+    "postId": "pst_1791545878579_nzded4",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mwanachama Mjanja",
+    "content": "Najaribu kughushi mamlaka ya Mwanzilishi.",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:37:58.594Z",
+    "updatedAt": "2026-10-09T11:37:58.594Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791545878596_z12k1v",
+    "groupId": "grp_1791545878576_13erj9",
+    "postId": "pst_1791545878579_nzded4",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Marekebisho: Nilipiga picha hii asubuhi ya leo.",
+    "media": [
+      {
+        "id": "cmt_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_comments/grp_1791545878576_13erj9/cmt_med_001.jpg",
+        "storagePath": "gumzo/comments/grp_1791545878576_13erj9/cmt_med_001.jpg",
+        "caption": "Picha ya vyombo vya maji",
+        "sizeBytes": 180000,
+        "mimeType": "image/jpeg"
+      }
+    ],
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:37:58.596Z",
+    "updatedAt": "2026-10-09T11:37:58.601Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "isEdited": true
+  },
+  {
+    "commentId": "cmt_1791545878598_nexb3q",
+    "groupId": "grp_1791545878576_13erj9",
+    "postId": "pst_1791545878579_nzded4",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Video ya tabia ya vifaranga:",
+    "media": [
+      {
+        "id": "cmt_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_comments/grp_1791545878576_13erj9/cmt_med_002.mp4",
+        "storagePath": "gumzo/comments/grp_1791545878576_13erj9/cmt_med_002.mp4",
+        "sizeBytes": 4200000,
+        "mimeType": "video/mp4"
+      }
+    ],
+    "status": "DELETED",
+    "createdAt": "2026-10-09T11:37:58.598Z",
+    "updatedAt": "2026-10-09T11:37:58.603Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "deletedAt": "2026-10-09T11:37:58.603Z",
+    "deletedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791545945678_j33yt5",
+    "groupId": "grp_1791545945670_2xxvnp",
+    "postId": "pst_1791545945673_l7n8vn",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mfugaji Said",
+    "content": "Asante kwa elimu nzuri! Je, chanjo hii inafaa pia kwa kuku wa kienyeji?",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:39:05.678Z",
+    "updatedAt": "2026-10-09T11:39:05.678Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791545945680_mbp0ty",
+    "groupId": "grp_1791545945670_2xxvnp",
+    "postId": "pst_1791545945673_l7n8vn",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mwanachama Mjanja",
+    "content": "Najaribu kughushi mamlaka ya Mwanzilishi.",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:39:05.680Z",
+    "updatedAt": "2026-10-09T11:39:05.680Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791545945682_qj7sso",
+    "groupId": "grp_1791545945670_2xxvnp",
+    "postId": "pst_1791545945673_l7n8vn",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Marekebisho: Nilipiga picha hii asubuhi ya leo.",
+    "media": [
+      {
+        "id": "cmt_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_comments/grp_1791545945670_2xxvnp/cmt_med_001.jpg",
+        "storagePath": "gumzo/comments/grp_1791545945670_2xxvnp/cmt_med_001.jpg",
+        "caption": "Picha ya vyombo vya maji",
+        "sizeBytes": 180000,
+        "mimeType": "image/jpeg"
+      }
+    ],
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:39:05.682Z",
+    "updatedAt": "2026-10-09T11:39:05.684Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "isEdited": true
+  },
+  {
+    "commentId": "cmt_1791545945683_hca4ss",
+    "groupId": "grp_1791545945670_2xxvnp",
+    "postId": "pst_1791545945673_l7n8vn",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Video ya tabia ya vifaranga:",
+    "media": [
+      {
+        "id": "cmt_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_comments/grp_1791545945670_2xxvnp/cmt_med_002.mp4",
+        "storagePath": "gumzo/comments/grp_1791545945670_2xxvnp/cmt_med_002.mp4",
+        "sizeBytes": 4200000,
+        "mimeType": "video/mp4"
+      }
+    ],
+    "status": "DELETED",
+    "createdAt": "2026-10-09T11:39:05.683Z",
+    "updatedAt": "2026-10-09T11:39:05.686Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "deletedAt": "2026-10-09T11:39:05.686Z",
+    "deletedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791545982037_7g13wk",
+    "groupId": "grp_1791545982027_jvf7yh",
+    "postId": "pst_1791545982030_0zcfyd",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mfugaji Said",
+    "content": "Asante kwa elimu nzuri! Je, chanjo hii inafaa pia kwa kuku wa kienyeji?",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:39:42.037Z",
+    "updatedAt": "2026-10-09T11:39:42.037Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791545982039_c4q3br",
+    "groupId": "grp_1791545982027_jvf7yh",
+    "postId": "pst_1791545982030_0zcfyd",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mwanachama Mjanja",
+    "content": "Najaribu kughushi mamlaka ya Mwanzilishi.",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:39:42.039Z",
+    "updatedAt": "2026-10-09T11:39:42.039Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791545982042_f95uqk",
+    "groupId": "grp_1791545982027_jvf7yh",
+    "postId": "pst_1791545982030_0zcfyd",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Marekebisho: Nilipiga picha hii asubuhi ya leo.",
+    "media": [
+      {
+        "id": "cmt_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_comments/grp_1791545982027_jvf7yh/cmt_med_001.jpg",
+        "storagePath": "gumzo/comments/grp_1791545982027_jvf7yh/cmt_med_001.jpg",
+        "caption": "Picha ya vyombo vya maji",
+        "sizeBytes": 180000,
+        "mimeType": "image/jpeg"
+      }
+    ],
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:39:42.042Z",
+    "updatedAt": "2026-10-09T11:39:42.045Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "isEdited": true
+  },
+  {
+    "commentId": "cmt_1791545982043_bzkmbu",
+    "groupId": "grp_1791545982027_jvf7yh",
+    "postId": "pst_1791545982030_0zcfyd",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Video ya tabia ya vifaranga:",
+    "media": [
+      {
+        "id": "cmt_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_comments/grp_1791545982027_jvf7yh/cmt_med_002.mp4",
+        "storagePath": "gumzo/comments/grp_1791545982027_jvf7yh/cmt_med_002.mp4",
+        "sizeBytes": 4200000,
+        "mimeType": "video/mp4"
+      }
+    ],
+    "status": "DELETED",
+    "createdAt": "2026-10-09T11:39:42.043Z",
+    "updatedAt": "2026-10-09T11:39:42.047Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "deletedAt": "2026-10-09T11:39:42.047Z",
+    "deletedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791546054941_37fxrs",
+    "groupId": "grp_1791546054930_rjt5o6",
+    "postId": "pst_1791546054933_2xz8q9",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mfugaji Said",
+    "content": "Asante kwa elimu nzuri! Je, chanjo hii inafaa pia kwa kuku wa kienyeji?",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:40:54.941Z",
+    "updatedAt": "2026-10-09T11:40:54.941Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791546054943_57d2hj",
+    "groupId": "grp_1791546054930_rjt5o6",
+    "postId": "pst_1791546054933_2xz8q9",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mwanachama Mjanja",
+    "content": "Najaribu kughushi mamlaka ya Mwanzilishi.",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:40:54.943Z",
+    "updatedAt": "2026-10-09T11:40:54.943Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791546054945_8sy6pd",
+    "groupId": "grp_1791546054930_rjt5o6",
+    "postId": "pst_1791546054933_2xz8q9",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Marekebisho: Nilipiga picha hii asubuhi ya leo.",
+    "media": [
+      {
+        "id": "cmt_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_comments/grp_1791546054930_rjt5o6/cmt_med_001.jpg",
+        "storagePath": "gumzo/comments/grp_1791546054930_rjt5o6/cmt_med_001.jpg",
+        "caption": "Picha ya vyombo vya maji",
+        "sizeBytes": 180000,
+        "mimeType": "image/jpeg"
+      }
+    ],
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T11:40:54.945Z",
+    "updatedAt": "2026-10-09T11:40:54.949Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "isEdited": true
+  },
+  {
+    "commentId": "cmt_1791546054947_7bpgwm",
+    "groupId": "grp_1791546054930_rjt5o6",
+    "postId": "pst_1791546054933_2xz8q9",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Video ya tabia ya vifaranga:",
+    "media": [
+      {
+        "id": "cmt_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_comments/grp_1791546054930_rjt5o6/cmt_med_002.mp4",
+        "storagePath": "gumzo/comments/grp_1791546054930_rjt5o6/cmt_med_002.mp4",
+        "sizeBytes": 4200000,
+        "mimeType": "video/mp4"
+      }
+    ],
+    "status": "DELETED",
+    "createdAt": "2026-10-09T11:40:54.947Z",
+    "updatedAt": "2026-10-09T11:40:54.951Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "deletedAt": "2026-10-09T11:40:54.951Z",
+    "deletedBy": "user_member_003"
+  }
+]

@@ -451,7 +451,11 @@ async function runGumzoTests() {
   }
 }
 
-runGumzoTests().catch((err) => {
-  console.error('Unhandled failure in Gumzo test runner:', err);
-  process.exit(1);
-});
+runGumzoTests()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error('Unhandled failure in Gumzo test runner:', err);
+    process.exit(1);
+  });

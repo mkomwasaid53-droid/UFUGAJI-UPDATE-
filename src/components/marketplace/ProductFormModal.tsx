@@ -470,15 +470,18 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       try {
         const { dataUrl } = await compressImage(file, 1200, 1200, 0.85);
         const imageId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const sellerUid = user?.uid || initialProduct?.sellerId || 'seller';
+        const targetProdId = initialProduct?.productId || 'new_prod';
         
         // Multi-layer permanent storage (IndexedDB + Server Disk)
-        const { url: finalUrl } = await persistImagePermanently(dataUrl, imageId);
+        const { url: finalUrl, storagePath } = await persistImagePermanently(dataUrl, imageId, sellerUid, targetProdId);
 
         const isFirst = images.length === 0 && newImages.length === 0;
 
         newImages.push({
           id: imageId,
           url: finalUrl,
+          storagePath: storagePath || `marketplace/products/${sellerUid}/${targetProdId}/${imageId}.jpg`,
           thumbnailUrl: finalUrl,
           isPrimary: isFirst,
           uploadedAt: new Date().toISOString()
@@ -795,8 +798,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         sellerBusinessName: sellerBusinessName.trim() || defaultSellerName,
         catalogueId: selectedCatalogueId || null,
         catalogueName: chosenCatalogue?.name || undefined,
-        images,
-        imageUrl: primaryImg?.url || '',
+        images: images.length > 0 ? images : (initialProduct?.images || []),
+        imageUrl: primaryImg?.url || (images.length > 0 ? images[0]?.url : '') || initialProduct?.imageUrl || '',
         video: finalVideo || null
       });
       onClose();

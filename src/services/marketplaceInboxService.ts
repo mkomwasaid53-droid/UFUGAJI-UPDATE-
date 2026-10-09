@@ -419,7 +419,9 @@ export class MarketplaceInboxService {
     }
 
     const cleanText = (input.text || '').trim();
-    if (!cleanText) {
+    const hasMedia = Boolean(input.media && input.media.url);
+
+    if (!cleanText && !hasMedia) {
       throw new Error('Ujumbe hauwezi kuwa mtupu.');
     }
 
@@ -433,20 +435,24 @@ export class MarketplaceInboxService {
     const now = new Date().toISOString();
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
+    const resolvedMessageType = input.messageType || (hasMedia ? (cleanText ? 'TEXT_WITH_MEDIA' : 'MEDIA') : 'TEXT');
+
     const message: MarketplaceMessage = {
       messageId,
       conversationId: input.conversationId,
       senderUserId: callerUserId,
       senderRole,
       text: cleanText,
-      messageType: input.messageType || 'TEXT',
+      messageType: resolvedMessageType,
+      media: input.media || undefined,
       createdAt: now,
       readAt: null,
       deletedAt: null,
     };
 
     // Update conversation metadata
-    conv.lastMessage = cleanText.slice(0, 100);
+    const summaryText = cleanText || (input.media?.type === 'video' ? '📹 Video' : '📷 Picha');
+    conv.lastMessage = summaryText.slice(0, 100);
     conv.lastMessageAt = now;
     conv.updatedAt = now;
     if (senderRole === 'BUYER') {

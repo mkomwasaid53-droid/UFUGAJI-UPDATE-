@@ -99,6 +99,10 @@ import {
   initGumzoPostsStorage
 } from './src/services/gumzoPostService';
 import {
+  gumzoCommentService,
+  initGumzoCommentsStorage
+} from './src/services/gumzoCommentService';
+import {
   getSellerVerificationDisplay
 } from './src/types/sellerVerification';
 import {
@@ -125,12 +129,25 @@ const MARKETPLACE_PRODUCTS_FILE = path.join(DATA_DIR, 'marketplace_products.json
 // Dedicated temporary directory for transient video processing in V1.2B
 const TEMP_VIDEO_DIR = path.join(os.tmpdir(), 'ufugaji_ai_video_temp');
 
+const GUMZO_POSTS_DIR = path.join(UPLOADS_DIR, 'gumzo_posts');
+const GUMZO_COMMENTS_DIR = path.join(UPLOADS_DIR, 'gumzo_comments');
+const PRIVATE_INBOX_DIR = path.join(process.cwd(), 'private_uploads', 'inbox');
+
 // Ensure upload, data & temp directories exist
 if (!fs.existsSync(VIDEOS_DIR)) {
   fs.mkdirSync(VIDEOS_DIR, { recursive: true });
 }
 if (!fs.existsSync(IMAGES_DIR)) {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
+}
+if (!fs.existsSync(GUMZO_POSTS_DIR)) {
+  fs.mkdirSync(GUMZO_POSTS_DIR, { recursive: true });
+}
+if (!fs.existsSync(GUMZO_COMMENTS_DIR)) {
+  fs.mkdirSync(GUMZO_COMMENTS_DIR, { recursive: true });
+}
+if (!fs.existsSync(PRIVATE_INBOX_DIR)) {
+  fs.mkdirSync(PRIVATE_INBOX_DIR, { recursive: true });
 }
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -150,6 +167,9 @@ initGumzoStorage(fs, path);
 
 // Authoritative Gumzo posts persistent storage initialization (V9.2)
 initGumzoPostsStorage(fs, path);
+
+// Authoritative Gumzo comments persistent storage initialization (V9.3)
+initGumzoCommentsStorage(fs, path);
 
 // Persistent marketplace products storage helpers
 function readMarketplaceProductsFromDisk(): any[] {
@@ -198,6 +218,52 @@ function saveBase64ImageToDisk(dataUrl: string, prefix = 'img_'): string {
   }
 }
 
+// Authoritative Private Inbox media index record
+interface PrivateInboxMediaRecord {
+  mediaId: string;
+  conversationId: string;
+  senderUserId: string;
+  fileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  filePath: string;
+  storagePath: string;
+  createdAt: string;
+}
+
+const INBOX_MEDIA_FILE = path.join(DATA_DIR, 'marketplace_inbox_media.json');
+
+function readInboxMediaFromDisk(): Map<string, PrivateInboxMediaRecord> {
+  const store = new Map<string, PrivateInboxMediaRecord>();
+  try {
+    if (fs.existsSync(INBOX_MEDIA_FILE)) {
+      const content = fs.readFileSync(INBOX_MEDIA_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((m: PrivateInboxMediaRecord) => {
+          if (m && m.mediaId) store.set(m.mediaId, m);
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to read inbox media from disk:', err);
+  }
+  return store;
+}
+
+function writeInboxMediaToDisk(store: Map<string, PrivateInboxMediaRecord>): void {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(INBOX_MEDIA_FILE, JSON.stringify(Array.from(store.values()), null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to write inbox media to disk:', err);
+  }
+}
+
+const privateInboxMediaStore = readInboxMediaFromDisk();
+
 // Clean up any stale temporary video files from prior runs (>15 mins old)
 try {
   const staleThresholdMs = Date.now() - 15 * 60 * 1000;
@@ -221,11 +287,27 @@ async function startServer() {
   app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-file-name, x-video-id, x-title, x-description');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-user-id, x-is-admin, x-user-role, x-user-name, x-file-name, x-video-id, x-title, x-description');
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
     }
     next();
+  });
+
+  // Dedicated upload instances for governed media streams
+  const inboxMediaUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 },
+  });
+
+  const gumzoPostMediaUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 },
+  });
+
+  const gumzoCommentMediaUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 },
   });
 
   // Static serving for uploaded marketplace media (videos and images)
@@ -427,18 +509,56 @@ async function startServer() {
   // Upload a marketplace image (binary or base64 dataUrl)
   app.post('/api/marketplace/upload-image', (req, res) => {
     try {
-      const { dataUrl, imageId } = req.body;
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+
+      // Strict authentication requirement
+      if (!callerUserId && !isAdmin) {
+        return res.status(401).json({ error: 'Huruhusiwi kupakia picha bila kuingia kwenye mfumo (401 Unauthorized).' });
+      }
+
+      const { dataUrl, imageId, sellerId, productId } = req.body;
+
       if (!dataUrl || typeof dataUrl !== 'string') {
         return res.status(400).json({ error: 'dataUrl inahitajika.' });
       }
 
-      const prefix = imageId ? `${imageId.replace(/[^a-zA-Z0-9_-]/g, '')}_` : 'img_';
+      // Format validation: must be an image
+      if (!dataUrl.startsWith('data:image/')) {
+        return res.status(400).json({ error: 'Muundo wa picha haukubaliki. Tumia faili la picha (JPEG, PNG, WebM).' });
+      }
+
+      // Size validation: max 15MB (~20MB in base64 string)
+      if (dataUrl.length > 20 * 1024 * 1024) {
+        return res.status(400).json({ error: 'Ukubwa wa picha umezidi kiwango cha juu cha 15MB.' });
+      }
+
+      // Authorization & Ownership checks
+      if (sellerId && callerUserId && !isAdmin && sellerId !== callerUserId) {
+        return res.status(403).json({ error: 'Huna ruhusa ya kupakia picha kwenye akaunti hii ya muuzaji.' });
+      }
+
+      if (productId) {
+        const existingList = readMarketplaceProductsFromDisk();
+        const existing = existingList.find((p: any) => p && p.productId === productId);
+        if (existing && callerUserId && !isAdmin && existing.sellerId && existing.sellerId !== callerUserId) {
+          return res.status(403).json({ error: 'Huna idhini ya kubadilisha picha za tangazo hili la muuzaji mwingine.' });
+        }
+      }
+
+      const cleanProdId = productId ? productId.replace(/[^a-zA-Z0-9_-]/g, '') : '';
+      const prefix = cleanProdId ? `prod_${cleanProdId}_` : (imageId ? `${imageId.replace(/[^a-zA-Z0-9_-]/g, '')}_` : 'img_');
       const publicUrl = saveBase64ImageToDisk(dataUrl, prefix);
       const resId = imageId || `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const effectiveSellerId = sellerId || callerUserId || 'seller';
+      const storagePath = `marketplace/products/${effectiveSellerId}/${cleanProdId || resId}/${resId}.jpg`;
+
       res.json({
         id: resId,
         url: publicUrl,
         thumbnailUrl: publicUrl,
+        storagePath,
         isPrimary: req.body.isPrimary ?? false,
         uploadedAt: new Date().toISOString(),
       });
@@ -529,30 +649,49 @@ async function startServer() {
       product.validationErrors = errors;
       product.validationWarnings = warnings;
 
-      // Automatically convert any heavy base64 images to static URLs on disk
-      if (product.imageUrl && typeof product.imageUrl === 'string' && product.imageUrl.startsWith('data:image/')) {
-        product.imageUrl = saveBase64ImageToDisk(product.imageUrl);
+      // Automatically convert any heavy base64 images to static URLs on disk and strip ephemeral blob URLs
+      if (product.imageUrl && typeof product.imageUrl === 'string') {
+        if (product.imageUrl.startsWith('data:image/')) {
+          product.imageUrl = saveBase64ImageToDisk(product.imageUrl);
+        } else if (product.imageUrl.startsWith('blob:')) {
+          product.imageUrl = '';
+        }
       }
+
       if (Array.isArray(product.images)) {
-        product.images = product.images.map((img: any) => {
-          if (img && typeof img.url === 'string' && img.url.startsWith('data:image/')) {
-            const staticUrl = saveBase64ImageToDisk(img.url);
-            return {
-              ...img,
-              url: staticUrl,
-              thumbnailUrl: staticUrl,
-            };
-          }
-          return img;
-        });
+        product.images = product.images
+          .filter((img: any) => img && img.url && !img.url.startsWith('blob:'))
+          .map((img: any) => {
+            if (img && typeof img.url === 'string' && img.url.startsWith('data:image/')) {
+              const staticUrl = saveBase64ImageToDisk(img.url);
+              return {
+                ...img,
+                url: staticUrl,
+                thumbnailUrl: staticUrl,
+                storagePath: img.storagePath || (product.sellerId ? `marketplace/products/${product.sellerId}/${product.productId}/${img.id || 'img'}.jpg` : undefined),
+              };
+            }
+            if (!img.storagePath && product.sellerId) {
+              img.storagePath = `marketplace/products/${product.sellerId}/${product.productId}/${img.id || 'img'}.jpg`;
+            }
+            return img;
+          });
       }
 
       const existing = readMarketplaceProductsFromDisk();
       const index = existing.findIndex((p: any) => p.productId === product.productId);
       if (index >= 0) {
         const currentProd = existing[index];
+
+        const authInfo = extractUserAuthFromRequest(req);
+        const callerUserId = authInfo?.callerUserId || req.body.callerUserId;
+        const isAdmin = authInfo?.isAdmin || req.body.isAdmin;
+        if (currentProd.sellerId && callerUserId && !isAdmin && currentProd.sellerId !== callerUserId) {
+          return res.status(403).json({ error: 'Huruhusiwi kubadilisha bidhaa ya muuzaji mwingine.' });
+        }
+
         // V1.7G: Non-admins cannot activate a rejected, hidden, suspended, or under-review listing
-        if (product.status === 'active' && ['REJECTED', 'HIDDEN', 'SUSPENDED', 'UNDER_REVIEW'].includes(currentProd.moderationStatus) && !req.body.isAdmin) {
+        if (product.status === 'active' && ['REJECTED', 'HIDDEN', 'SUSPENDED', 'UNDER_REVIEW'].includes(currentProd.moderationStatus) && !isAdmin) {
           return res.status(403).json({
             error: `Tangazo hili limefungwa na msimamizi (${currentProd.moderationStatus}). Haliwezi kuwekwa active bila idhini.`,
             moderationStatus: currentProd.moderationStatus
@@ -567,10 +706,40 @@ async function startServer() {
           product.moderationPublicReason = currentProd.moderationPublicReason;
           product.moderationCorrectionNote = currentProd.moderationCorrectionNote;
         }
+
+        // Preserve existing images if the incoming update did not supply new ones
+        if (!product.imageUrl && currentProd.imageUrl) {
+          product.imageUrl = currentProd.imageUrl;
+        }
+        if ((!product.images || product.images.length === 0) && Array.isArray(currentProd.images) && currentProd.images.length > 0) {
+          product.images = currentProd.images;
+        }
+
         existing[index] = { ...existing[index], ...product };
       } else {
         existing.unshift(product);
       }
+
+      // Recover product.imageUrl from primary image if still empty
+      if (!product.imageUrl && Array.isArray(product.images) && product.images.length > 0) {
+        const primary = product.images.find((img: any) => img.isPrimary) || product.images[0];
+        if (primary && primary.url) {
+          product.imageUrl = primary.url;
+        }
+      }
+
+      // Ensure at least one image record exists in images array if imageUrl is present
+      if (product.imageUrl && (!product.images || product.images.length === 0)) {
+        product.images = [{
+          id: `img_${product.productId}`,
+          url: product.imageUrl,
+          thumbnailUrl: product.imageUrl,
+          storagePath: `marketplace/products/${product.sellerId}/${product.productId}/img_${product.productId}.jpg`,
+          isPrimary: true,
+          uploadedAt: new Date().toISOString()
+        }];
+      }
+
       writeMarketplaceProductsToDisk(existing);
       res.json(product);
     } catch (err: any) {
@@ -3399,7 +3568,11 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
     const headerUserId = req.headers['x-user-id'] as string;
     const headerRole = req.headers['x-user-role'] as string;
     const headerEmail = req.headers['x-user-email'] as string;
-    const isAdminFromHeader = headerRole === 'admin' || (typeof headerEmail === 'string' && headerEmail.toLowerCase() === 'mkomwasaid53@gmail.com');
+    const headerIsAdmin = req.headers['x-is-admin'] === 'true';
+    const isAdminFromHeader =
+      headerIsAdmin ||
+      headerRole === 'admin' ||
+      (typeof headerEmail === 'string' && headerEmail.toLowerCase() === 'mkomwasaid53@gmail.com');
 
     if (headerUserId && typeof headerUserId === 'string' && headerUserId.trim().length > 0) {
       return { callerUserId: headerUserId.trim(), isAdmin: Boolean(isAdminFromHeader) };
@@ -6234,7 +6407,9 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
         {
           conversationId: req.params.id,
           senderUserId: callerUserId,
-          text: req.body.text
+          text: req.body.text,
+          media: req.body.media,
+          messageType: req.body.messageType,
         },
         callerUserId,
         isAdmin
@@ -6243,6 +6418,129 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     } catch (err: any) {
       const status = err.message?.includes('Huruhusiwi') || err.message?.includes('yamezuiwa') ? 403 : 400;
       return res.status(status).json({ error: err.message });
+    }
+  });
+
+  // 5b. Upload media attachment for Marketplace Inbox (Participant authorized, strictly private)
+  app.post('/api/marketplace/inbox/:id/upload', inboxMediaUpload.single('media'), async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.body?.callerUserId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo kupakia faili (401 Unauthorized).' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+      const conversationId = req.params.id;
+
+      const conv = await marketplaceInboxService.getConversationById(conversationId, callerUserId, isAdmin);
+      if (!conv) {
+        return res.status(404).json({ error: 'Mazungumzo hayajapatikana au huna idhini.' });
+      }
+
+      if (!isAdmin && conv.buyerUserId !== callerUserId && conv.sellerUserId !== callerUserId) {
+        return res.status(403).json({ error: 'Huruhusiwi kupakia viambatisho kwenye mazungumzo haya (403 Forbidden).' });
+      }
+
+      if (conv.status === 'BLOCKED') {
+        return res.status(403).json({ error: 'Mazungumzo haya yamezuiwa (BLOCKED). Huwezi kupakia viambatisho.' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'Faili la media linahitajika.' });
+      }
+
+      const mime = req.file.mimetype || 'application/octet-stream';
+      const originalName = req.file.originalname || 'attachment';
+      const isVideo = mime.startsWith('video/') || Boolean(originalName.match(/\.(mp4|mov|webm|3gp|m4v)$/i));
+      const isImage = mime.startsWith('image/') || Boolean(originalName.match(/\.(jpg|jpeg|png|webp|gif)$/i));
+
+      if (!isVideo && !isImage) {
+        return res.status(400).json({ error: 'Aina ya faili haikubaliki. Tumia faili la picha au video pekee.' });
+      }
+
+      const maxBytes = isVideo ? 50 * 1024 * 1024 : 15 * 1024 * 1024;
+      const maxMb = isVideo ? '50MB' : '15MB';
+      if (req.file.size > maxBytes) {
+        return res.status(400).json({ error: `Ukubwa wa faili umezidi kiwango cha juu cha ${maxMb}.` });
+      }
+
+      // Safe isolated private disk storage
+      const convFolder = path.join(PRIVATE_INBOX_DIR, conversationId.replace(/[^a-zA-Z0-9_-]/g, ''));
+      if (!fs.existsSync(convFolder)) {
+        fs.mkdirSync(convFolder, { recursive: true });
+      }
+
+      const ext = isVideo ? 'mp4' : (mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg');
+      const mediaId = `inb_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const fileName = `${mediaId}.${ext}`;
+      const filePath = path.join(convFolder, fileName);
+
+      fs.writeFileSync(filePath, req.file.buffer);
+
+      const storagePath = `marketplace/inbox/${conversationId}/${fileName}`;
+      const url = `/api/marketplace/inbox/media/${mediaId}`;
+
+      privateInboxMediaStore.set(mediaId, {
+        mediaId,
+        conversationId,
+        senderUserId: callerUserId,
+        fileName: originalName,
+        mimeType: mime,
+        fileSizeBytes: req.file.size,
+        filePath,
+        storagePath,
+        createdAt: new Date().toISOString(),
+      });
+      writeInboxMediaToDisk(privateInboxMediaStore);
+
+      return res.status(201).json({
+        mediaId,
+        type: isVideo ? 'video' : 'image',
+        url,
+        storagePath,
+        fileName: originalName,
+        fileSizeBytes: req.file.size,
+        mimeType: mime,
+      });
+    } catch (err: any) {
+      const status = err.message?.includes('Huruhusiwi') ? 403 : 500;
+      return res.status(status).json({ error: err.message || 'Hitilafu ya kupakia media kwenye ujumbe' });
+    }
+  });
+
+  // 5c. Stream private inbox media attachment (Authenticated & Authorized participant only)
+  app.get('/api/marketplace/inbox/media/:mediaId', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+
+      const mediaRecord = privateInboxMediaStore.get(req.params.mediaId);
+      if (!mediaRecord) {
+        return res.status(404).json({ error: 'Kiambatisho cha ujumbe hakikupatikana.' });
+      }
+
+      // Strictly verify participant authorization
+      if (!callerUserId && !isAdmin) {
+        return res.status(401).json({ error: 'Huruhusiwi kutazama kiambatisho hiki bila kuingia kwenye mfumo (401 Unauthorized).' });
+      }
+
+      const conv = await marketplaceInboxService.getConversationById(mediaRecord.conversationId, callerUserId || 'anon', isAdmin);
+      if (!conv || (!isAdmin && conv.buyerUserId !== callerUserId && conv.sellerUserId !== callerUserId)) {
+        return res.status(403).json({ error: 'Huruhusiwi kutazama kiambatisho hiki cha siri (403 Forbidden).' });
+      }
+
+      if (!fs.existsSync(mediaRecord.filePath)) {
+        return res.status(404).json({ error: 'Faili halipatikani kwenye kumbukumbu.' });
+      }
+
+      res.setHeader('Content-Type', mediaRecord.mimeType || 'application/octet-stream');
+      res.setHeader('Cache-Control', 'private, max-age=86400');
+      return res.sendFile(mediaRecord.filePath);
+    } catch (err: any) {
+      const status = err.message?.includes('Huruhusiwi') ? 403 : 500;
+      return res.status(status).json({ error: err.message || 'Hitilafu ya kupata kiambatisho' });
     }
   });
 
@@ -6303,11 +6601,28 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
           return res.status(401).json({ error: 'Hujaingia kwenye mfumo kupata vikundi vyako.' });
         }
         const userGroups = gumzoGroupService.getUserGroups(callerUserId);
-        return res.json({ groups: userGroups, total: userGroups.length });
+        const userMemberships = gumzoGroupService.getUserMemberships(callerUserId);
+        return res.json({ groups: userGroups, memberships: userMemberships, total: userGroups.length });
       }
 
       const groups = gumzoGroupService.getDiscoverableGroups(callerUserId, category);
       return res.json({ groups, total: groups.length });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 1a. User memberships & groups query
+  app.get('/api/gumzo/my-memberships', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo kupata uanachama wako.' });
+      }
+      const memberships = gumzoGroupService.getUserMemberships(callerUserId);
+      const groups = gumzoGroupService.getUserGroups(callerUserId);
+      return res.json({ memberships, groups, total: memberships.length });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
     }
@@ -6583,6 +6898,84 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     }
   });
 
+  // 3b. Upload media for Gumzo Admin Post (STRICT ADMIN ONLY: FOUNDER_ADMIN or LEADERSHIP_ADMIN)
+  app.post('/api/gumzo/groups/:groupId/posts/upload-media', gumzoPostMediaUpload.single('media'), async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.body?.callerUserId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Huruhusiwi kupakia media bila kuingia kwenye mfumo (401 Unauthorized).' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const groupId = req.params.groupId;
+
+      const group = gumzoGroupService.getGroupById(groupId, callerUserId, isAdmin);
+      if (!group) {
+        return res.status(404).json({ error: 'Kikundi hakikupatikana.' });
+      }
+
+      if (group.status === 'REJECTED' || (group.status !== 'ACTIVE' && !isAdmin)) {
+        return res.status(403).json({ error: 'Kikundi hiki kimesimamishwa au hakiruhusu machapisho kwa sasa.' });
+      }
+
+      const membership = gumzoGroupService.getMembership(groupId, callerUserId);
+      const isFounder = group.founderAdminUserId === callerUserId || membership?.role === 'FOUNDER_ADMIN';
+      const isLeadership = group.leadershipAdminUserId === callerUserId || membership?.role === 'LEADERSHIP_ADMIN';
+
+      if (!isFounder && !isLeadership && !isAdmin) {
+        return res.status(403).json({ error: 'Mwanachama wa kawaida haruhusiwi kupakia maudhui ya machapisho ya kiutawala (403 Forbidden).' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'Faili la media linahitajika.' });
+      }
+
+      const mime = req.file.mimetype || 'application/octet-stream';
+      const originalName = req.file.originalname || 'media';
+      const isVideo = mime.startsWith('video/') || Boolean(originalName.match(/\.(mp4|mov|webm|3gp|m4v)$/i));
+      const isImage = mime.startsWith('image/') || Boolean(originalName.match(/\.(jpg|jpeg|png|webp|gif)$/i));
+
+      if (!isVideo && !isImage) {
+        return res.status(400).json({ error: 'Aina ya faili haikubaliki. Tumia faili la picha au video pekee.' });
+      }
+
+      const maxBytes = isVideo ? 50 * 1024 * 1024 : 15 * 1024 * 1024;
+      const maxMb = isVideo ? '50MB' : '15MB';
+      if (req.file.size > maxBytes) {
+        return res.status(400).json({ error: `Ukubwa wa faili umezidi kiwango cha juu cha ${maxMb}.` });
+      }
+
+      const groupFolder = path.join(GUMZO_POSTS_DIR, groupId.replace(/[^a-zA-Z0-9_-]/g, ''));
+      if (!fs.existsSync(groupFolder)) {
+        fs.mkdirSync(groupFolder, { recursive: true });
+      }
+
+      const ext = isVideo ? 'mp4' : (mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg');
+      const mediaId = `gpost_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const fileName = `${mediaId}.${ext}`;
+      const filePath = path.join(groupFolder, fileName);
+
+      fs.writeFileSync(filePath, req.file.buffer);
+
+      const publicUrl = `/uploads/gumzo_posts/${groupId}/${fileName}`;
+      const storagePath = `gumzo/posts/${groupId}/${fileName}`;
+
+      return res.status(201).json({
+        id: mediaId,
+        type: isVideo ? 'video' : 'image',
+        url: publicUrl,
+        storagePath,
+        caption: req.body.caption || undefined,
+        sizeBytes: req.file.size,
+        mimeType: mime,
+      });
+    } catch (err: any) {
+      const status = err.message?.includes('403') || err.message?.includes('Huruhusiwi') ? 403 : 500;
+      return res.status(status).json({ error: err.message || 'Hitilafu ya kupakia faili la chapisho' });
+    }
+  });
+
   // 4. Update/Edit post (Author or Group Leader)
   app.patch('/api/gumzo/groups/:groupId/posts/:postId', async (req, res) => {
     try {
@@ -6628,6 +7021,252 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     } catch (err: any) {
       const isForbidden = err.message?.includes('Huruhusiwi') || err.message?.includes('PERMISSION_DENIED');
       return res.status(isForbidden ? 403 : 400).json({ error: err.message });
+    }
+  });
+
+  // ========================================================================
+  // GUMZO MEMBER COMMENTS API (V9.3 — Post Discussions & Member Participation)
+  // «Admin ndiye anayeanzisha post/topic. Members wanashiriki kupitia comments.»
+  // ========================================================================
+
+  // 1. Get comments for a post (Paginated, ordered createdAt ASC)
+  app.get('/api/gumzo/groups/:groupId/posts/:postId/comments', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const { groupId, postId } = req.params;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+      const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
+
+      const result = gumzoCommentService.getPostComments({
+        groupId,
+        postId,
+        callerUserId,
+        isPlatformAdmin: isAdmin,
+        limit,
+        offset
+      });
+
+      return res.json(result);
+    } catch (err: any) {
+      const status = (err as any).statusCode || 500;
+      return res.status(status).json({ error: err.message });
+    }
+  });
+
+  // 2. Create comment on a post (MEMBER, FOUNDER_ADMIN, LEADERSHIP_ADMIN)
+  app.post('/api/gumzo/groups/:groupId/posts/:postId/comments', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo kuweka maoni (401 Unauthorized).' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const { groupId, postId } = req.params;
+      const input = req.body.input || req.body;
+      const authorDisplayName = req.body.authorDisplayName || (req.headers['x-user-name'] as string);
+
+      const created = gumzoCommentService.createComment({
+        groupId,
+        postId,
+        input,
+        authenticatedUserId: callerUserId,
+        authorDisplayName,
+        isPlatformAdmin: isAdmin
+      });
+
+      return res.status(201).json(created);
+    } catch (err: any) {
+      const isForbidden = (err as any).statusCode === 403 || err.message?.includes('403') || err.message?.includes('Huna ruhusa') || err.message?.includes('Huruhusiwi');
+      const isUnauth = err.message?.includes('Hujaingia') || err.message?.includes('Authenticated user');
+      const statusCode = isForbidden ? 403 : isUnauth ? 401 : 400;
+      return res.status(statusCode).json({ error: err.message });
+    }
+  });
+
+  // 2b. Upload media for Gumzo Member Comment (ACTIVE MEMBER or Group Admin)
+  app.post('/api/gumzo/groups/:groupId/comments/upload-media', gumzoCommentMediaUpload.single('media'), async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.body?.callerUserId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Huruhusiwi kupakia media bila kuingia kwenye mfumo (401 Unauthorized).' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const groupId = req.params.groupId;
+
+      const group = gumzoGroupService.getGroupById(groupId, callerUserId, isAdmin);
+      if (!group) {
+        return res.status(404).json({ error: 'Kikundi hakikupatikana.' });
+      }
+
+      if (group.status === 'REJECTED' || (group.status !== 'ACTIVE' && !isAdmin)) {
+        return res.status(403).json({ error: 'Kikundi hiki kimesimamishwa au hakiruhusu maoni kwa sasa.' });
+      }
+
+      const membership = gumzoGroupService.getMembership(groupId, callerUserId);
+      if (membership) {
+        if (membership.status === 'PENDING') {
+          return res.status(403).json({ error: 'Uanachama wako unasubiri idhini (Pending approval).' });
+        }
+        if (membership.status === 'LEFT') {
+          return res.status(403).json({ error: 'Ulijiondoa kwenye kikundi hiki (Left).' });
+        }
+        if (membership.status === 'SUSPENDED') {
+          return res.status(403).json({ error: 'Uanachama wako umesimamishwa kwenye kikundi hiki (Suspended).' });
+        }
+        if (membership.status === 'REMOVED') {
+          return res.status(403).json({ error: 'Uanachama wako umeondolewa kwenye kikundi hiki (Removed).' });
+        }
+        if (membership.status !== 'ACTIVE') {
+          return res.status(403).json({ error: 'Uanachama wako si amilifu katika kikundi hiki.' });
+        }
+      } else {
+        const isFounder = group.founderAdminUserId === callerUserId;
+        const isLeadership = group.leadershipAdminUserId === callerUserId;
+        if (!isFounder && !isLeadership && !isAdmin) {
+          return res.status(403).json({ error: 'Huna uanachama hai katika kikundi hiki kupakia faili (Active membership required).' });
+        }
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'Faili la media linahitajika.' });
+      }
+
+      const mime = req.file.mimetype || 'application/octet-stream';
+      const originalName = req.file.originalname || 'media';
+      const isVideo = mime.startsWith('video/') || Boolean(originalName.match(/\.(mp4|mov|webm|3gp|m4v)$/i));
+      const isImage = mime.startsWith('image/') || Boolean(originalName.match(/\.(jpg|jpeg|png|webp|gif)$/i));
+
+      if (!isVideo && !isImage) {
+        return res.status(400).json({ error: 'Aina ya faili haikubaliki. Tumia faili la picha au video pekee.' });
+      }
+
+      const maxBytes = isVideo ? 50 * 1024 * 1024 : 15 * 1024 * 1024;
+      const maxMb = isVideo ? '50MB' : '15MB';
+      if (req.file.size > maxBytes) {
+        return res.status(400).json({ error: `Ukubwa wa faili umezidi kiwango cha juu cha ${maxMb}.` });
+      }
+
+      const groupCommentFolder = path.join(GUMZO_COMMENTS_DIR, groupId.replace(/[^a-zA-Z0-9_-]/g, ''));
+      if (!fs.existsSync(groupCommentFolder)) {
+        fs.mkdirSync(groupCommentFolder, { recursive: true });
+      }
+
+      const ext = isVideo ? 'mp4' : (mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg');
+      const mediaId = `gcmt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const fileName = `${mediaId}.${ext}`;
+      const filePath = path.join(groupCommentFolder, fileName);
+
+      fs.writeFileSync(filePath, req.file.buffer);
+
+      const publicUrl = `/uploads/gumzo_comments/${groupId}/${fileName}`;
+      const storagePath = `gumzo/comments/${groupId}/${fileName}`;
+
+      return res.status(201).json({
+        id: mediaId,
+        type: isVideo ? 'video' : 'image',
+        url: publicUrl,
+        storagePath,
+        caption: req.body.caption || undefined,
+        sizeBytes: req.file.size,
+        mimeType: mime,
+      });
+    } catch (err: any) {
+      const status = err.message?.includes('403') || err.message?.includes('Huruhusiwi') ? 403 : 500;
+      return res.status(status).json({ error: err.message || 'Hitilafu ya kupakia faili la maoni' });
+    }
+  });
+
+  // 3. Edit comment (Author or Group Admins)
+  app.patch('/api/gumzo/groups/:groupId/posts/:postId/comments/:commentId', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const { groupId, postId, commentId } = req.params;
+      const input = req.body.input || req.body;
+
+      const updated = gumzoCommentService.editComment({
+        groupId,
+        postId,
+        commentId,
+        input,
+        authenticatedUserId: callerUserId,
+        isPlatformAdmin: isAdmin
+      });
+
+      return res.json(updated);
+    } catch (err: any) {
+      const isForbidden = (err as any).statusCode === 403 || err.message?.includes('403') || err.message?.includes('Huna ruhusa') || err.message?.includes('Huruhusiwi');
+      const statusCode = isForbidden ? 403 : 400;
+      return res.status(statusCode).json({ error: err.message });
+    }
+  });
+
+  // 4. Delete comment (Author or Authorized Admin: supports both POST :commentId/delete and DELETE :commentId)
+  const handleCommentDelete = async (req: express.Request, res: express.Response) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const { groupId, postId, commentId } = req.params;
+
+      const deleted = gumzoCommentService.deleteComment({
+        groupId,
+        postId,
+        commentId,
+        authenticatedUserId: callerUserId,
+        isPlatformAdmin: isAdmin
+      });
+
+      return res.json(deleted);
+    } catch (err: any) {
+      const isForbidden = (err as any).statusCode === 403 || err.message?.includes('403') || err.message?.includes('Huna mamlaka') || err.message?.includes('Huruhusiwi');
+      const statusCode = isForbidden ? 403 : 400;
+      return res.status(statusCode).json({ error: err.message });
+    }
+  };
+  app.post('/api/gumzo/groups/:groupId/posts/:postId/comments/:commentId/delete', handleCommentDelete);
+  app.delete('/api/gumzo/groups/:groupId/posts/:postId/comments/:commentId', handleCommentDelete);
+
+  // 5. Hide comment (Authorized Admins only)
+  app.post('/api/gumzo/groups/:groupId/posts/:postId/comments/:commentId/hide', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const { groupId, postId, commentId } = req.params;
+
+      const hidden = gumzoCommentService.hideComment({
+        groupId,
+        postId,
+        commentId,
+        authenticatedUserId: callerUserId,
+        isPlatformAdmin: isAdmin
+      });
+
+      return res.json(hidden);
+    } catch (err: any) {
+      const isForbidden = (err as any).statusCode === 403 || err.message?.includes('403') || err.message?.includes('Mamlaka') || err.message?.includes('Huruhusiwi');
+      const statusCode = isForbidden ? 403 : 400;
+      return res.status(statusCode).json({ error: err.message });
     }
   });
 

@@ -33,8 +33,35 @@ import { gumzoGroupService } from './gumzoGroupService';
 
 const isNode = typeof window === 'undefined';
 
+// Local storage key for browser hydration
+const LOCAL_POSTS_KEY = 'ufugaji_gumzo_posts';
+
 // In-memory primary store for posts: Key = postId
 const postsStore = new Map<string, GumzoPost>();
+
+function hydrateFromLocalStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const rawP = localStorage.getItem(LOCAL_POSTS_KEY);
+    if (rawP) {
+      const parsedP = JSON.parse(rawP);
+      if (Array.isArray(parsedP)) {
+        parsedP.forEach((p: GumzoPost) => postsStore.set(p.postId, p));
+      }
+    }
+  } catch {}
+}
+
+function persistToLocalStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_POSTS_KEY, JSON.stringify(Array.from(postsStore.values())));
+  } catch {}
+}
+
+if (!isNode) {
+  hydrateFromLocalStorage();
+}
 
 // Disk persistence handles (Node.js runtime)
 let diskFs: any = null;
@@ -51,6 +78,21 @@ export function initGumzoPostsStorage(fsModule?: any, pathModule?: any, customDi
   POSTS_FILE = diskPath ? diskPath.join(baseDir, 'gumzo_posts.json') : `${baseDir}/gumzo_posts.json`;
 
   loadFromDisk();
+}
+
+// Auto-initialize if running in Node.js
+if (isNode) {
+  try {
+    import('fs').then((f) => {
+      if (!diskFs) {
+        diskFs = f.default || f;
+        import('path').then((p) => {
+          diskPath = p.default || p;
+          initGumzoPostsStorage(diskFs, diskPath);
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+  } catch {}
 }
 
 function loadFromDisk(): void {
@@ -74,6 +116,10 @@ function loadFromDisk(): void {
 }
 
 function persistToDisk(): void {
+  if (typeof window !== 'undefined') {
+    persistToLocalStorage();
+    return;
+  }
   if (!diskFs || !diskFs.writeFileSync) return;
   try {
     const dataDir = diskPath ? diskPath.resolve(process.cwd(), 'data') : 'data';
@@ -151,9 +197,11 @@ export class GumzoPostService {
           id: m.id || `med_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           type: m.type === 'video' ? 'video' : m.type === 'file' ? 'file' : 'image',
           url: m.url,
+          storagePath: m.storagePath,
           thumbnailUrl: m.thumbnailUrl,
           caption: m.caption ? m.caption.substring(0, 300) : undefined,
           sizeBytes: typeof m.sizeBytes === 'number' ? m.sizeBytes : undefined,
+          mimeType: m.mimeType,
         });
       }
     }
@@ -209,6 +257,27 @@ export class GumzoPostService {
     }
 
     return post;
+  }
+
+  /**
+   * Raw post lookup without visibility filters (for comment parent verification)
+   */
+  public getRawPost(postId: string): GumzoPost | null {
+    if (isNode) loadFromDisk();
+    return postsStore.get(postId) || null;
+  }
+
+  /**
+   * Server-authoritative update of comment count on post
+   */
+  public updatePostCommentCount(postId: string, count: number): void {
+    if (isNode) loadFromDisk();
+    const post = postsStore.get(postId);
+    if (post) {
+      post.commentCount = Math.max(0, count);
+      postsStore.set(postId, post);
+      persistToDisk();
+    }
   }
 
   /**

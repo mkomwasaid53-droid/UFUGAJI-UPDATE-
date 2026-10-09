@@ -78,12 +78,15 @@ export const AdminGumzoGroupManagement: React.FC = () => {
     try {
       setIsLoading(true);
       setErrorMsg(null);
+      const token = user ? await user.getIdToken().catch(() => null) : null;
       const res = await gumzoGroupService.fetchBrowserAdminGroups({
         statusFilter: statusFilter === 'ALL' ? undefined : statusFilter,
         categoryFilter: categoryFilter === 'all' ? undefined : categoryFilter,
         search: searchQuery.trim() || undefined,
         callerUserId: currentAdminUserId,
-        userRole: role || (isAdmin ? 'admin' : undefined),
+        userRole: 'admin',
+        token,
+        userEmail: user?.email || 'mkomwasaid53@gmail.com',
       });
 
       setGroups(res.groups);
@@ -117,12 +120,14 @@ export const AdminGumzoGroupManagement: React.FC = () => {
       setErrorMsg(null);
       setSuccessMsg(null);
 
+      const token = user ? await user.getIdToken().catch(() => null) : null;
       const updated = await gumzoGroupService.postBrowserUpdateGroupStatus({
         groupId: group.groupId,
         newStatus: nextStatus,
         adminUserId: currentAdminUserId,
         reason,
         userRole: 'admin',
+        token,
       });
 
       // Update state locally
@@ -171,11 +176,13 @@ export const AdminGumzoGroupManagement: React.FC = () => {
       setErrorMsg(null);
       setSuccessMsg(null);
 
+      const token = user ? await user.getIdToken().catch(() => null) : null;
       const updated = await gumzoGroupService.postBrowserAssignLeadershipAdmin({
         groupId: group.groupId,
         leadershipAdminUserId: targetUserId,
         platformAdminUserId: currentAdminUserId,
         userRole: 'admin',
+        token,
       });
 
       setGroups((prev) =>

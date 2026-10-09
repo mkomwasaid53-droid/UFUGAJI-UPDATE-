@@ -38,9 +38,11 @@ export interface GumzoMediaItem {
   id: string;
   type: 'image' | 'video' | 'file';
   url: string;
+  storagePath?: string;
   thumbnailUrl?: string;
   caption?: string;
   sizeBytes?: number;
+  mimeType?: string;
 }
 
 export interface GumzoPost {
@@ -59,6 +61,7 @@ export interface GumzoPost {
   createdBy: string;
   updatedBy: string;
   isPinned?: boolean;
+  commentCount?: number;
 }
 
 export interface CreateGumzoPostInput {
@@ -75,6 +78,46 @@ export interface UpdateGumzoPostInput {
   status?: GumzoPostStatus;
   visibility?: GumzoPostVisibility;
   isPinned?: boolean;
+}
+
+// ============================================================================
+// V9.3 — GUMZO MEMBER COMMENTS DATA MODELS & TYPES
+// ============================================================================
+
+export type GumzoCommentStatus = 'PUBLISHED' | 'HIDDEN' | 'DELETED';
+
+export interface GumzoComment {
+  commentId: string;
+  groupId: string;
+  postId: string;
+  authorUserId: string;
+  authorRole: GumzoGroupRole;
+  authorDisplayName?: string;
+  content: string;
+  media?: GumzoMediaItem[];
+  status: GumzoCommentStatus;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  hiddenAt?: string;
+  hiddenBy?: string;
+  createdBy: string;
+  updatedBy: string;
+  parentCommentId?: string;
+  isEdited?: boolean;
+}
+
+export interface CreateGumzoCommentInput {
+  content: string;
+  media?: GumzoMediaItem[];
+  parentCommentId?: string;
+  clientRequestId?: string;
+}
+
+export interface UpdateGumzoCommentInput {
+  content?: string;
+  media?: GumzoMediaItem[];
 }
 
 export type GumzoMembershipStatus =
@@ -496,5 +539,199 @@ export function canUserViewPost(
   // Published & Visible: must satisfy group-level access rules
   const groupAccess = canAccessGumzoGroup(userId, group, membership, isPlatformAdmin);
   return groupAccess.canViewContent;
+}
+
+// ============================================================================
+// V9.3 — COMMENT PERMISSIONS & AUTHORIZATION HELPERS
+// ============================================================================
+
+export interface CommentAuthorizationDecision {
+  allowed: boolean;
+  reason?: string;
+  userRole?: GumzoGroupRole;
+}
+
+/**
+ * Checks whether user can comment on a post in a group:
+ * - Allowed: ACTIVE MEMBER, FOUNDER_ADMIN, LEADERSHIP_ADMIN, Platform Admin
+ * - Disallowed: Unauthenticated, Removed/Suspended members, Non-members in private groups,
+ *   posts that are DRAFT/HIDDEN/DELETED, groups that are SUSPENDED/ARCHIVED/REJECTED.
+ */
+export function canUserCreateComment(
+  userId: string | null | undefined,
+  group: GumzoGroup,
+  post: GumzoPost,
+  membership?: GumzoMembership | null,
+  isPlatformAdmin = false
+): CommentAuthorizationDecision {
+  if (!userId || !userId.trim()) {
+    return { allowed: false, reason: 'Hujaingia kwenye mfumo (Authenticated user required).' };
+  }
+
+  if (!group || !post) {
+    return { allowed: false, reason: 'Kikundi au chapisho halikupatikana.' };
+  }
+
+  // Group status check
+  if (group.status === 'SUSPENDED') {
+    return { allowed: false, reason: 'Kikundi kimesimamishwa. Huwezi kuweka maoni kwa sasa.' };
+  }
+  if (group.status === 'ARCHIVED') {
+    return { allowed: false, reason: 'Kikundi kimewekwa kwenye kumbukumbu (Archived). Hakiruhusu maoni mapya.' };
+  }
+  if (group.status === 'REJECTED' || (group.status !== 'ACTIVE' && !isPlatformAdmin)) {
+    return { allowed: false, reason: 'Kikundi hakiruhusu maoni kwa sababu ya hali yake.' };
+  }
+
+  // Post status check
+  if (post.status === 'DRAFT') {
+    return { allowed: false, reason: 'Huwezi kutoa maoni kwenye chapisho ambalo bado ni rasimu (Draft).' };
+  }
+  if (post.status === 'HIDDEN' || post.visibility === 'HIDDEN') {
+    return { allowed: false, reason: 'Chapisho hili limefichwa. Haliruhusu maoni.' };
+  }
+  if (post.status === 'DELETED') {
+    return { allowed: false, reason: 'Chapisho hili limefutwa. Haliruhusu maoni.' };
+  }
+  if (post.status !== 'PUBLISHED') {
+    return { allowed: false, reason: 'Chapisho halijachapishwa rasmi.' };
+  }
+
+  if (isPlatformAdmin) {
+    return { allowed: true, userRole: 'LEADERSHIP_ADMIN' };
+  }
+
+  // Derive role
+  let role: GumzoGroupRole | null = null;
+  if (group.founderAdminUserId === userId || membership?.role === 'FOUNDER_ADMIN') {
+    role = 'FOUNDER_ADMIN';
+  } else if (group.leadershipAdminUserId === userId || membership?.role === 'LEADERSHIP_ADMIN') {
+    role = 'LEADERSHIP_ADMIN';
+  } else if (membership?.role === 'MEMBER') {
+    role = 'MEMBER';
+  }
+
+  if (membership) {
+    if (membership.status === 'PENDING') {
+      return { allowed: false, reason: 'Uanachama wako bado unasubiri idhini (Pending approval). Huwezi kuweka maoni.' };
+    }
+    if (membership.status === 'LEFT') {
+      return { allowed: false, reason: 'Ulijiondoa kwenye kikundi hiki (Left). Huwezi kuweka maoni hadi ujiunge tena.' };
+    }
+    if (membership.status === 'SUSPENDED') {
+      return { allowed: false, reason: 'Uanachama wako umesimamishwa kwenye kikundi hiki (Suspended).' };
+    }
+    if (membership.status === 'REMOVED') {
+      return { allowed: false, reason: 'Uanachama wako umeondolewa kwenye kikundi hiki (Removed).' };
+    }
+    if (membership.status !== 'ACTIVE') {
+      return { allowed: false, reason: 'Uanachama wako si amilifu katika kikundi hiki.' };
+    }
+  }
+
+  // Must be active member/admin
+  if (!role || !membership || membership.status !== 'ACTIVE') {
+    // If founder without explicit separate membership document
+    if (group.founderAdminUserId === userId) {
+      return { allowed: true, userRole: 'FOUNDER_ADMIN' };
+    }
+    if (group.leadershipAdminUserId === userId) {
+      return { allowed: true, userRole: 'LEADERSHIP_ADMIN' };
+    }
+    return {
+      allowed: false,
+      reason: 'Huna uanachama hai katika kikundi hiki kutoa maoni (Active membership required).'
+    };
+  }
+
+  return { allowed: true, userRole: role };
+}
+
+/**
+ * Comment editing authorization:
+ * - MEMBER can edit their own comment (if comment is not deleted)
+ * - FOUNDER_ADMIN, LEADERSHIP_ADMIN, Platform Admin can manage
+ */
+export function canUserEditComment(
+  userId: string | null | undefined,
+  comment: GumzoComment,
+  group: GumzoGroup,
+  isPlatformAdmin = false
+): boolean {
+  if (!userId || !comment || !group) return false;
+  if (comment.status === 'DELETED') return false;
+  if (isPlatformAdmin) return true;
+  if (comment.authorUserId === userId) return true;
+  if (isGroupFounderAdmin(userId, group)) return true;
+  if (isGroupLeadershipAdmin(userId, group)) return true;
+  return false;
+}
+
+/**
+ * Comment deletion authorization:
+ * - Member can delete their own comment
+ * - Founder admin can delete comments in their group
+ * - Leadership admin / Platform admin can delete comments
+ */
+export function canUserDeleteComment(
+  userId: string | null | undefined,
+  comment: GumzoComment,
+  group: GumzoGroup,
+  isPlatformAdmin = false
+): boolean {
+  if (!userId || !comment || !group) return false;
+  if (isPlatformAdmin) return true;
+  if (comment.authorUserId === userId) return true;
+  if (isGroupFounderAdmin(userId, group)) return true;
+  if (isGroupLeadershipAdmin(userId, group)) return true;
+  return false;
+}
+
+/**
+ * Comment hiding authorization:
+ * - Only authorized admins (FOUNDER_ADMIN, LEADERSHIP_ADMIN, Platform Admin) can hide
+ */
+export function canUserHideComment(
+  userId: string | null | undefined,
+  comment: GumzoComment,
+  group: GumzoGroup,
+  isPlatformAdmin = false
+): boolean {
+  if (!userId || !comment || !group) return false;
+  if (isPlatformAdmin) return true;
+  if (isGroupFounderAdmin(userId, group)) return true;
+  if (isGroupLeadershipAdmin(userId, group)) return true;
+  return false;
+}
+
+/**
+ * Comment visibility decision:
+ * - DELETED comments: never in normal feed
+ * - HIDDEN comments: only visible to comment author, group admins, or platform admin
+ * - Inherits group and post access
+ */
+export function canUserViewComment(
+  userId: string | null | undefined,
+  comment: GumzoComment,
+  group: GumzoGroup,
+  post: GumzoPost,
+  membership?: GumzoMembership | null,
+  isPlatformAdmin = false
+): boolean {
+  if (!comment || !group || !post) return false;
+  if (isPlatformAdmin) return true;
+  if (comment.status === 'DELETED') return false;
+
+  const isAuthor = Boolean(userId && comment.authorUserId === userId);
+  const isLeader = Boolean(
+    userId && (isGroupFounderAdmin(userId, group) || isGroupLeadershipAdmin(userId, group))
+  );
+
+  if (comment.status === 'HIDDEN') {
+    return isAuthor || isLeader;
+  }
+
+  // Must be able to view parent post
+  return canUserViewPost(userId, post, group, membership, isPlatformAdmin);
 }
 

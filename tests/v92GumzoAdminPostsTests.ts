@@ -506,6 +506,7 @@ async function runV92GumzoPostTests() {
   const inboxConv = await marketplaceInboxService.getOrCreateConversation({
     buyerUserId: 'buyer_reg_01',
     sellerUserId: 'seller_reg_02',
+    shopId: 'shop_reg_01',
     productId: 'prod_reg_01',
     listingId: 'list_reg_01',
     productTitleSnapshot: 'Kuku Chotara',
@@ -537,7 +538,11 @@ async function runV92GumzoPostTests() {
   }
 }
 
-runV92GumzoPostTests().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+runV92GumzoPostTests()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

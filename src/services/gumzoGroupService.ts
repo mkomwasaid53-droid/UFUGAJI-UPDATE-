@@ -26,9 +26,45 @@ import {
 
 const isNode = typeof window === 'undefined';
 
+// Local storage keys for browser hydration
+const LOCAL_GROUPS_KEY = 'ufugaji_gumzo_groups';
+const LOCAL_MEMBERSHIPS_KEY = 'ufugaji_gumzo_memberships';
+
 // In-memory primary stores
 const groupsStore = new Map<string, GumzoGroup>();
 const membershipsStore = new Map<string, GumzoMembership>(); // Key: `${groupId}_${userId}`
+
+function hydrateFromLocalStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const rawG = localStorage.getItem(LOCAL_GROUPS_KEY);
+    if (rawG) {
+      const parsedG = JSON.parse(rawG);
+      if (Array.isArray(parsedG)) {
+        parsedG.forEach((g: GumzoGroup) => groupsStore.set(g.groupId, g));
+      }
+    }
+    const rawM = localStorage.getItem(LOCAL_MEMBERSHIPS_KEY);
+    if (rawM) {
+      const parsedM = JSON.parse(rawM);
+      if (Array.isArray(parsedM)) {
+        parsedM.forEach((m: GumzoMembership) => membershipsStore.set(m.membershipId, m));
+      }
+    }
+  } catch {}
+}
+
+function persistToLocalStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_GROUPS_KEY, JSON.stringify(Array.from(groupsStore.values())));
+    localStorage.setItem(LOCAL_MEMBERSHIPS_KEY, JSON.stringify(Array.from(membershipsStore.values())));
+  } catch {}
+}
+
+if (!isNode) {
+  hydrateFromLocalStorage();
+}
 
 // Disk persistence handles (Node.js runtime)
 let diskFs: any = null;
@@ -47,6 +83,21 @@ export function initGumzoStorage(fsModule?: any, pathModule?: any, customDir?: s
   MEMBERSHIPS_FILE = diskPath ? diskPath.join(baseDir, 'gumzo_memberships.json') : `${baseDir}/gumzo_memberships.json`;
 
   loadFromDisk();
+}
+
+// Auto-initialize if running in Node.js
+if (isNode) {
+  try {
+    import('fs').then((f) => {
+      if (!diskFs) {
+        diskFs = f.default || f;
+        import('path').then((p) => {
+          diskPath = p.default || p;
+          initGumzoStorage(diskFs, diskPath);
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+  } catch {}
 }
 
 function loadFromDisk(): void {
@@ -69,8 +120,55 @@ function loadFromDisk(): void {
       const data = JSON.parse(diskFs.readFileSync(MEMBERSHIPS_FILE, 'utf-8'));
       if (Array.isArray(data)) {
         membershipsStore.clear();
-        data.forEach((m: GumzoMembership) => membershipsStore.set(m.membershipId, m));
+        data.forEach((m: GumzoMembership) => {
+          if (m && m.membershipId) {
+            membershipsStore.set(m.membershipId, m);
+          }
+          if (m && m.groupId && m.userId) {
+            membershipsStore.set(`${m.groupId}_${m.userId}`, m);
+          }
+        });
       }
+    }
+
+    // Auto-heal: Ensure every valid group has an active founder and leadership membership record
+    let healed = false;
+    for (const g of groupsStore.values()) {
+      if (g.founderAdminUserId) {
+        const fKey = `${g.groupId}_${g.founderAdminUserId}`;
+        if (!membershipsStore.has(fKey)) {
+          const founderM: GumzoMembership = {
+            membershipId: fKey,
+            groupId: g.groupId,
+            userId: g.founderAdminUserId,
+            role: 'FOUNDER_ADMIN',
+            status: 'ACTIVE',
+            joinedAt: g.createdAt || new Date().toISOString(),
+            updatedAt: g.updatedAt || g.createdAt || new Date().toISOString(),
+          };
+          membershipsStore.set(fKey, founderM);
+          healed = true;
+        }
+      }
+      if (g.leadershipAdminUserId) {
+        const lKey = `${g.groupId}_${g.leadershipAdminUserId}`;
+        if (!membershipsStore.has(lKey)) {
+          const leaderM: GumzoMembership = {
+            membershipId: lKey,
+            groupId: g.groupId,
+            userId: g.leadershipAdminUserId,
+            role: 'LEADERSHIP_ADMIN',
+            status: 'ACTIVE',
+            joinedAt: g.updatedAt || g.createdAt || new Date().toISOString(),
+            updatedAt: g.updatedAt || g.createdAt || new Date().toISOString(),
+          };
+          membershipsStore.set(lKey, leaderM);
+          healed = true;
+        }
+      }
+    }
+    if (healed && isNode) {
+      persistToDisk();
     }
   } catch (err) {
     console.warn('[gumzoGroupService] Disk load warning:', err);
@@ -78,6 +176,10 @@ function loadFromDisk(): void {
 }
 
 function persistToDisk(): void {
+  if (typeof window !== 'undefined') {
+    persistToLocalStorage();
+    return;
+  }
   if (!diskFs || !diskFs.writeFileSync) return;
   try {
     const dataDir = diskPath ? diskPath.resolve(process.cwd(), 'data') : 'data';
@@ -85,8 +187,15 @@ function persistToDisk(): void {
       diskFs.mkdirSync(dataDir, { recursive: true });
     }
 
-    diskFs.writeFileSync(GROUPS_FILE, JSON.stringify(Array.from(groupsStore.values()), null, 2), 'utf-8');
-    diskFs.writeFileSync(MEMBERSHIPS_FILE, JSON.stringify(Array.from(membershipsStore.values()), null, 2), 'utf-8');
+    const uniqueGroups = Array.from(
+      new Map(Array.from(groupsStore.values()).map((g) => [g.groupId, g])).values()
+    );
+    const uniqueMemberships = Array.from(
+      new Map(Array.from(membershipsStore.values()).map((m) => [m.membershipId || `${m.groupId}_${m.userId}`, m])).values()
+    );
+
+    diskFs.writeFileSync(GROUPS_FILE, JSON.stringify(uniqueGroups, null, 2), 'utf-8');
+    diskFs.writeFileSync(MEMBERSHIPS_FILE, JSON.stringify(uniqueMemberships, null, 2), 'utf-8');
   } catch (err) {
     console.warn('[gumzoGroupService] Disk persist warning:', err);
   }
@@ -219,8 +328,52 @@ export class GumzoGroupService {
    */
   public getMembership(groupId: string, userId: string): GumzoMembership | null {
     if (isNode) loadFromDisk();
-    const membershipId = `${groupId}_${userId}`;
-    return membershipsStore.get(membershipId) || null;
+    if (!groupId || !userId) return null;
+    const directKey = `${groupId}_${userId}`;
+    const direct = membershipsStore.get(directKey);
+    if (direct) return direct;
+
+    // Scan values for matching groupId and userId
+    for (const m of membershipsStore.values()) {
+      if (m && m.groupId === groupId && m.userId === userId) {
+        return m;
+      }
+    }
+
+    // Check if user is founder of the group
+    const group = groupsStore.get(groupId);
+    if (group && group.founderAdminUserId === userId) {
+      const founderM: GumzoMembership = {
+        membershipId: directKey,
+        groupId,
+        userId,
+        role: 'FOUNDER_ADMIN',
+        status: 'ACTIVE',
+        joinedAt: group.createdAt || new Date().toISOString(),
+        updatedAt: group.updatedAt || group.createdAt || new Date().toISOString(),
+      };
+      membershipsStore.set(directKey, founderM);
+      if (isNode) persistToDisk();
+      return founderM;
+    }
+
+    // Check if user is appointed leadership admin of the group
+    if (group && group.leadershipAdminUserId === userId) {
+      const leaderM: GumzoMembership = {
+        membershipId: directKey,
+        groupId,
+        userId,
+        role: 'LEADERSHIP_ADMIN',
+        status: 'ACTIVE',
+        joinedAt: group.updatedAt || group.createdAt || new Date().toISOString(),
+        updatedAt: group.updatedAt || group.createdAt || new Date().toISOString(),
+      };
+      membershipsStore.set(directKey, leaderM);
+      if (isNode) persistToDisk();
+      return leaderM;
+    }
+
+    return null;
   }
 
   /**
@@ -365,6 +518,21 @@ export class GumzoGroupService {
 
     persistToDisk();
     return existing;
+  }
+
+  /**
+   * 8b. UPDATE MEMBERSHIP STATUS (Admin moderation: ACTIVE, SUSPENDED, REMOVED)
+   */
+  public updateMembershipStatus(groupId: string, userId: string, newStatus: GumzoMembershipStatus): GumzoMembership {
+    if (isNode) loadFromDisk();
+    const membershipId = `${groupId}_${userId}`;
+    const membership = membershipsStore.get(membershipId);
+    if (!membership) throw new Error('Uanachama haukupatikana.');
+    membership.status = newStatus;
+    membership.updatedAt = new Date().toISOString();
+    membershipsStore.set(membershipId, membership);
+    persistToDisk();
+    return membership;
   }
 
   /**
@@ -603,6 +771,36 @@ export class GumzoGroupService {
     return this.leaveGroup(groupId, userId);
   }
 
+  public async fetchBrowserUserMemberships(userId: string, token?: string | null): Promise<{ memberships: GumzoMembership[]; groups: GumzoGroup[] }> {
+    if (!userId) return { memberships: [], groups: [] };
+    if (typeof window !== 'undefined') {
+      try {
+        const headers: Record<string, string> = { 'x-user-id': userId };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch('/api/gumzo/my-memberships', { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.memberships)) {
+            data.memberships.forEach((m: GumzoMembership) => membershipsStore.set(m.membershipId, m));
+          }
+          if (data && Array.isArray(data.groups)) {
+            data.groups.forEach((g: GumzoGroup) => groupsStore.set(g.groupId, g));
+          }
+          persistToDisk();
+          return {
+            memberships: data.memberships || [],
+            groups: data.groups || [],
+          };
+        }
+      } catch (err) {
+        console.warn('[gumzoGroupService] fetchBrowserUserMemberships error:', err);
+      }
+    }
+    const mems = this.getUserMemberships(userId);
+    const grps = this.getUserGroups(userId);
+    return { memberships: mems, groups: grps };
+  }
+
   public async fetchBrowserAdminGroups(options?: {
     statusFilter?: string;
     categoryFilter?: string;
@@ -610,6 +808,7 @@ export class GumzoGroupService {
     callerUserId?: string;
     token?: string | null;
     userRole?: string;
+    userEmail?: string;
   }): Promise<{
     groups: GumzoGroup[];
     total: number;
@@ -623,7 +822,7 @@ export class GumzoGroupService {
       draft: number;
     };
   }> {
-    const { statusFilter, categoryFilter, search, callerUserId, token, userRole } = options || {};
+    const { statusFilter, categoryFilter, search, callerUserId, token, userRole, userEmail } = options || {};
     if (typeof window !== 'undefined') {
       try {
         const params = new URLSearchParams();
@@ -635,6 +834,7 @@ export class GumzoGroupService {
         if (token) headers['Authorization'] = `Bearer ${token}`;
         if (callerUserId) headers['x-user-id'] = callerUserId;
         if (userRole) headers['x-user-role'] = userRole;
+        if (userEmail) headers['x-user-email'] = userEmail;
         headers['x-is-admin'] = 'true';
 
         const res = await fetch(`/api/gumzo/admin/groups?${params.toString()}`, { headers });

@@ -1,0 +1,263 @@
+[
+  {
+    "postId": "pst_1791545793535_1f7gyt",
+    "groupId": "grp_1791545793533_oypx2s",
+    "authorUserId": "user_founder_001",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Mbinu za kulinda vifaranga dhidi ya baridi na magonjwa ya kuku.",
+    "media": [
+      {
+        "id": "post_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_posts/grp_1791545793533_oypx2s/post_med_001.jpg",
+        "caption": "Banda safi lenye joto sahihi",
+        "sizeBytes": 320000
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T11:36:33.535Z",
+    "updatedAt": "2026-10-09T11:36:33.535Z",
+    "publishedAt": "2026-10-09T11:36:33.535Z",
+    "createdBy": "user_founder_001",
+    "updatedBy": "user_founder_001",
+    "isPinned": false,
+    "commentCount": 3
+  },
+  {
+    "postId": "pst_1791545793538_bnloxd",
+    "groupId": "grp_1791545793533_oypx2s",
+    "authorUserId": "user_leader_002",
+    "authorRole": "LEADERSHIP_ADMIN",
+    "content": "Tazama video fupi kuhusu chanjo ya Gumboro:",
+    "media": [
+      {
+        "id": "post_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_posts/grp_1791545793533_oypx2s/post_med_002.mp4",
+        "caption": "Zoezi la chanjo shambani",
+        "sizeBytes": 8500000
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T11:36:33.538Z",
+    "updatedAt": "2026-10-09T11:36:33.538Z",
+    "publishedAt": "2026-10-09T11:36:33.538Z",
+    "createdBy": "user_leader_002",
+    "updatedBy": "user_leader_002",
+    "isPinned": false
+  },
+  {
+    "postId": "pst_1791545878579_nzded4",
+    "groupId": "grp_1791545878576_13erj9",
+    "authorUserId": "user_founder_001",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Mbinu za kulinda vifaranga dhidi ya baridi na magonjwa ya kuku.",
+    "media": [
+      {
+        "id": "post_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_posts/grp_1791545878576_13erj9/post_med_001.jpg",
+        "storagePath": "gumzo/posts/grp_1791545878576_13erj9/post_med_001.jpg",
+        "caption": "Banda safi lenye joto sahihi",
+        "sizeBytes": 320000,
+        "mimeType": "image/jpeg"
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T11:37:58.579Z",
+    "updatedAt": "2026-10-09T11:37:58.579Z",
+    "publishedAt": "2026-10-09T11:37:58.579Z",
+    "createdBy": "user_founder_001",
+    "updatedBy": "user_founder_001",
+    "isPinned": false,
+    "commentCount": 3
+  },
+  {
+    "postId": "pst_1791545878582_0vqnj2",
+    "groupId": "grp_1791545878576_13erj9",
+    "authorUserId": "user_leader_002",
+    "authorRole": "LEADERSHIP_ADMIN",
+    "content": "Tazama video fupi kuhusu chanjo ya Gumboro:",
+    "media": [
+      {
+        "id": "post_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_posts/grp_1791545878576_13erj9/post_med_002.mp4",
+        "storagePath": "gumzo/posts/grp_1791545878576_13erj9/post_med_002.mp4",
+        "caption": "Zoezi la chanjo shambani",
+        "sizeBytes": 8500000,
+        "mimeType": "video/mp4"
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T11:37:58.582Z",
+    "updatedAt": "2026-10-09T11:37:58.582Z",
+    "publishedAt": "2026-10-09T11:37:58.582Z",
+    "createdBy": "user_leader_002",
+    "updatedBy": "user_leader_002",
+    "isPinned": false
+  },
+  {
+    "postId": "pst_1791545945673_l7n8vn",
+    "groupId": "grp_1791545945670_2xxvnp",
+    "authorUserId": "user_founder_001",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Mbinu za kulinda vifaranga dhidi ya baridi na magonjwa ya kuku.",
+    "media": [
+      {
+        "id": "post_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_posts/grp_1791545945670_2xxvnp/post_med_001.jpg",
+        "storagePath": "gumzo/posts/grp_1791545945670_2xxvnp/post_med_001.jpg",
+        "caption": "Banda safi lenye joto sahihi",
+        "sizeBytes": 320000,
+        "mimeType": "image/jpeg"
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T11:39:05.673Z",
+    "updatedAt": "2026-10-09T11:39:05.673Z",
+    "publishedAt": "2026-10-09T11:39:05.673Z",
+    "createdBy": "user_founder_001",
+    "updatedBy": "user_founder_001",
+    "isPinned": false,
+    "commentCount": 3
+  },
+  {
+    "postId": "pst_1791545945675_5341e1",
+    "groupId": "grp_1791545945670_2xxvnp",
+    "authorUserId": "user_leader_002",
+    "authorRole": "LEADERSHIP_ADMIN",
+    "content": "Tazama video fupi kuhusu chanjo ya Gumboro:",
+    "media": [
+      {
+        "id": "post_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_posts/grp_1791545945670_2xxvnp/post_med_002.mp4",
+        "storagePath": "gumzo/posts/grp_1791545945670_2xxvnp/post_med_002.mp4",
+        "caption": "Zoezi la chanjo shambani",
+        "sizeBytes": 8500000,
+        "mimeType": "video/mp4"
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T11:39:05.675Z",
+    "updatedAt": "2026-10-09T11:39:05.675Z",
+    "publishedAt": "2026-10-09T11:39:05.675Z",
+    "createdBy": "user_leader_002",
+    "updatedBy": "user_leader_002",
+    "isPinned": false
+  },
+  {
+    "postId": "pst_1791545982030_0zcfyd",
+    "groupId": "grp_1791545982027_jvf7yh",
+    "authorUserId": "user_founder_001",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Mbinu za kulinda vifaranga dhidi ya baridi na magonjwa ya kuku.",
+    "media": [
+      {
+        "id": "post_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_posts/grp_1791545982027_jvf7yh/post_med_001.jpg",
+        "storagePath": "gumzo/posts/grp_1791545982027_jvf7yh/post_med_001.jpg",
+        "caption": "Banda safi lenye joto sahihi",
+        "sizeBytes": 320000,
+        "mimeType": "image/jpeg"
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T11:39:42.030Z",
+    "updatedAt": "2026-10-09T11:39:42.030Z",
+    "publishedAt": "2026-10-09T11:39:42.030Z",
+    "createdBy": "user_founder_001",
+    "updatedBy": "user_founder_001",
+    "isPinned": false,
+    "commentCount": 3
+  },
+  {
+    "postId": "pst_1791545982033_nk2lhh",
+    "groupId": "grp_1791545982027_jvf7yh",
+    "authorUserId": "user_leader_002",
+    "authorRole": "LEADERSHIP_ADMIN",
+    "content": "Tazama video fupi kuhusu chanjo ya Gumboro:",
+    "media": [
+      {
+        "id": "post_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_posts/grp_1791545982027_jvf7yh/post_med_002.mp4",
+        "storagePath": "gumzo/posts/grp_1791545982027_jvf7yh/post_med_002.mp4",
+        "caption": "Zoezi la chanjo shambani",
+        "sizeBytes": 8500000,
+        "mimeType": "video/mp4"
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T11:39:42.033Z",
+    "updatedAt": "2026-10-09T11:39:42.033Z",
+    "publishedAt": "2026-10-09T11:39:42.033Z",
+    "createdBy": "user_leader_002",
+    "updatedBy": "user_leader_002",
+    "isPinned": false
+  },
+  {
+    "postId": "pst_1791546054933_2xz8q9",
+    "groupId": "grp_1791546054930_rjt5o6",
+    "authorUserId": "user_founder_001",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Mbinu za kulinda vifaranga dhidi ya baridi na magonjwa ya kuku.",
+    "media": [
+      {
+        "id": "post_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_posts/grp_1791546054930_rjt5o6/post_med_001.jpg",
+        "storagePath": "gumzo/posts/grp_1791546054930_rjt5o6/post_med_001.jpg",
+        "caption": "Banda safi lenye joto sahihi",
+        "sizeBytes": 320000,
+        "mimeType": "image/jpeg"
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T11:40:54.933Z",
+    "updatedAt": "2026-10-09T11:40:54.933Z",
+    "publishedAt": "2026-10-09T11:40:54.933Z",
+    "createdBy": "user_founder_001",
+    "updatedBy": "user_founder_001",
+    "isPinned": false,
+    "commentCount": 3
+  },
+  {
+    "postId": "pst_1791546054936_4z5q9t",
+    "groupId": "grp_1791546054930_rjt5o6",
+    "authorUserId": "user_leader_002",
+    "authorRole": "LEADERSHIP_ADMIN",
+    "content": "Tazama video fupi kuhusu chanjo ya Gumboro:",
+    "media": [
+      {
+        "id": "post_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_posts/grp_1791546054930_rjt5o6/post_med_002.mp4",
+        "storagePath": "gumzo/posts/grp_1791546054930_rjt5o6/post_med_002.mp4",
+        "caption": "Zoezi la chanjo shambani",
+        "sizeBytes": 8500000,
+        "mimeType": "video/mp4"
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T11:40:54.936Z",
+    "updatedAt": "2026-10-09T11:40:54.936Z",
+    "publishedAt": "2026-10-09T11:40:54.936Z",
+    "createdBy": "user_leader_002",
+    "updatedBy": "user_leader_002",
+    "isPinned": false
+  }
+]

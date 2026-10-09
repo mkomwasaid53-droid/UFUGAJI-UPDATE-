@@ -30,10 +30,27 @@ service firebase.storage {
       allow write: if isOwner(userId);
     }
 
-    // Default fallback
-    match /{allPaths=**} {
+    // Marketplace Private Inbox Attachments (Strictly protected; never public)
+    match /marketplace/inbox/{conversationId}/{allPaths=**} {
+      allow read, write: if false; // Accessible only via server authenticated participant gateway
+    }
+
+    // Gumzo Community Admin Posts media
+    match /gumzo/posts/{groupId}/{allPaths=**} {
       allow read: if true;
       allow write: if isAuthenticated();
+    }
+
+    // Gumzo Community Member Comments media
+    match /gumzo/comments/{groupId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Default fallback: reject all unmapped paths
+    match /{allPaths=**} {
+      allow read: if false;
+      allow write: if false;
     }
   }
 }

@@ -50,11 +50,17 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
   onBack,
   onGroupUpdated,
 }) => {
+  const { isAdmin } = useAuth();
   const [membership, setMembership] = useState<GumzoMembership | null>(initialMembership || null);
   const [memberCount, setMemberCount] = useState<number>(group.memberCount);
   const [posts, setPosts] = useState<GumzoPost[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isAdminActing, setIsAdminActing] = useState(false);
+  const [adminSuccessMsg, setAdminSuccessMsg] = useState<string | null>(null);
 
   // Authoritative admin posting check
   const postAuth = canUserCreatePost(currentUserId, group, membership, isAdmin);
@@ -76,6 +82,18 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
 
   useEffect(() => {
     loadPosts();
+    if (currentUserId && !membership) {
+      gumzoGroupService.fetchBrowserGroupById(group.groupId, currentUserId).then((res) => {
+        if (res.membership) {
+          setMembership(res.membership);
+        }
+        if (res.group) {
+          setMemberCount(res.group.memberCount);
+        }
+      }).catch((err) => {
+        console.warn('Could not auto-fetch group membership:', err);
+      });
+    }
   }, [group.groupId, currentUserId]);
 
   const handlePostCreated = () => {
@@ -89,12 +107,6 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
   const handlePostDeleted = (deletedPostId: string) => {
     setPosts((prev) => prev.filter((p) => p.postId !== deletedPostId));
   };
-  const [isLeaving, setIsLeaving] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const { isAdmin } = useAuth();
-  const [isAdminActing, setIsAdminActing] = useState(false);
-  const [adminSuccessMsg, setAdminSuccessMsg] = useState<string | null>(null);
 
   const categoryDef = GUMZO_CATEGORIES.find((c) => c.categoryId === group.categoryId);
   const accessDecision = canAccessGumzoGroup(currentUserId, group, membership, isAdmin);
@@ -514,6 +526,7 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
                     post={post}
                     group={group}
                     currentUserId={currentUserId}
+                    membership={membership}
                     isPlatformAdmin={isAdmin}
                     onPostUpdated={handlePostUpdated}
                     onPostDeleted={handlePostDeleted}
