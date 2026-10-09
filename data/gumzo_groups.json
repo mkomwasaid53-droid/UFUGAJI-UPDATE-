@@ -8,9 +8,9 @@
     "status": "ACTIVE",
     "visibility": "PUBLIC",
     "founderAdminUserId": "xNB9tiSJDJMO5UBb4Do9CN8aCTJ3",
-    "memberCount": 1,
+    "memberCount": 2,
     "createdAt": "2026-10-08T18:04:53.274Z",
-    "updatedAt": "2026-10-08T18:32:00.000Z",
+    "updatedAt": "2026-10-09T13:15:39.209Z",
     "createdBy": "xNB9tiSJDJMO5UBb4Do9CN8aCTJ3"
   },
   {
@@ -85,6 +85,21 @@
     "memberCount": 2,
     "createdAt": "2026-10-09T11:40:54.930Z",
     "updatedAt": "2026-10-09T11:40:54.937Z",
+    "createdBy": "user_founder_001",
+    "leadershipAdminUserId": "user_leader_002"
+  },
+  {
+    "groupId": "grp_1791555186596_pnieym",
+    "name": "Wafugaji wa Kuku Tanzania 1791555186595",
+    "description": "Mijadala ya kitaalamu kuhusu ufugaji wa kuku bora.",
+    "categoryId": "kuku",
+    "livestockType": "POULTRY",
+    "status": "ACTIVE",
+    "visibility": "PUBLIC",
+    "founderAdminUserId": "user_founder_001",
+    "memberCount": 2,
+    "createdAt": "2026-10-09T14:13:06.596Z",
+    "updatedAt": "2026-10-09T14:13:06.602Z",
     "createdBy": "user_founder_001",
     "leadershipAdminUserId": "user_leader_002"
   }

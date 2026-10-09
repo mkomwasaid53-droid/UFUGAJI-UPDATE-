@@ -1,0 +1,49 @@
+[
+  {
+    "membershipId": "grp_1791555324159_d6du0x_user_founder_alpha",
+    "groupId": "grp_1791555324159_d6du0x",
+    "userId": "user_founder_alpha",
+    "role": "MEMBER",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-09T14:15:24.159Z",
+    "updatedAt": "2026-10-09T14:15:24.200Z"
+  },
+  {
+    "membershipId": "grp_1791555324165_c2cntd_user_founder_bravo",
+    "groupId": "grp_1791555324165_c2cntd",
+    "userId": "user_founder_bravo",
+    "role": "FOUNDER_ADMIN",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-09T14:15:24.165Z",
+    "updatedAt": "2026-10-09T14:15:24.165Z"
+  },
+  {
+    "membershipId": "grp_1791555324159_d6du0x_user_leadership_charlie",
+    "groupId": "grp_1791555324159_d6du0x",
+    "userId": "user_leadership_charlie",
+    "role": "LEADERSHIP_ADMIN",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-09T14:15:24.171Z",
+    "updatedAt": "2026-10-09T14:15:24.171Z",
+    "approvedBy": "user_platform_admin"
+  },
+  {
+    "membershipId": "grp_1791555324159_d6du0x_user_member_alice",
+    "groupId": "grp_1791555324159_d6du0x",
+    "userId": "user_member_alice",
+    "role": "MEMBER",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-09T14:15:24.188Z",
+    "updatedAt": "2026-10-09T14:15:24.188Z"
+  },
+  {
+    "membershipId": "grp_1791555324159_d6du0x_user_future_founder",
+    "groupId": "grp_1791555324159_d6du0x",
+    "userId": "user_future_founder",
+    "role": "FOUNDER_ADMIN",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-09T14:15:24.200Z",
+    "updatedAt": "2026-10-09T14:15:24.200Z",
+    "approvedBy": "user_leadership_charlie"
+  }
+]

@@ -21,8 +21,12 @@ import {
   canAccessGumzoGroup,
   isGroupFounderAdmin,
   isGroupLeadershipAdmin,
-  isGroupAdmin
+  isGroupAdmin,
+  TransferFounderAdminInput,
+  canTransferFounderAdmin,
+  GumzoGovernanceAuditEvent,
 } from '../types/gumzo';
+import { gumzoAuditService } from './gumzoAuditService';
 
 const isNode = typeof window === 'undefined';
 
@@ -302,6 +306,21 @@ export class GumzoGroupService {
     membershipsStore.set(membershipId, membership);
     persistToDisk();
 
+    gumzoAuditService.logEvent({
+      actorUserId: authenticatedUserId,
+      action: 'FOUNDER_ADMIN_ASSIGNED',
+      targetType: 'GROUP',
+      targetResourceId: groupId,
+      groupId,
+      outcome: 'SUCCESS',
+      reason: 'Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.',
+      details: {
+        founderAdminUserId: authenticatedUserId,
+        groupName: trimmedName,
+        status: initialStatus,
+      },
+    });
+
     return { group, membership };
   }
 
@@ -562,11 +581,34 @@ export class GumzoGroupService {
       throw new Error(`Hali "${newStatus}" haitambuliki.`);
     }
 
+    const previousStatus = group.status;
     const now = new Date().toISOString();
     group.status = newStatus;
     group.updatedAt = now;
     groupsStore.set(groupId, group);
     persistToDisk();
+
+    // Determine audit action
+    const action = newStatus === 'SUSPENDED'
+      ? 'GROUP_SUSPENDED'
+      : (previousStatus === 'SUSPENDED' && newStatus === 'ACTIVE')
+      ? 'GROUP_RESTORED'
+      : 'GROUP_STATUS_UPDATED';
+
+    gumzoAuditService.logEvent({
+      actorUserId: adminUserId,
+      action,
+      targetType: 'GROUP',
+      targetResourceId: groupId,
+      groupId,
+      outcome: 'SUCCESS',
+      reason: params.reason || `Hali ya kikundi imebadilishwa kutoka ${previousStatus} hadi ${newStatus}.`,
+      details: {
+        previousStatus,
+        newStatus,
+        isPlatformAdmin,
+      },
+    });
 
     return group;
   }
@@ -617,7 +659,160 @@ export class GumzoGroupService {
     membershipsStore.set(membershipId, membership);
 
     persistToDisk();
+
+    gumzoAuditService.logEvent({
+      actorUserId: platformAdminUserId,
+      action: 'LEADERSHIP_ADMIN_ASSIGNED',
+      targetType: 'GROUP',
+      targetResourceId: groupId,
+      groupId,
+      outcome: 'SUCCESS',
+      reason: 'Leadership Admin ameteuliwa rasmi na uongozi wa jukwaa.',
+      details: {
+        leadershipAdminUserId,
+        platformAdminUserId,
+      },
+    });
+
     return group;
+  }
+
+  /**
+   * 10b. TRANSFER FOUNDER ADMIN (Leadership / Platform Admin Authority)
+   *
+   * Reassigns Founder Admin responsibility for a group:
+   * - Only authorized Leadership Admin or Platform Admin can transfer
+   * - Validates target account (not empty, not current founder, not current leadership admin)
+   * - Previous founder is transitioned to MEMBER role (invalidates previous admin role)
+   * - New founder becomes FOUNDER_ADMIN with ACTIVE status
+   * - Records immutable audit event: FOUNDER_ADMIN_TRANSFERRED
+   * - Invalidates stale permissions
+   */
+  public transferFounderAdmin(params: TransferFounderAdminInput): {
+    group: GumzoGroup;
+    previousFounderUserId: string;
+    newFounderUserId: string;
+    auditEvent: GumzoGovernanceAuditEvent;
+  } {
+    const { groupId, newFounderUserId, actingAdminUserId, isPlatformAdmin = false, reason } = params;
+    if (isNode) loadFromDisk();
+
+    if (!actingAdminUserId) {
+      throw new Error('Hujaingia kwenye mfumo (Authenticated caller required).');
+    }
+
+    const group = groupsStore.get(groupId);
+    if (!group) {
+      throw new Error(`Kikundi ${groupId} hakikupatikana.`);
+    }
+
+    // Strictly Leadership Admin or Platform Admin can transfer Founder Admin
+    const isLeadership = isGroupLeadershipAdmin(actingAdminUserId, group);
+    if (!isPlatformAdmin && !isLeadership) {
+      // Log privilege escalation attempt
+      gumzoAuditService.logEvent({
+        actorUserId: actingAdminUserId,
+        action: 'PRIVILEGE_ESCALATION_ATTEMPT',
+        targetType: 'GOVERNANCE',
+        targetResourceId: groupId,
+        groupId,
+        outcome: 'DENIED',
+        reason: 'Mtumiaji asiye na mamlaka ya Leadership Admin amejaribu kuhamisha uongozi wa mwanzilishi.',
+        details: { attemptedNewFounder: newFounderUserId },
+      });
+      throw new Error('Huna mamlaka ya Leadership Admin kuhamisha uongozi wa mwanzilishi (403 Forbidden).');
+    }
+
+    if (!newFounderUserId || !newFounderUserId.trim()) {
+      throw new Error('Tafadhali taja mtumiaji (User ID) mpya atakayekuwa Mwanzilishi (Founder Admin).');
+    }
+
+    const targetUserId = newFounderUserId.trim();
+
+    if (group.founderAdminUserId === targetUserId) {
+      throw new Error('Mtumiaji huyu tayari ndiye Mwanzilishi (Founder Admin) wa kikundi hiki.');
+    }
+
+    // Maintain distinction between the two admin roles:
+    // A group cannot have the same user as both Founder Admin and Leadership Admin!
+    if (group.leadershipAdminUserId && group.leadershipAdminUserId === targetUserId) {
+      throw new Error('Mtumiaji huyu ni Leadership Admin wa kikundi hiki. Kiongozi hawezi kuwa Founder Admin na Leadership Admin kwa wakati mmoja.');
+    }
+
+    const previousFounderUserId = group.founderAdminUserId;
+    const now = new Date().toISOString();
+
+    // 1. Demote previous founder to regular active member
+    const prevMembershipId = `${groupId}_${previousFounderUserId}`;
+    const prevMembership = membershipsStore.get(prevMembershipId);
+    if (prevMembership) {
+      prevMembership.role = 'MEMBER';
+      prevMembership.updatedAt = now;
+      membershipsStore.set(prevMembershipId, prevMembership);
+    } else {
+      membershipsStore.set(prevMembershipId, {
+        membershipId: prevMembershipId,
+        groupId,
+        userId: previousFounderUserId,
+        role: 'MEMBER',
+        status: 'ACTIVE',
+        joinedAt: group.createdAt || now,
+        updatedAt: now,
+      });
+    }
+
+    // 2. Promote target user to FOUNDER_ADMIN with ACTIVE status
+    const newMembershipId = `${groupId}_${targetUserId}`;
+    const newMembership = membershipsStore.get(newMembershipId);
+    if (newMembership) {
+      newMembership.role = 'FOUNDER_ADMIN';
+      newMembership.status = 'ACTIVE';
+      newMembership.updatedAt = now;
+      membershipsStore.set(newMembershipId, newMembership);
+    } else {
+      membershipsStore.set(newMembershipId, {
+        membershipId: newMembershipId,
+        groupId,
+        userId: targetUserId,
+        role: 'FOUNDER_ADMIN',
+        status: 'ACTIVE',
+        joinedAt: now,
+        updatedAt: now,
+        approvedBy: actingAdminUserId,
+      });
+      group.memberCount = (group.memberCount || 1) + 1;
+    }
+
+    // 3. Update authoritative group record
+    group.founderAdminUserId = targetUserId;
+    group.updatedAt = now;
+    groupsStore.set(groupId, group);
+
+    persistToDisk();
+
+    // 4. Record authoritative immutable audit event
+    const auditEvent = gumzoAuditService.logEvent({
+      actorUserId: actingAdminUserId,
+      action: 'FOUNDER_ADMIN_TRANSFERRED',
+      targetType: 'GROUP',
+      targetResourceId: groupId,
+      groupId,
+      outcome: 'SUCCESS',
+      reason: reason || 'Uhamisho rasmi wa wadhifa wa Founder Admin umekamilika na uongozi wa jukwaa.',
+      details: {
+        previousFounderUserId,
+        newFounderUserId: targetUserId,
+        actingAdminUserId,
+        isPlatformAdmin,
+      },
+    });
+
+    return {
+      group,
+      previousFounderUserId,
+      newFounderUserId: targetUserId,
+      auditEvent,
+    };
   }
 
   /**
@@ -978,6 +1173,87 @@ export class GumzoGroupService {
       isPlatformAdmin: true,
     });
   }
+
+  public async postBrowserTransferFounderAdmin(params: {
+    groupId: string;
+    newFounderUserId: string;
+    actingAdminUserId: string;
+    reason?: string;
+    token?: string | null;
+    userRole?: string;
+  }): Promise<{ group: GumzoGroup; previousFounderUserId: string; newFounderUserId: string; auditEvent: GumzoGovernanceAuditEvent }> {
+    const { groupId, newFounderUserId, actingAdminUserId, reason, token, userRole } = params;
+    if (typeof window !== 'undefined') {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (actingAdminUserId) headers['x-user-id'] = actingAdminUserId;
+        if (userRole) headers['x-user-role'] = userRole;
+        headers['x-is-admin'] = 'true';
+
+        const res = await fetch(`/api/gumzo/groups/${encodeURIComponent(groupId)}/transfer-founder`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ newFounderUserId, actingAdminUserId, reason }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.group) {
+            groupsStore.set(data.group.groupId, data.group);
+            return data;
+          }
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Imeshindwa kuhamisha uongozi wa mwanzilishi.');
+        }
+      } catch (err: any) {
+        if (err.message && !err.message.includes('fetch')) {
+          throw err;
+        }
+      }
+    }
+    return this.transferFounderAdmin({
+      groupId,
+      newFounderUserId,
+      actingAdminUserId,
+      isPlatformAdmin: true,
+      reason,
+    });
+  }
+
+  public async fetchBrowserAuditEvents(options?: {
+    groupId?: string;
+    action?: string;
+    limit?: number;
+    token?: string | null;
+    callerUserId?: string;
+  }): Promise<GumzoGovernanceAuditEvent[]> {
+    if (typeof window !== 'undefined') {
+      try {
+        const params = new URLSearchParams();
+        if (options?.groupId) params.append('groupId', options.groupId);
+        if (options?.action) params.append('action', options.action);
+        if (options?.limit) params.append('limit', String(options.limit));
+
+        const headers: Record<string, string> = {};
+        if (options?.token) headers['Authorization'] = `Bearer ${options.token}`;
+        if (options?.callerUserId) headers['x-user-id'] = options.callerUserId;
+        headers['x-is-admin'] = 'true';
+
+        const res = await fetch(`/api/gumzo/admin/audit?${params.toString()}`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.auditEvents)) {
+            return data.auditEvents;
+          }
+        }
+      } catch (err) {
+        console.warn('[gumzoGroupService] fetchBrowserAuditEvents error, using local fallback:', err);
+      }
+    }
+    return gumzoAuditService.getEvents(options as any);
+  }
+
 
   /**
    * 12. TESTING & ISOLATION HELPERS

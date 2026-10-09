@@ -26,6 +26,42 @@ export type GumzoGroupRole =
   | 'LEADERSHIP_ADMIN'
   | 'MEMBER';
 
+/**
+ * V9.4 — Canonical Gumzo Roles:
+ * Exactly these three application roles exist across the entire platform.
+ * Exactly two administrator roles: FOUNDER_ADMIN and LEADERSHIP_ADMIN.
+ * No moderator, super-moderator, group-owner-admin variants or additional admin roles.
+ */
+export const CANONICAL_GUMZO_ROLES: readonly GumzoGroupRole[] = [
+  'FOUNDER_ADMIN',
+  'LEADERSHIP_ADMIN',
+  'MEMBER',
+] as const;
+
+/**
+ * Safe, explicit compatibility mapping for legacy/alternative role representations.
+ * Never grants additional administrative privileges to unverified inputs.
+ */
+export function mapToCanonicalGumzoRole(role: string | null | undefined): GumzoGroupRole | null {
+  if (!role) return null;
+  const normalized = role.trim().toUpperCase();
+  if (normalized === 'FOUNDER_ADMIN' || normalized === 'FOUNDER' || normalized === 'CREATOR' || normalized === 'GROUP_OWNER') {
+    return 'FOUNDER_ADMIN';
+  }
+  if (normalized === 'LEADERSHIP_ADMIN' || normalized === 'LEADERSHIP' || normalized === 'GOVERNANCE_ADMIN' || normalized === 'PLATFORM_ADMIN') {
+    return 'LEADERSHIP_ADMIN';
+  }
+  if (normalized === 'MEMBER' || normalized === 'REGULAR_MEMBER' || normalized === 'USER') {
+    return 'MEMBER';
+  }
+  return null;
+}
+
+export function isTwoAdminRole(role: string | null | undefined): boolean {
+  const canonical = mapToCanonicalGumzoRole(role);
+  return canonical === 'FOUNDER_ADMIN' || canonical === 'LEADERSHIP_ADMIN';
+}
+
 export type GumzoPostStatus =
   | 'DRAFT'
   | 'PUBLISHED'
@@ -733,5 +769,57 @@ export function canUserViewComment(
 
   // Must be able to view parent post
   return canUserViewPost(userId, post, group, membership, isPlatformAdmin);
+}
+
+// ============================================================================
+// V9.4 — GUMZO TWO-ADMIN GOVERNANCE & AUDIT TRAIL MODELS
+// ============================================================================
+
+export type GumzoGovernanceAction =
+  | 'FOUNDER_ADMIN_ASSIGNED'
+  | 'FOUNDER_ADMIN_TRANSFERRED'
+  | 'LEADERSHIP_ADMIN_ASSIGNED'
+  | 'LEADERSHIP_ADMIN_REMOVED'
+  | 'GROUP_SUSPENDED'
+  | 'GROUP_RESTORED'
+  | 'GROUP_STATUS_UPDATED'
+  | 'ADMIN_POST_HIDDEN'
+  | 'ADMIN_POST_DELETED'
+  | 'ADMIN_COMMENT_HIDDEN'
+  | 'ADMIN_COMMENT_DELETED'
+  | 'PRIVILEGE_ESCALATION_ATTEMPT';
+
+export type GumzoAuditOutcome = 'SUCCESS' | 'REJECTED' | 'DENIED';
+
+export interface GumzoGovernanceAuditEvent {
+  auditId: string;
+  actorUserId: string;
+  action: GumzoGovernanceAction;
+  targetType: 'GROUP' | 'POST' | 'COMMENT' | 'MEMBERSHIP' | 'GOVERNANCE';
+  targetResourceId: string;
+  groupId?: string;
+  timestamp: string;
+  outcome: GumzoAuditOutcome;
+  reason?: string;
+  details?: Record<string, any>;
+}
+
+export interface TransferFounderAdminInput {
+  groupId: string;
+  newFounderUserId: string;
+  actingAdminUserId: string;
+  isPlatformAdmin?: boolean;
+  reason?: string;
+}
+
+export function canTransferFounderAdmin(
+  actingUserId: string | null | undefined,
+  group: GumzoGroup,
+  isPlatformAdmin = false
+): boolean {
+  if (!actingUserId || !group) return false;
+  if (isPlatformAdmin) return true;
+  // Strictly Leadership Admin can transfer/replace Founder Admin
+  return isGroupLeadershipAdmin(actingUserId, group);
 }
 

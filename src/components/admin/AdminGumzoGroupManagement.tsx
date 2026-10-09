@@ -23,14 +23,18 @@ import {
   Crown,
   AlertCircle,
   Sparkles,
-  Info
+  Info,
+  History,
+  ArrowRightLeft,
+  FileText
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import {
   GumzoGroup,
   GumzoGroupStatus,
   GumzoGroupVisibility,
-  GUMZO_CATEGORIES
+  GUMZO_CATEGORIES,
+  GumzoGovernanceAuditEvent
 } from '../../types/gumzo';
 import { gumzoGroupService } from '../../services/gumzoGroupService';
 
@@ -38,11 +42,18 @@ export const AdminGumzoGroupManagement: React.FC = () => {
   const { user, role, isAdmin } = useAuth();
   const currentAdminUserId = user?.uid || 'admin';
 
+  // Navigation tab: GROUPS or AUDIT
+  const [activeTab, setActiveTab] = useState<'GROUPS' | 'AUDIT'>('GROUPS');
+
   // State
   const [groups, setGroups] = useState<GumzoGroup[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Audit state
+  const [auditEvents, setAuditEvents] = useState<GumzoGovernanceAuditEvent[]>([]);
+  const [isLoadingAudit, setIsLoadingAudit] = useState<boolean>(false);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<GumzoGroupStatus | 'ALL'>('ALL');
@@ -56,11 +67,12 @@ export const AdminGumzoGroupManagement: React.FC = () => {
 
   // Modals for governance actions with reasons
   const [modalAction, setModalAction] = useState<{
-    type: 'REJECT' | 'SUSPEND' | 'ASSIGN_LEADERSHIP';
+    type: 'REJECT' | 'SUSPEND' | 'ASSIGN_LEADERSHIP' | 'TRANSFER_FOUNDER';
     group: GumzoGroup;
   } | null>(null);
   const [actionReason, setActionReason] = useState<string>('');
   const [leadershipUserIdInput, setLeadershipUserIdInput] = useState<string>('');
+  const [newFounderUserIdInput, setNewFounderUserIdInput] = useState<string>('');
 
   // Summary counts
   const [counts, setCounts] = useState({
@@ -202,6 +214,84 @@ export const AdminGumzoGroupManagement: React.FC = () => {
       setProcessingGroupId(null);
     }
   };
+
+  // Founder Admin transfer execution (V9.4)
+  const executeTransferFounder = async (group: GumzoGroup) => {
+    const targetUserId = newFounderUserIdInput.trim();
+    if (!targetUserId) {
+      setErrorMsg('Tafadhali ingiza Kitambulisho (User ID) cha Mwanzilishi mpya.');
+      return;
+    }
+
+    if (targetUserId === group.founderAdminUserId) {
+      setErrorMsg('Mtumiaji huyu tayari ndiye Mwanzilishi (Founder Admin) wa sasa.');
+      return;
+    }
+
+    if (group.leadershipAdminUserId && group.leadershipAdminUserId === targetUserId) {
+      setErrorMsg('Mtumiaji huyu ni Leadership Admin wa kikundi hiki. Haiwezekani kuwa na wadhifa zote mbili.');
+      return;
+    }
+
+    try {
+      setProcessingGroupId(group.groupId);
+      setErrorMsg(null);
+      setSuccessMsg(null);
+
+      const token = user ? await user.getIdToken().catch(() => null) : null;
+      const res = await gumzoGroupService.postBrowserTransferFounderAdmin({
+        groupId: group.groupId,
+        newFounderUserId: targetUserId,
+        actingAdminUserId: currentAdminUserId,
+        reason: actionReason || 'Uhamisho wa kiutawala wa wadhifa wa Founder Admin.',
+        userRole: 'admin',
+        token,
+      });
+
+      setGroups((prev) =>
+        prev.map((g) =>
+          g.groupId === group.groupId ? { ...g, founderAdminUserId: targetUserId, updatedAt: res.group.updatedAt } : g
+        )
+      );
+
+      setSuccessMsg(`Wadhifa wa Founder Admin wa kikundi "${group.name}" umehamishwa rasmi kwa mtumiaji (${targetUserId}).`);
+      setModalAction(null);
+      setNewFounderUserIdInput('');
+      setActionReason('');
+      loadGroups();
+    } catch (err: any) {
+      console.error('Hitilafu ya kuhamisha Founder Admin:', err);
+      setErrorMsg(err.message || 'Imeshindwa kuhamisha wadhifa wa Founder Admin.');
+    } finally {
+      setProcessingGroupId(null);
+    }
+  };
+
+  // Load audit trail
+  const loadAuditEvents = async () => {
+    try {
+      setIsLoadingAudit(true);
+      setErrorMsg(null);
+      const token = user ? await user.getIdToken().catch(() => null) : null;
+      const events = await gumzoGroupService.fetchBrowserAuditEvents({
+        limit: 100,
+        callerUserId: currentAdminUserId,
+        token,
+      });
+      setAuditEvents(events);
+    } catch (err: any) {
+      console.error('Hitilafu ya kupakia rekodi za ukaguzi:', err);
+      setErrorMsg(err.message || 'Imeshindwa kupakia rekodi za ukaguzi wa utawala.');
+    } finally {
+      setIsLoadingAudit(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'AUDIT') {
+      loadAuditEvents();
+    }
+  }, [activeTab]);
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -415,7 +505,43 @@ export const AdminGumzoGroupManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Search & Filter Controls */}
+      {/* V9.4 Governance Tabs: Groups vs Immutable Audit Trail */}
+      <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab('GROUPS')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2 transition-colors cursor-pointer ${
+            activeTab === 'GROUPS'
+              ? 'bg-stone-900 text-white shadow-xs'
+              : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5" />
+          <span>Vikundi vya Jamii ({counts.total})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('AUDIT')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2 transition-colors cursor-pointer ${
+            activeTab === 'AUDIT'
+              ? 'bg-stone-900 text-white shadow-xs'
+              : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+          }`}
+        >
+          <History className="w-3.5 h-3.5 text-blue-400" />
+          <span>Rekodi za Ukaguzi wa Utawala (Governance Audit)</span>
+          {auditEvents.length > 0 && (
+            <span className="px-1.5 py-0.2 bg-blue-500/20 text-blue-300 rounded-full text-[10px]">
+              {auditEvents.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'GROUPS' ? (
+        <>
+          {/* Search & Filter Controls */}
       <div className="bg-white border border-stone-200/90 rounded-2xl p-4 shadow-xs space-y-3">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           {/* Status Tabs */}
@@ -750,6 +876,19 @@ export const AdminGumzoGroupManagement: React.FC = () => {
                               <Copy className="w-3 h-3" />
                             )}
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setModalAction({ type: 'TRANSFER_FOUNDER', group });
+                              setNewFounderUserIdInput('');
+                              setActionReason('');
+                            }}
+                            className="text-[11px] font-bold text-amber-700 hover:underline ml-1 inline-flex items-center gap-0.5 cursor-pointer"
+                            title="Hamisha wadhifa wa Founder Admin kwa mtumiaji mwingine"
+                          >
+                            <ArrowRightLeft className="w-3 h-3" />
+                            <span>Hamisha</span>
+                          </button>
                         </div>
                       </div>
 
@@ -857,6 +996,107 @@ export const AdminGumzoGroupManagement: React.FC = () => {
           })}
         </div>
       )}
+        </>
+      ) : (
+        /* V9.4 Governance Audit Trail View */
+        <div className="space-y-4">
+          <div className="bg-white border border-stone-200/90 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h3 className="text-sm font-bold text-stone-900 flex items-center gap-2">
+                  <History className="w-4 h-4 text-blue-600" />
+                  Kumbukumbu Zisizobadilika za Ukaguzi wa Utawala (Governance Audit Trail)
+                </h3>
+                <p className="text-xs text-stone-500">
+                  Rekodi za kudumu za maamuzi yote ya uongozi: uteuzi na uhamisho wa waanzilishi, kusimamisha/kurejesha vikundi, na hatua za maudhui.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={loadAuditEvents}
+                disabled={isLoadingAudit}
+                className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAudit ? 'animate-spin' : ''}`} />
+                <span>Sasisha Rekodi</span>
+              </button>
+            </div>
+          </div>
+
+          {isLoadingAudit ? (
+            <div className="text-center py-12 bg-white rounded-2xl border border-stone-200">
+              <Loader2 className="w-6 h-6 animate-spin text-emerald-600 mx-auto" />
+              <p className="text-xs text-stone-500 mt-2">Inapakia rekodi za ukaguzi...</p>
+            </div>
+          ) : auditEvents.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-2xl border border-stone-200 space-y-2">
+              <FileText className="w-8 h-8 text-stone-400 mx-auto" />
+              <h4 className="text-sm font-bold text-stone-700">Hakuna Rekodi za Ukaguzi Bado</h4>
+              <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                Miamala mipya ya kiutawala kama vile uhamisho wa waanzilishi na mabadiliko ya hali ya vikundi itarekodiwa hapa kiotomatiki.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-stone-50 border-b border-stone-200 text-[11px] font-bold text-stone-500 uppercase tracking-wider">
+                    <tr>
+                      <th className="p-3">Muda / Tarehe</th>
+                      <th className="p-3">Kitendo (Action)</th>
+                      <th className="p-3">Kiongozi (Actor)</th>
+                      <th className="p-3">Kikundi / Rasilimali</th>
+                      <th className="p-3">Matokeo</th>
+                      <th className="p-3">Sababu / Maelezo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 font-mono text-[11px]">
+                    {auditEvents.map((evt) => (
+                      <tr key={evt.auditId} className="hover:bg-stone-50/60 transition-colors">
+                        <td className="p-3 whitespace-nowrap text-stone-600 font-sans">
+                          {new Date(evt.timestamp).toLocaleString('sw-TZ', { dateStyle: 'short', timeStyle: 'short' })}
+                        </td>
+                        <td className="p-3 whitespace-nowrap font-sans">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            evt.action.includes('TRANSFERRED') || evt.action.includes('ASSIGNED')
+                              ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                              : evt.action.includes('SUSPENDED') || evt.action.includes('ESCALATION')
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                              : evt.action.includes('RESTORED')
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-stone-100 text-stone-800 border border-stone-200'
+                          }`}>
+                            {evt.action}
+                          </span>
+                        </td>
+                        <td className="p-3 whitespace-nowrap text-stone-900 font-bold">
+                          {evt.actorUserId}
+                        </td>
+                        <td className="p-3 whitespace-nowrap text-stone-600">
+                          {evt.groupId || evt.targetResourceId}
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            evt.outcome === 'SUCCESS'
+                              ? 'text-emerald-700 bg-emerald-50'
+                              : 'text-rose-700 bg-rose-50'
+                          }`}>
+                            {evt.outcome}
+                          </span>
+                        </td>
+                        <td className="p-3 text-stone-700 font-sans max-w-xs truncate" title={evt.reason || ''}>
+                          {evt.reason || (evt.details ? JSON.stringify(evt.details) : '—')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Governance Modal (Rejection / Suspension / Assign Leadership) */}
       {modalAction && (
@@ -871,18 +1111,22 @@ export const AdminGumzoGroupManagement: React.FC = () => {
                       ? 'bg-rose-100 text-rose-700'
                       : modalAction.type === 'SUSPEND'
                       ? 'bg-amber-100 text-amber-800'
+                      : modalAction.type === 'TRANSFER_FOUNDER'
+                      ? 'bg-amber-100 text-amber-900'
                       : 'bg-blue-100 text-blue-700'
                   }`}
                 >
                   {modalAction.type === 'REJECT' && <XCircle className="w-5 h-5" />}
                   {modalAction.type === 'SUSPEND' && <AlertTriangle className="w-5 h-5" />}
                   {modalAction.type === 'ASSIGN_LEADERSHIP' && <Crown className="w-5 h-5" />}
+                  {modalAction.type === 'TRANSFER_FOUNDER' && <ArrowRightLeft className="w-5 h-5 text-amber-700" />}
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-stone-900">
                     {modalAction.type === 'REJECT' && 'Kataa Kikundi cha Gumzo'}
                     {modalAction.type === 'SUSPEND' && 'Simamisha Kikundi cha Gumzo'}
                     {modalAction.type === 'ASSIGN_LEADERSHIP' && 'Teua Leadership Admin'}
+                    {modalAction.type === 'TRANSFER_FOUNDER' && 'Hamisha Uongozi wa Mwanzilishi (Founder Admin)'}
                   </h3>
                   <p className="text-[11px] text-stone-500">
                     Kikundi: <strong className="text-stone-800">{modalAction.group.name}</strong>
@@ -977,6 +1221,50 @@ export const AdminGumzoGroupManagement: React.FC = () => {
               </div>
             )}
 
+            {/* Modal Body for Transfer Founder Admin (V9.4) */}
+            {modalAction.type === 'TRANSFER_FOUNDER' && (
+              <div className="space-y-3">
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 space-y-1">
+                  <p className="font-bold flex items-center gap-1">
+                    <Crown className="w-3.5 h-3.5 text-amber-700" />
+                    Uhamisho wa Wadhifa wa Mwanzilishi (Founder Admin Transfer)
+                  </p>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    Uhamisho huu utamrejesha aliyekuwa mwanzilishi wa sasa (<strong>{modalAction.group.founderAdminUserId}</strong>) kuwa mwanachama wa kawaida (MEMBER) na kumteua mtumiaji mpya kuwa Mwanzilishi (Founder Admin). Hatua hii inarekodiwa kwenye kumbukumbu ya ukaguzi wa utawala (Audit Trail).
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-stone-700 block">
+                    Kitambulisho cha Mtumiaji Mpya (New Founder User ID):
+                  </label>
+                  <input
+                    type="text"
+                    value={newFounderUserIdInput}
+                    onChange={(e) => setNewFounderUserIdInput(e.target.value)}
+                    placeholder="Mfano: user_mfugaji_123"
+                    className="w-full p-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-emerald-600 text-stone-900 font-mono"
+                  />
+                  <p className="text-[10px] text-stone-400">
+                    Mtumiaji hawezi kuwa Leadership Admin wa kikundi kilekile.
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-stone-700 block">
+                    Sababu ya Uhamisho (Governance Reason):
+                  </label>
+                  <input
+                    type="text"
+                    value={actionReason}
+                    onChange={(e) => setActionReason(e.target.value)}
+                    placeholder="Mfano: Ombi la mwanzilishi au uamuzi wa utawala"
+                    className="w-full p-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-emerald-600 text-stone-900"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Modal Footer */}
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
               <button
@@ -1032,6 +1320,22 @@ export const AdminGumzoGroupManagement: React.FC = () => {
                     <Crown className="w-3.5 h-3.5" />
                   )}
                   <span>Hifadhi Uteuzi</span>
+                </button>
+              )}
+
+              {modalAction.type === 'TRANSFER_FOUNDER' && (
+                <button
+                  type="button"
+                  onClick={() => executeTransferFounder(modalAction.group)}
+                  disabled={processingGroupId === modalAction.group.groupId}
+                  className="px-4 py-2 bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  {processingGroupId === modalAction.group.groupId ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                  )}
+                  <span>Thibitisha Uhamisho</span>
                 </button>
               )}
             </div>

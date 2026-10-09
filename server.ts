@@ -103,6 +103,10 @@ import {
   initGumzoCommentsStorage
 } from './src/services/gumzoCommentService';
 import {
+  gumzoAuditService,
+  initGumzoAuditStorage
+} from './src/services/gumzoAuditService';
+import {
   getSellerVerificationDisplay
 } from './src/types/sellerVerification';
 import {
@@ -170,6 +174,9 @@ initGumzoPostsStorage(fs, path);
 
 // Authoritative Gumzo comments persistent storage initialization (V9.3)
 initGumzoCommentsStorage(fs, path);
+
+// Authoritative Gumzo governance audit persistent storage initialization (V9.4)
+initGumzoAuditStorage(fs, path);
 
 // Persistent marketplace products storage helpers
 function readMarketplaceProductsFromDisk(): any[] {
@@ -6807,6 +6814,87 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
       return res.json(updated);
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
+    }
+  });
+
+  // 8. Leadership Admin / Platform Admin transfer Founder Admin ownership (V9.4)
+  // «Only authorized Leadership Admin operations may assign or replace the Founder Admin.»
+  app.post('/api/gumzo/groups/:groupId/transfer-founder', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.actingAdminUserId;
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo (401 Unauthorized).' });
+      }
+
+      const groupId = req.params.groupId;
+      const group = gumzoGroupService.getGroupById(groupId, callerUserId, isAdmin);
+      if (!group) {
+        return res.status(404).json({ error: 'Kikundi hakikupatikana.' });
+      }
+
+      // Strictly Leadership Admin or Platform Admin can transfer Founder Admin
+      const isLeadership = group.leadershipAdminUserId === callerUserId;
+      if (!isAdmin && !isLeadership) {
+        // Log privilege escalation attempt
+        gumzoAuditService.logEvent({
+          actorUserId: callerUserId,
+          action: 'PRIVILEGE_ESCALATION_ATTEMPT',
+          targetType: 'GOVERNANCE',
+          targetResourceId: groupId,
+          groupId,
+          outcome: 'DENIED',
+          reason: 'Mtumiaji asiye na mamlaka ya Leadership Admin amejaribu kuhamisha uongozi wa mwanzilishi kupitia API.',
+          details: { attemptedNewFounder: req.body.newFounderUserId },
+        });
+        return res.status(403).json({ error: 'Huna mamlaka ya Leadership Admin kuhamisha wadhifa wa Founder Admin (403 Forbidden).' });
+      }
+
+      const result = gumzoGroupService.transferFounderAdmin({
+        groupId,
+        newFounderUserId: req.body.newFounderUserId,
+        actingAdminUserId: callerUserId,
+        isPlatformAdmin: isAdmin,
+        reason: req.body.reason,
+      });
+
+      return res.json(result);
+    } catch (err: any) {
+      const isForbidden = err.message?.includes('403') || err.message?.includes('Huna mamlaka');
+      const statusCode = isForbidden ? 403 : 400;
+      return res.status(statusCode).json({ error: err.message });
+    }
+  });
+
+  // 9. Gumzo Governance Audit Log (V9.4 — Platform / Leadership Admin)
+  app.get('/api/gumzo/admin/audit', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo (401 Unauthorized).' });
+      }
+
+      // Check if caller is platform admin or leadership admin of any group
+      const userMemberships = gumzoGroupService.getUserMemberships(callerUserId);
+      const isLeadershipAdmin = userMemberships.some((m) => m.role === 'LEADERSHIP_ADMIN');
+
+      if (!isAdmin && !isLeadershipAdmin) {
+        return res.status(403).json({ error: 'Mamlaka ya Leadership Admin au Platform Admin yanahitajika kutazama rekodi za ukaguzi wa utawala (403 Forbidden).' });
+      }
+
+      const groupId = req.query.groupId as string | undefined;
+      const action = req.query.action as any;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
+
+      const auditEvents = gumzoAuditService.getEvents({ groupId, action, limit });
+      return res.json({ auditEvents, total: auditEvents.length });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
     }
   });
 

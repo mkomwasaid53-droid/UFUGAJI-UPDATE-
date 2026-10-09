@@ -31,6 +31,7 @@ import {
 } from '../types/gumzo';
 import { gumzoGroupService } from './gumzoGroupService';
 import { gumzoPostService } from './gumzoPostService';
+import { gumzoAuditService } from './gumzoAuditService';
 
 const isNode = typeof window === 'undefined';
 
@@ -260,6 +261,16 @@ export class GumzoCommentService {
     const membership = gumzoGroupService.getMembership(groupId, authenticatedUserId);
     const decision = canUserCreateComment(authenticatedUserId, group, post, membership, isPlatformAdmin);
     if (!decision.allowed) {
+      gumzoAuditService.logEvent({
+        actorUserId: authenticatedUserId,
+        action: 'PRIVILEGE_ESCALATION_ATTEMPT',
+        targetType: 'COMMENT',
+        targetResourceId: postId,
+        groupId,
+        outcome: 'DENIED',
+        reason: decision.reason || 'Mtumiaji asiye na uanachama hai amejaribu kuweka maoni.',
+        details: { membershipStatus: membership?.status, role: membership?.role },
+      });
       const err = new Error(decision.reason || 'Huna ruhusa ya kuweka maoni kwenye chapisho hili (403 Forbidden).');
       (err as any).statusCode = 403;
       throw err;
@@ -577,6 +588,21 @@ export class GumzoCommentService {
 
     emitCommentEvent('GUMZO_COMMENT_MODERATED', comment, authenticatedUserId);
 
+    gumzoAuditService.logEvent({
+      actorUserId: authenticatedUserId,
+      action: 'ADMIN_COMMENT_DELETED',
+      targetType: 'COMMENT',
+      targetResourceId: commentId,
+      groupId,
+      outcome: 'SUCCESS',
+      reason: comment.authorUserId === authenticatedUserId ? 'Mwandishi amefuta maoni yake.' : 'Kiongozi wa kikundi amefuta maoni.',
+      details: {
+        authorUserId: comment.authorUserId,
+        isAuthor: comment.authorUserId === authenticatedUserId,
+        postId,
+      },
+    });
+
     return comment;
   }
 
@@ -637,6 +663,20 @@ export class GumzoCommentService {
     gumzoPostService.updatePostCommentCount(postId, activeCount);
 
     emitCommentEvent('GUMZO_COMMENT_MODERATED', comment, authenticatedUserId);
+
+    gumzoAuditService.logEvent({
+      actorUserId: authenticatedUserId,
+      action: 'ADMIN_COMMENT_HIDDEN',
+      targetType: 'COMMENT',
+      targetResourceId: commentId,
+      groupId,
+      outcome: 'SUCCESS',
+      reason: reason || 'Kiongozi wa kikundi ameficha maoni haya.',
+      details: {
+        authorUserId: comment.authorUserId,
+        postId,
+      },
+    });
 
     return comment;
   }

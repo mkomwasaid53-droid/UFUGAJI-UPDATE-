@@ -715,15 +715,14 @@ service cloud.firestore {
 
       // Update:
       // - Platform Admins have full governance rights
-      // - Leadership Admin can update status (suspend, active, archive)
+      // - Leadership Admin can update status and transfer founderAdminUserId
       // - Founder Admin can only update basic descriptive fields (name, description, coverImageUrl)
       //   Founder CANNOT change status, memberCount, founderAdminUserId, or leadershipAdminUserId
       allow update: if isAuthenticated() && (
         isAdmin() ||
         (
           resource != null &&
-          resource.data.leadershipAdminUserId == request.auth.uid &&
-          request.resource.data.founderAdminUserId == resource.data.founderAdminUserId
+          resource.data.leadershipAdminUserId == request.auth.uid
         ) ||
         (
           resource != null &&
@@ -942,6 +941,14 @@ service cloud.firestore {
         isAdmin() ||
         (resource != null && resource.data.authorUserId == request.auth.uid)
       );
+    }
+
+    // Gumzo Governance Audit Log (V9.4 Two-Admin Governance)
+    // Strictly immutable: append-only by authorized admins, update/delete forbidden
+    match /gumzoGovernanceAudit/{auditId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
     }
   }
 }

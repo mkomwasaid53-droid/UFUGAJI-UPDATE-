@@ -1,0 +1,31 @@
+[
+  {
+    "groupId": "grp_1791555324159_d6du0x",
+    "name": "Wafugaji Kuku Morogoro",
+    "description": "Kikundi cha mfano cha kuku Morogoro kwa usimamizi.",
+    "categoryId": "kuku",
+    "livestockType": "POULTRY",
+    "status": "ACTIVE",
+    "visibility": "PUBLIC",
+    "founderAdminUserId": "user_future_founder",
+    "memberCount": 3,
+    "createdAt": "2026-10-09T14:15:24.159Z",
+    "updatedAt": "2026-10-09T14:15:24.212Z",
+    "createdBy": "user_founder_alpha",
+    "leadershipAdminUserId": "user_leadership_charlie"
+  },
+  {
+    "groupId": "grp_1791555324165_c2cntd",
+    "name": "Wafugaji Ngombe Arusha",
+    "description": "Kikundi cha mfano cha ngombe Arusha kwa usimamizi.",
+    "categoryId": "ngombe",
+    "livestockType": "CATTLE",
+    "status": "ACTIVE",
+    "visibility": "PUBLIC",
+    "founderAdminUserId": "user_founder_bravo",
+    "memberCount": 1,
+    "createdAt": "2026-10-09T14:15:24.165Z",
+    "updatedAt": "2026-10-09T14:15:24.165Z",
+    "createdBy": "user_founder_bravo"
+  }
+]

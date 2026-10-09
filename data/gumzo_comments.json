@@ -388,5 +388,118 @@
     "updatedBy": "user_member_003",
     "deletedAt": "2026-10-09T11:40:54.951Z",
     "deletedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791552004590_os6rpn",
+    "groupId": "grp_1791482693274_h196bd",
+    "postId": "pst_1791551864534_u832ku",
+    "authorUserId": "L4QyQ22YyWetpiLlxEp4kO0KFes1",
+    "authorRole": "MEMBER",
+    "content": "😢 ni ugonjwa hatari sana",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T13:20:04.590Z",
+    "updatedAt": "2026-10-09T13:20:04.590Z",
+    "createdBy": "L4QyQ22YyWetpiLlxEp4kO0KFes1",
+    "updatedBy": "L4QyQ22YyWetpiLlxEp4kO0KFes1"
+  },
+  {
+    "commentId": "cmt_1791552044284_brui5g",
+    "groupId": "grp_1791482693274_h196bd",
+    "postId": "pst_1791551864534_u832ku",
+    "authorUserId": "L4QyQ22YyWetpiLlxEp4kO0KFes1",
+    "authorRole": "MEMBER",
+    "content": "Niliwahi kupoteza kuku wangu 30 kwa wakati mmoja",
+    "media": [
+      {
+        "id": "gcmt_1791552043980_vpe26a",
+        "type": "image",
+        "url": "/uploads/gumzo_comments/grp_1791482693274_h196bd/gcmt_1791552043980_vpe26a.jpg",
+        "storagePath": "gumzo/comments/grp_1791482693274_h196bd/gcmt_1791552043980_vpe26a.jpg",
+        "sizeBytes": 159173
+      }
+    ],
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T13:20:44.284Z",
+    "updatedAt": "2026-10-09T13:20:44.284Z",
+    "createdBy": "L4QyQ22YyWetpiLlxEp4kO0KFes1",
+    "updatedBy": "L4QyQ22YyWetpiLlxEp4kO0KFes1"
+  },
+  {
+    "commentId": "cmt_1791555186606_5ilhe5",
+    "groupId": "grp_1791555186596_pnieym",
+    "postId": "pst_1791555186598_ng735f",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mfugaji Said",
+    "content": "Asante kwa elimu nzuri! Je, chanjo hii inafaa pia kwa kuku wa kienyeji?",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T14:13:06.606Z",
+    "updatedAt": "2026-10-09T14:13:06.606Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791555186608_pont54",
+    "groupId": "grp_1791555186596_pnieym",
+    "postId": "pst_1791555186598_ng735f",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "authorDisplayName": "Mwanachama Mjanja",
+    "content": "Najaribu kughushi mamlaka ya Mwanzilishi.",
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T14:13:06.608Z",
+    "updatedAt": "2026-10-09T14:13:06.608Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003"
+  },
+  {
+    "commentId": "cmt_1791555186609_y1d5fg",
+    "groupId": "grp_1791555186596_pnieym",
+    "postId": "pst_1791555186598_ng735f",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Marekebisho: Nilipiga picha hii asubuhi ya leo.",
+    "media": [
+      {
+        "id": "cmt_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_comments/grp_1791555186596_pnieym/cmt_med_001.jpg",
+        "storagePath": "gumzo/comments/grp_1791555186596_pnieym/cmt_med_001.jpg",
+        "caption": "Picha ya vyombo vya maji",
+        "sizeBytes": 180000,
+        "mimeType": "image/jpeg"
+      }
+    ],
+    "status": "PUBLISHED",
+    "createdAt": "2026-10-09T14:13:06.609Z",
+    "updatedAt": "2026-10-09T14:13:06.613Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "isEdited": true
+  },
+  {
+    "commentId": "cmt_1791555186611_vfwhnl",
+    "groupId": "grp_1791555186596_pnieym",
+    "postId": "pst_1791555186598_ng735f",
+    "authorUserId": "user_member_003",
+    "authorRole": "MEMBER",
+    "content": "Video ya tabia ya vifaranga:",
+    "media": [
+      {
+        "id": "cmt_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_comments/grp_1791555186596_pnieym/cmt_med_002.mp4",
+        "storagePath": "gumzo/comments/grp_1791555186596_pnieym/cmt_med_002.mp4",
+        "sizeBytes": 4200000,
+        "mimeType": "video/mp4"
+      }
+    ],
+    "status": "DELETED",
+    "createdAt": "2026-10-09T14:13:06.611Z",
+    "updatedAt": "2026-10-09T14:13:06.615Z",
+    "createdBy": "user_member_003",
+    "updatedBy": "user_member_003",
+    "deletedAt": "2026-10-09T14:13:06.615Z",
+    "deletedBy": "user_member_003"
   }
 ]

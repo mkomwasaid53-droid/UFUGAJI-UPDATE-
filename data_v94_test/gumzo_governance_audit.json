@@ -1,0 +1,473 @@
+[
+  {
+    "auditId": "gaudit_1791555324213_abjla7p",
+    "actorUserId": "user_leadership_charlie",
+    "action": "GROUP_RESTORED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555324159_d6du0x",
+    "groupId": "grp_1791555324159_d6du0x",
+    "timestamp": "2026-10-09T14:15:24.213Z",
+    "outcome": "SUCCESS",
+    "reason": "Uchunguzi umekamilika na kikundi kimerejeshwa.",
+    "details": {
+      "previousStatus": "SUSPENDED",
+      "newStatus": "ACTIVE",
+      "isPlatformAdmin": false
+    }
+  },
+  {
+    "auditId": "gaudit_1791555324212_6s7gffv",
+    "actorUserId": "user_future_founder",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "POST",
+    "targetResourceId": "grp_1791555324159_d6du0x",
+    "groupId": "grp_1791555324159_d6du0x",
+    "timestamp": "2026-10-09T14:15:24.212Z",
+    "outcome": "DENIED",
+    "reason": "Kikundi kimesimamishwa. Machapisho mapya hayaruhusiwi."
+  },
+  {
+    "auditId": "gaudit_1791555324209_l3iztmn",
+    "actorUserId": "user_leadership_charlie",
+    "action": "GROUP_SUSPENDED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555324159_d6du0x",
+    "groupId": "grp_1791555324159_d6du0x",
+    "timestamp": "2026-10-09T14:15:24.209Z",
+    "outcome": "SUCCESS",
+    "reason": "Uchunguzi wa kimaadili unaendelea.",
+    "details": {
+      "previousStatus": "ACTIVE",
+      "newStatus": "SUSPENDED",
+      "isPlatformAdmin": false
+    }
+  },
+  {
+    "auditId": "gaudit_1791555324202_yckvlyn",
+    "actorUserId": "user_leadership_charlie",
+    "action": "FOUNDER_ADMIN_TRANSFERRED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555324159_d6du0x",
+    "groupId": "grp_1791555324159_d6du0x",
+    "timestamp": "2026-10-09T14:15:24.202Z",
+    "outcome": "SUCCESS",
+    "reason": "Uhamisho rasmi wa wadhifa wa Founder Admin umeidhinishwa na Leadership Admin.",
+    "details": {
+      "previousFounderUserId": "user_founder_alpha",
+      "newFounderUserId": "user_future_founder",
+      "actingAdminUserId": "user_leadership_charlie",
+      "isPlatformAdmin": false
+    }
+  },
+  {
+    "auditId": "gaudit_1791555324200_m6242if",
+    "actorUserId": "user_founder_alpha",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "GOVERNANCE",
+    "targetResourceId": "grp_1791555324159_d6du0x",
+    "groupId": "grp_1791555324159_d6du0x",
+    "timestamp": "2026-10-09T14:15:24.200Z",
+    "outcome": "DENIED",
+    "reason": "Mtumiaji asiye na mamlaka ya Leadership Admin amejaribu kuhamisha uongozi wa mwanzilishi.",
+    "details": {
+      "attemptedNewFounder": "user_future_founder"
+    }
+  },
+  {
+    "auditId": "gaudit_1791555324198_8mxf0hf",
+    "actorUserId": "user_member_alice",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "GOVERNANCE",
+    "targetResourceId": "grp_1791555324159_d6du0x",
+    "groupId": "grp_1791555324159_d6du0x",
+    "timestamp": "2026-10-09T14:15:24.198Z",
+    "outcome": "DENIED",
+    "reason": "Mtumiaji asiye na mamlaka ya Leadership Admin amejaribu kuhamisha uongozi wa mwanzilishi.",
+    "details": {
+      "attemptedNewFounder": "user_future_founder"
+    }
+  },
+  {
+    "auditId": "gaudit_1791555324189_2cg6o1s",
+    "actorUserId": "user_member_alice",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "POST",
+    "targetResourceId": "grp_1791555324159_d6du0x",
+    "groupId": "grp_1791555324159_d6du0x",
+    "timestamp": "2026-10-09T14:15:24.189Z",
+    "outcome": "DENIED",
+    "reason": "Wanachama hawaruhusiwi kuanzisha mada au machapisho. Ni viongozi pekee (Admin) wanaoweza kuandika."
+  },
+  {
+    "auditId": "gaudit_1791555324177_2t81drg",
+    "actorUserId": "user_leadership_charlie",
+    "action": "ADMIN_POST_HIDDEN",
+    "targetType": "POST",
+    "targetResourceId": "pst_1791555324164_bi4znw",
+    "groupId": "grp_1791555324159_d6du0x",
+    "timestamp": "2026-10-09T14:15:24.177Z",
+    "outcome": "SUCCESS",
+    "reason": "Chapisho limefichwa na uongozi."
+  },
+  {
+    "auditId": "gaudit_1791555324174_z157nmh",
+    "actorUserId": "user_platform_admin",
+    "action": "LEADERSHIP_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555324159_d6du0x",
+    "groupId": "grp_1791555324159_d6du0x",
+    "timestamp": "2026-10-09T14:15:24.174Z",
+    "outcome": "SUCCESS",
+    "reason": "Leadership Admin ameteuliwa rasmi na uongozi wa jukwaa.",
+    "details": {
+      "leadershipAdminUserId": "user_leadership_charlie",
+      "platformAdminUserId": "user_platform_admin"
+    }
+  },
+  {
+    "auditId": "gaudit_1791555324167_2311a31",
+    "actorUserId": "user_founder_bravo",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555324165_c2cntd",
+    "groupId": "grp_1791555324165_c2cntd",
+    "timestamp": "2026-10-09T14:15:24.167Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_founder_bravo",
+      "groupName": "Wafugaji Ngombe Arusha",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791555324163_jl2px59",
+    "actorUserId": "user_founder_alpha",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555324159_d6du0x",
+    "groupId": "grp_1791555324159_d6du0x",
+    "timestamp": "2026-10-09T14:15:24.163Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_founder_alpha",
+      "groupName": "Wafugaji Kuku Morogoro",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791555097203_c8gwmdu",
+    "actorUserId": "user_leadership_charlie",
+    "action": "GROUP_RESTORED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555097174_6ewg0w",
+    "groupId": "grp_1791555097174_6ewg0w",
+    "timestamp": "2026-10-09T14:11:37.203Z",
+    "outcome": "SUCCESS",
+    "reason": "Uchunguzi umekamilika na kikundi kimerejeshwa.",
+    "details": {
+      "previousStatus": "SUSPENDED",
+      "newStatus": "ACTIVE",
+      "isPlatformAdmin": false
+    }
+  },
+  {
+    "auditId": "gaudit_1791555097202_lbc6711",
+    "actorUserId": "user_future_founder",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "POST",
+    "targetResourceId": "grp_1791555097174_6ewg0w",
+    "groupId": "grp_1791555097174_6ewg0w",
+    "timestamp": "2026-10-09T14:11:37.202Z",
+    "outcome": "DENIED",
+    "reason": "Kikundi kimesimamishwa. Machapisho mapya hayaruhusiwi."
+  },
+  {
+    "auditId": "gaudit_1791555097201_4ern3c3",
+    "actorUserId": "user_leadership_charlie",
+    "action": "GROUP_SUSPENDED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555097174_6ewg0w",
+    "groupId": "grp_1791555097174_6ewg0w",
+    "timestamp": "2026-10-09T14:11:37.201Z",
+    "outcome": "SUCCESS",
+    "reason": "Uchunguzi wa kimaadili unaendelea.",
+    "details": {
+      "previousStatus": "ACTIVE",
+      "newStatus": "SUSPENDED",
+      "isPlatformAdmin": false
+    }
+  },
+  {
+    "auditId": "gaudit_1791555097200_azga4a4",
+    "actorUserId": "user_leadership_charlie",
+    "action": "FOUNDER_ADMIN_TRANSFERRED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555097174_6ewg0w",
+    "groupId": "grp_1791555097174_6ewg0w",
+    "timestamp": "2026-10-09T14:11:37.200Z",
+    "outcome": "SUCCESS",
+    "reason": "Uhamisho rasmi wa wadhifa wa Founder Admin umeidhinishwa na Leadership Admin.",
+    "details": {
+      "previousFounderUserId": "user_founder_alpha",
+      "newFounderUserId": "user_future_founder",
+      "actingAdminUserId": "user_leadership_charlie",
+      "isPlatformAdmin": false
+    }
+  },
+  {
+    "auditId": "gaudit_1791555097198_a101r18",
+    "actorUserId": "user_founder_alpha",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "GOVERNANCE",
+    "targetResourceId": "grp_1791555097174_6ewg0w",
+    "groupId": "grp_1791555097174_6ewg0w",
+    "timestamp": "2026-10-09T14:11:37.198Z",
+    "outcome": "DENIED",
+    "reason": "Mtumiaji asiye na mamlaka ya Leadership Admin amejaribu kuhamisha uongozi wa mwanzilishi.",
+    "details": {
+      "attemptedNewFounder": "user_future_founder"
+    }
+  },
+  {
+    "auditId": "gaudit_1791555097197_etiaruf",
+    "actorUserId": "user_member_alice",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "GOVERNANCE",
+    "targetResourceId": "grp_1791555097174_6ewg0w",
+    "groupId": "grp_1791555097174_6ewg0w",
+    "timestamp": "2026-10-09T14:11:37.197Z",
+    "outcome": "DENIED",
+    "reason": "Mtumiaji asiye na mamlaka ya Leadership Admin amejaribu kuhamisha uongozi wa mwanzilishi.",
+    "details": {
+      "attemptedNewFounder": "user_future_founder"
+    }
+  },
+  {
+    "auditId": "gaudit_1791555097186_ux0ucia",
+    "actorUserId": "user_member_alice",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "POST",
+    "targetResourceId": "grp_1791555097174_6ewg0w",
+    "groupId": "grp_1791555097174_6ewg0w",
+    "timestamp": "2026-10-09T14:11:37.186Z",
+    "outcome": "DENIED",
+    "reason": "Wanachama hawaruhusiwi kuanzisha mada au machapisho. Ni viongozi pekee (Admin) wanaoweza kuandika."
+  },
+  {
+    "auditId": "gaudit_1791555097184_tvnug3r",
+    "actorUserId": "user_leadership_charlie",
+    "action": "ADMIN_POST_HIDDEN",
+    "targetType": "POST",
+    "targetResourceId": "pst_1791555097181_7p94xc",
+    "groupId": "grp_1791555097174_6ewg0w",
+    "timestamp": "2026-10-09T14:11:37.184Z",
+    "outcome": "SUCCESS",
+    "reason": "Chapisho limefichwa na uongozi."
+  },
+  {
+    "auditId": "gaudit_1791555097183_fnl7odi",
+    "actorUserId": "user_platform_admin",
+    "action": "LEADERSHIP_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555097174_6ewg0w",
+    "groupId": "grp_1791555097174_6ewg0w",
+    "timestamp": "2026-10-09T14:11:37.183Z",
+    "outcome": "SUCCESS",
+    "reason": "Leadership Admin ameteuliwa rasmi na uongozi wa jukwaa.",
+    "details": {
+      "leadershipAdminUserId": "user_leadership_charlie",
+      "platformAdminUserId": "user_platform_admin"
+    }
+  },
+  {
+    "auditId": "gaudit_1791555097182_4ecc33l",
+    "actorUserId": "user_founder_bravo",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555097182_039a8p",
+    "groupId": "grp_1791555097182_039a8p",
+    "timestamp": "2026-10-09T14:11:37.182Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_founder_bravo",
+      "groupName": "Wafugaji Ngombe Arusha",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791555097178_bqxv4d3",
+    "actorUserId": "user_founder_alpha",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555097174_6ewg0w",
+    "groupId": "grp_1791555097174_6ewg0w",
+    "timestamp": "2026-10-09T14:11:37.178Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_founder_alpha",
+      "groupName": "Wafugaji Kuku Morogoro",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791554960789_974deq0",
+    "actorUserId": "user_leadership_charlie",
+    "action": "GROUP_RESTORED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791554960768_0v3pxe",
+    "groupId": "grp_1791554960768_0v3pxe",
+    "timestamp": "2026-10-09T14:09:20.789Z",
+    "outcome": "SUCCESS",
+    "reason": "Uchunguzi umekamilika na kikundi kimerejeshwa.",
+    "details": {
+      "previousStatus": "SUSPENDED",
+      "newStatus": "ACTIVE",
+      "isPlatformAdmin": false
+    }
+  },
+  {
+    "auditId": "gaudit_1791554960788_6wqbb3e",
+    "actorUserId": "user_future_founder",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "POST",
+    "targetResourceId": "grp_1791554960768_0v3pxe",
+    "groupId": "grp_1791554960768_0v3pxe",
+    "timestamp": "2026-10-09T14:09:20.788Z",
+    "outcome": "DENIED",
+    "reason": "Kikundi kimesimamishwa. Machapisho mapya hayaruhusiwi."
+  },
+  {
+    "auditId": "gaudit_1791554960788_k61ia3x",
+    "actorUserId": "user_leadership_charlie",
+    "action": "GROUP_SUSPENDED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791554960768_0v3pxe",
+    "groupId": "grp_1791554960768_0v3pxe",
+    "timestamp": "2026-10-09T14:09:20.788Z",
+    "outcome": "SUCCESS",
+    "reason": "Uchunguzi wa kimaadili unaendelea.",
+    "details": {
+      "previousStatus": "ACTIVE",
+      "newStatus": "SUSPENDED",
+      "isPlatformAdmin": false
+    }
+  },
+  {
+    "auditId": "gaudit_1791554960786_3l8z8jg",
+    "actorUserId": "user_leadership_charlie",
+    "action": "FOUNDER_ADMIN_TRANSFERRED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791554960768_0v3pxe",
+    "groupId": "grp_1791554960768_0v3pxe",
+    "timestamp": "2026-10-09T14:09:20.786Z",
+    "outcome": "SUCCESS",
+    "reason": "Uhamisho rasmi wa wadhifa wa Founder Admin umeidhinishwa na Leadership Admin.",
+    "details": {
+      "previousFounderUserId": "user_founder_alpha",
+      "newFounderUserId": "user_future_founder",
+      "actingAdminUserId": "user_leadership_charlie",
+      "isPlatformAdmin": false
+    }
+  },
+  {
+    "auditId": "gaudit_1791554960784_kdufht5",
+    "actorUserId": "user_founder_alpha",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "GOVERNANCE",
+    "targetResourceId": "grp_1791554960768_0v3pxe",
+    "groupId": "grp_1791554960768_0v3pxe",
+    "timestamp": "2026-10-09T14:09:20.784Z",
+    "outcome": "DENIED",
+    "reason": "Mtumiaji asiye na mamlaka ya Leadership Admin amejaribu kuhamisha uongozi wa mwanzilishi.",
+    "details": {
+      "attemptedNewFounder": "user_future_founder"
+    }
+  },
+  {
+    "auditId": "gaudit_1791554960783_0pwmwkz",
+    "actorUserId": "user_member_alice",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "GOVERNANCE",
+    "targetResourceId": "grp_1791554960768_0v3pxe",
+    "groupId": "grp_1791554960768_0v3pxe",
+    "timestamp": "2026-10-09T14:09:20.783Z",
+    "outcome": "DENIED",
+    "reason": "Mtumiaji asiye na mamlaka ya Leadership Admin amejaribu kuhamisha uongozi wa mwanzilishi.",
+    "details": {
+      "attemptedNewFounder": "user_future_founder"
+    }
+  },
+  {
+    "auditId": "gaudit_1791554960777_5enyo1b",
+    "actorUserId": "user_member_alice",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "POST",
+    "targetResourceId": "grp_1791554960768_0v3pxe",
+    "groupId": "grp_1791554960768_0v3pxe",
+    "timestamp": "2026-10-09T14:09:20.777Z",
+    "outcome": "DENIED",
+    "reason": "Wanachama hawaruhusiwi kuanzisha mada au machapisho. Ni viongozi pekee (Admin) wanaoweza kuandika."
+  },
+  {
+    "auditId": "gaudit_1791554960774_yw4pt1i",
+    "actorUserId": "user_leadership_charlie",
+    "action": "ADMIN_POST_HIDDEN",
+    "targetType": "POST",
+    "targetResourceId": "pst_1791554960770_9jqisc",
+    "groupId": "grp_1791554960768_0v3pxe",
+    "timestamp": "2026-10-09T14:09:20.774Z",
+    "outcome": "SUCCESS",
+    "reason": "Chapisho limefichwa na uongozi."
+  },
+  {
+    "auditId": "gaudit_1791554960773_i8fumqp",
+    "actorUserId": "user_platform_admin",
+    "action": "LEADERSHIP_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791554960768_0v3pxe",
+    "groupId": "grp_1791554960768_0v3pxe",
+    "timestamp": "2026-10-09T14:09:20.773Z",
+    "outcome": "SUCCESS",
+    "reason": "Leadership Admin ameteuliwa rasmi na uongozi wa jukwaa.",
+    "details": {
+      "leadershipAdminUserId": "user_leadership_charlie",
+      "platformAdminUserId": "user_platform_admin"
+    }
+  },
+  {
+    "auditId": "gaudit_1791554960770_x3k4lqd",
+    "actorUserId": "user_founder_bravo",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791554960770_zrqhz5",
+    "groupId": "grp_1791554960770_zrqhz5",
+    "timestamp": "2026-10-09T14:09:20.770Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_founder_bravo",
+      "groupName": "Wafugaji Ngombe Arusha",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791554960768_yk0jvwu",
+    "actorUserId": "user_founder_alpha",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791554960768_0v3pxe",
+    "groupId": "grp_1791554960768_0v3pxe",
+    "timestamp": "2026-10-09T14:09:20.768Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_founder_alpha",
+      "groupName": "Wafugaji Kuku Morogoro",
+      "status": "ACTIVE"
+    }
+  }
+]

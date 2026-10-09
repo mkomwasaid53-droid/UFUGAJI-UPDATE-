@@ -1,0 +1,76 @@
+[
+  {
+    "postId": "pst_1791555324164_bi4znw",
+    "groupId": "grp_1791555324159_d6du0x",
+    "authorUserId": "user_founder_alpha",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Karibuni kwenye mjadala wa kwanza wa ulishaji wa kuku.",
+    "media": [],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T14:15:24.164Z",
+    "updatedAt": "2026-10-09T14:15:24.185Z",
+    "publishedAt": "2026-10-09T14:15:24.164Z",
+    "createdBy": "user_founder_alpha",
+    "updatedBy": "user_leadership_charlie",
+    "isPinned": false
+  },
+  {
+    "postId": "pst_1791555324168_xzjlmf",
+    "groupId": "grp_1791555324165_c2cntd",
+    "authorUserId": "user_founder_bravo",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Mjadala wa uzalishaji wa maziwa Arusha.",
+    "media": [],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T14:15:24.168Z",
+    "updatedAt": "2026-10-09T14:15:24.168Z",
+    "publishedAt": "2026-10-09T14:15:24.168Z",
+    "createdBy": "user_founder_bravo",
+    "updatedBy": "user_founder_bravo",
+    "isPinned": false
+  },
+  {
+    "postId": "pst_1791555324187_50odnp",
+    "groupId": "grp_1791555324159_d6du0x",
+    "authorUserId": "user_founder_alpha",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Chapisho la moja kwa moja bila kuhitaji idhini ya awali.",
+    "media": [],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T14:15:24.187Z",
+    "updatedAt": "2026-10-09T14:15:24.187Z",
+    "publishedAt": "2026-10-09T14:15:24.187Z",
+    "createdBy": "user_founder_alpha",
+    "updatedBy": "user_founder_alpha",
+    "isPinned": false,
+    "commentCount": 2
+  },
+  {
+    "postId": "pst_1791555324257_puhijt",
+    "groupId": "grp_1791555324159_d6du0x",
+    "authorUserId": "user_future_founder",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Maboresho ya banda la kuku.",
+    "media": [
+      {
+        "id": "med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_posts/grp_001/banda.jpg",
+        "storagePath": "gumzo/posts/grp_001/banda.jpg",
+        "caption": "Banda la kisasa"
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T14:15:24.257Z",
+    "updatedAt": "2026-10-09T14:15:24.257Z",
+    "publishedAt": "2026-10-09T14:15:24.257Z",
+    "createdBy": "user_future_founder",
+    "updatedBy": "user_future_founder",
+    "isPinned": false,
+    "commentCount": 1
+  }
+]

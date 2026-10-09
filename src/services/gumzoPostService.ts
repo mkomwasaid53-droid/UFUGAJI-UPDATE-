@@ -30,6 +30,7 @@ import {
   canUserViewPost
 } from '../types/gumzo';
 import { gumzoGroupService } from './gumzoGroupService';
+import { gumzoAuditService } from './gumzoAuditService';
 
 const isNode = typeof window === 'undefined';
 
@@ -173,6 +174,15 @@ export class GumzoPostService {
     // Strict Admin Authorization Check
     const authCheck = canUserCreatePost(authenticatedUserId, group, membership, isPlatformAdmin);
     if (!authCheck.allowed) {
+      gumzoAuditService.logEvent({
+        actorUserId: authenticatedUserId,
+        action: 'PRIVILEGE_ESCALATION_ATTEMPT',
+        targetType: 'POST',
+        targetResourceId: groupId,
+        groupId,
+        outcome: 'DENIED',
+        reason: authCheck.reason || 'Mwanachama asiye na mamlaka ya admin amejaribu kuunda chapisho.',
+      });
       throw new Error(authCheck.reason || 'Huruhusiwi kuandika chapisho. Mamlaka ya uongozi (Admin) yanahitajika (403 PERMISSION_DENIED).');
     }
 
@@ -467,6 +477,20 @@ export class GumzoPostService {
     postsStore.set(postId, post);
     persistToDisk();
 
+    gumzoAuditService.logEvent({
+      actorUserId: authenticatedUserId,
+      action: 'ADMIN_POST_DELETED',
+      targetType: 'POST',
+      targetResourceId: postId,
+      groupId: post.groupId,
+      outcome: 'SUCCESS',
+      reason: params.reason || (post.authorUserId === authenticatedUserId ? 'Mwandishi amefuta chapisho lake.' : 'Kiongozi wa kikundi amefuta chapisho.'),
+      details: {
+        authorUserId: post.authorUserId,
+        isAuthor: post.authorUserId === authenticatedUserId,
+      },
+    });
+
     return post;
   }
 
@@ -504,6 +528,18 @@ export class GumzoPostService {
 
     postsStore.set(postId, post);
     persistToDisk();
+
+    if (visibility === 'HIDDEN') {
+      gumzoAuditService.logEvent({
+        actorUserId: authenticatedUserId,
+        action: 'ADMIN_POST_HIDDEN',
+        targetType: 'POST',
+        targetResourceId: postId,
+        groupId: post.groupId,
+        outcome: 'SUCCESS',
+        reason: 'Chapisho limefichwa na uongozi.',
+      });
+    }
 
     return post;
   }

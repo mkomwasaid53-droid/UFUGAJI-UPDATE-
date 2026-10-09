@@ -1,0 +1,76 @@
+[
+  {
+    "auditId": "gaudit_1791555186616_p3qa4ra",
+    "actorUserId": "user_member_003",
+    "action": "ADMIN_COMMENT_DELETED",
+    "targetType": "COMMENT",
+    "targetResourceId": "cmt_1791555186611_vfwhnl",
+    "groupId": "grp_1791555186596_pnieym",
+    "timestamp": "2026-10-09T14:13:06.616Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwandishi amefuta maoni yake.",
+    "details": {
+      "authorUserId": "user_member_003",
+      "isAuthor": true,
+      "postId": "pst_1791555186598_ng735f"
+    }
+  },
+  {
+    "auditId": "gaudit_1791555186603_4me4pqk",
+    "actorUserId": "user_member_003",
+    "action": "PRIVILEGE_ESCALATION_ATTEMPT",
+    "targetType": "POST",
+    "targetResourceId": "grp_1791555186596_pnieym",
+    "groupId": "grp_1791555186596_pnieym",
+    "timestamp": "2026-10-09T14:13:06.603Z",
+    "outcome": "DENIED",
+    "reason": "Wanachama hawaruhusiwi kuanzisha mada au machapisho. Ni viongozi pekee (Admin) wanaoweza kuandika."
+  },
+  {
+    "auditId": "gaudit_1791555186601_4tfqsbz",
+    "actorUserId": "superadmin",
+    "action": "LEADERSHIP_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555186596_pnieym",
+    "groupId": "grp_1791555186596_pnieym",
+    "timestamp": "2026-10-09T14:13:06.601Z",
+    "outcome": "SUCCESS",
+    "reason": "Leadership Admin ameteuliwa rasmi na uongozi wa jukwaa.",
+    "details": {
+      "leadershipAdminUserId": "user_leader_002",
+      "platformAdminUserId": "superadmin"
+    }
+  },
+  {
+    "auditId": "gaudit_1791555186600_v0bxbfd",
+    "actorUserId": "user_founder_001",
+    "action": "GROUP_STATUS_UPDATED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555186596_pnieym",
+    "groupId": "grp_1791555186596_pnieym",
+    "timestamp": "2026-10-09T14:13:06.600Z",
+    "outcome": "SUCCESS",
+    "reason": "Hali ya kikundi imebadilishwa kutoka PENDING_APPROVAL hadi ACTIVE.",
+    "details": {
+      "previousStatus": "PENDING_APPROVAL",
+      "newStatus": "ACTIVE",
+      "isPlatformAdmin": true
+    }
+  },
+  {
+    "auditId": "gaudit_1791555186597_rey9flt",
+    "actorUserId": "user_founder_001",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791555186596_pnieym",
+    "groupId": "grp_1791555186596_pnieym",
+    "timestamp": "2026-10-09T14:13:06.597Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_founder_001",
+      "groupName": "Wafugaji wa Kuku Tanzania 1791555186595",
+      "status": "PENDING_APPROVAL"
+    }
+  }
+]

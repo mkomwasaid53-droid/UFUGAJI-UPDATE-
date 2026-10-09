@@ -259,5 +259,108 @@
     "createdBy": "user_leader_002",
     "updatedBy": "user_leader_002",
     "isPinned": false
+  },
+  {
+    "postId": "pst_1791551864534_u832ku",
+    "groupId": "grp_1791482693274_h196bd",
+    "authorUserId": "xNB9tiSJDJMO5UBb4Do9CN8aCTJ3",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Unazifahamu aina za kuku wa mayai?",
+    "media": [
+      {
+        "id": "gpost_1791551864220_znc3yf",
+        "type": "video",
+        "url": "/uploads/gumzo_posts/grp_1791482693274_h196bd/gpost_1791551864220_znc3yf.mp4",
+        "storagePath": "gumzo/posts/grp_1791482693274_h196bd/gpost_1791551864220_znc3yf.mp4",
+        "sizeBytes": 3792746
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T13:17:44.534Z",
+    "updatedAt": "2026-10-09T13:17:44.534Z",
+    "publishedAt": "2026-10-09T13:17:44.534Z",
+    "createdBy": "xNB9tiSJDJMO5UBb4Do9CN8aCTJ3",
+    "updatedBy": "xNB9tiSJDJMO5UBb4Do9CN8aCTJ3",
+    "isPinned": false,
+    "commentCount": 2
+  },
+  {
+    "postId": "pst_1791551933273_jiton7",
+    "groupId": "grp_1791482693274_h196bd",
+    "authorUserId": "xNB9tiSJDJMO5UBb4Do9CN8aCTJ3",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Huu ndo ugonjwa wa sokota",
+    "media": [
+      {
+        "id": "gpost_1791551932970_uwzgo3",
+        "type": "image",
+        "url": "/uploads/gumzo_posts/grp_1791482693274_h196bd/gpost_1791551932970_uwzgo3.jpg",
+        "storagePath": "gumzo/posts/grp_1791482693274_h196bd/gpost_1791551932970_uwzgo3.jpg",
+        "caption": "Ugonjwa wa sokota ni hatar sana",
+        "sizeBytes": 37769
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T13:18:53.273Z",
+    "updatedAt": "2026-10-09T13:18:53.273Z",
+    "publishedAt": "2026-10-09T13:18:53.273Z",
+    "createdBy": "xNB9tiSJDJMO5UBb4Do9CN8aCTJ3",
+    "updatedBy": "xNB9tiSJDJMO5UBb4Do9CN8aCTJ3",
+    "isPinned": false
+  },
+  {
+    "postId": "pst_1791555186598_ng735f",
+    "groupId": "grp_1791555186596_pnieym",
+    "authorUserId": "user_founder_001",
+    "authorRole": "FOUNDER_ADMIN",
+    "content": "Mbinu za kulinda vifaranga dhidi ya baridi na magonjwa ya kuku.",
+    "media": [
+      {
+        "id": "post_med_001",
+        "type": "image",
+        "url": "/uploads/gumzo_posts/grp_1791555186596_pnieym/post_med_001.jpg",
+        "storagePath": "gumzo/posts/grp_1791555186596_pnieym/post_med_001.jpg",
+        "caption": "Banda safi lenye joto sahihi",
+        "sizeBytes": 320000,
+        "mimeType": "image/jpeg"
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T14:13:06.598Z",
+    "updatedAt": "2026-10-09T14:13:06.598Z",
+    "publishedAt": "2026-10-09T14:13:06.598Z",
+    "createdBy": "user_founder_001",
+    "updatedBy": "user_founder_001",
+    "isPinned": false,
+    "commentCount": 3
+  },
+  {
+    "postId": "pst_1791555186602_h6npm4",
+    "groupId": "grp_1791555186596_pnieym",
+    "authorUserId": "user_leader_002",
+    "authorRole": "LEADERSHIP_ADMIN",
+    "content": "Tazama video fupi kuhusu chanjo ya Gumboro:",
+    "media": [
+      {
+        "id": "post_med_002",
+        "type": "video",
+        "url": "/uploads/gumzo_posts/grp_1791555186596_pnieym/post_med_002.mp4",
+        "storagePath": "gumzo/posts/grp_1791555186596_pnieym/post_med_002.mp4",
+        "caption": "Zoezi la chanjo shambani",
+        "sizeBytes": 8500000,
+        "mimeType": "video/mp4"
+      }
+    ],
+    "status": "PUBLISHED",
+    "visibility": "VISIBLE",
+    "createdAt": "2026-10-09T14:13:06.602Z",
+    "updatedAt": "2026-10-09T14:13:06.602Z",
+    "publishedAt": "2026-10-09T14:13:06.602Z",
+    "createdBy": "user_leader_002",
+    "updatedBy": "user_leader_002",
+    "isPinned": false
   }
 ]
