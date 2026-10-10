@@ -6601,6 +6601,10 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
       const authInfo = extractUserAuthFromRequest(req);
       const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
       const category = req.query.category as string | undefined;
+      const livestockType = req.query.livestockType as string | undefined;
+      const search = req.query.search as string | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+      const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : undefined;
       const userOnly = req.query.userOnly === 'true';
 
       if (userOnly) {
@@ -6612,7 +6616,14 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
         return res.json({ groups: userGroups, memberships: userMemberships, total: userGroups.length });
       }
 
-      const groups = gumzoGroupService.getDiscoverableGroups(callerUserId, category);
+      const groups = gumzoGroupService.getDiscoverableGroups({
+        callerUserId,
+        categoryFilter: category,
+        livestockTypeFilter: livestockType,
+        searchQuery: search,
+        limit,
+        offset
+      });
       return res.json({ groups, total: groups.length });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
@@ -6733,37 +6744,95 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     }
   });
 
-  // 4. Join group
+  // 4. Join group (Authoritative V9.6)
   app.post('/api/gumzo/groups/:groupId/join', async (req, res) => {
     try {
       const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
       if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo (401 Unauthorized).' });
+      }
+
+      // Anti-spoofing: prevent client from forging another user's join
+      if (req.body.userId && req.body.userId !== callerUserId && !authInfo?.isAdmin) {
+        return res.status(403).json({ error: 'Huruhusiwi kuwasilisha ombi la kujiunga kwa niaba ya mtumiaji mwingine.' });
       }
 
       const membership = gumzoGroupService.joinGroup(req.params.groupId, callerUserId);
       const group = gumzoGroupService.getGroupById(req.params.groupId, callerUserId);
       return res.json({ membership, group });
     } catch (err: any) {
-      return res.status(400).json({ error: err.message });
+      const status = err.message?.includes('Hujaingia') ? 401 : 400;
+      return res.status(status).json({ error: err.message });
     }
   });
 
-  // 5. Leave group
+  // 5. Leave group (Authoritative V9.6)
   app.post('/api/gumzo/groups/:groupId/leave', async (req, res) => {
     try {
       const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
       if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo (401 Unauthorized).' });
+      }
+
+      // Anti-spoofing: member can strictly only leave their own membership
+      if (req.body.userId && req.body.userId !== callerUserId && !authInfo?.isAdmin) {
+        return res.status(403).json({ error: 'Huruhusiwi kumwondoa mwanachama mwingine kupitia njia hii ya kujiondoa.' });
       }
 
       const membership = gumzoGroupService.leaveGroup(req.params.groupId, callerUserId);
       const group = gumzoGroupService.getGroupById(req.params.groupId, callerUserId);
       return res.json({ membership, group });
     } catch (err: any) {
-      return res.status(400).json({ error: err.message });
+      const status = err.message?.includes('Hujaingia') ? 401 : 400;
+      return res.status(status).json({ error: err.message });
+    }
+  });
+
+  // 5b. Update member status (Approve, Suspend, Remove, Reinstate - V9.6)
+  app.post('/api/gumzo/groups/:groupId/members/:targetUserId/status', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo (401 Unauthorized).' });
+      }
+
+      const { newStatus, reason } = req.body;
+      if (!newStatus) {
+        return res.status(400).json({ error: 'Tafadhali taja hali mpya ya uanachama (newStatus).' });
+      }
+
+      const membership = gumzoGroupService.updateMembershipStatus(
+        req.params.groupId,
+        req.params.targetUserId,
+        newStatus,
+        callerUserId,
+        reason,
+        isAdmin
+      );
+      const group = gumzoGroupService.getGroupById(req.params.groupId, callerUserId, isAdmin);
+      return res.json({ membership, group });
+    } catch (err: any) {
+      const status = err.message?.includes('403') || err.message?.includes('Huna mamlaka') ? 403 : 400;
+      return res.status(status).json({ error: err.message });
+    }
+  });
+
+  // 5c. Get group members list (Protected for private groups - V9.6)
+  app.get('/api/gumzo/groups/:groupId/members', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+
+      const members = gumzoGroupService.getGroupMembers(req.params.groupId, callerUserId, isAdmin);
+      return res.json({ members, total: members.length });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
     }
   });
 

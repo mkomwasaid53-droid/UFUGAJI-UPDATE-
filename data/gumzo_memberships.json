@@ -184,5 +184,140 @@
     "status": "ACTIVE",
     "joinedAt": "2026-10-09T14:13:06.602Z",
     "updatedAt": "2026-10-09T14:13:06.602Z"
+  },
+  {
+    "membershipId": "grp_1791630838113_7d7bku_user_alice_notif_001",
+    "groupId": "grp_1791630838113_7d7bku",
+    "userId": "user_alice_notif_001",
+    "role": "FOUNDER_ADMIN",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T11:13:58.113Z",
+    "updatedAt": "2026-10-10T11:13:58.113Z"
+  },
+  {
+    "membershipId": "grp_1791630931829_27vuin_user_alice_notif_001",
+    "groupId": "grp_1791630931829_27vuin",
+    "userId": "user_alice_notif_001",
+    "role": "FOUNDER_ADMIN",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T11:15:31.829Z",
+    "updatedAt": "2026-10-10T11:15:31.829Z"
+  },
+  {
+    "membershipId": "grp_1791630931829_27vuin_user_bob_notif_002",
+    "groupId": "grp_1791630931829_27vuin",
+    "userId": "user_bob_notif_002",
+    "role": "MEMBER",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T11:15:31.831Z",
+    "updatedAt": "2026-10-10T11:15:31.831Z"
+  },
+  {
+    "membershipId": "grp_1791630990629_iob5qj_user_alice_notif_001",
+    "groupId": "grp_1791630990629_iob5qj",
+    "userId": "user_alice_notif_001",
+    "role": "FOUNDER_ADMIN",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T11:16:30.629Z",
+    "updatedAt": "2026-10-10T11:16:30.629Z"
+  },
+  {
+    "membershipId": "grp_1791630990629_iob5qj_user_bob_notif_002",
+    "groupId": "grp_1791630990629_iob5qj",
+    "userId": "user_bob_notif_002",
+    "role": "MEMBER",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T11:16:30.630Z",
+    "updatedAt": "2026-10-10T11:16:30.630Z"
+  },
+  {
+    "membershipId": "grp_1791631029247_fk4taw_user_alice_notif_001",
+    "groupId": "grp_1791631029247_fk4taw",
+    "userId": "user_alice_notif_001",
+    "role": "FOUNDER_ADMIN",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T11:17:09.247Z",
+    "updatedAt": "2026-10-10T11:17:09.247Z"
+  },
+  {
+    "membershipId": "grp_1791631029247_fk4taw_user_bob_notif_002",
+    "groupId": "grp_1791631029247_fk4taw",
+    "userId": "user_bob_notif_002",
+    "role": "MEMBER",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T11:17:09.249Z",
+    "updatedAt": "2026-10-10T11:17:09.249Z"
+  },
+  {
+    "membershipId": "grp_1791631079917_1zbwql_user_alice_notif_001",
+    "groupId": "grp_1791631079917_1zbwql",
+    "userId": "user_alice_notif_001",
+    "role": "FOUNDER_ADMIN",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T11:17:59.917Z",
+    "updatedAt": "2026-10-10T11:17:59.917Z"
+  },
+  {
+    "membershipId": "grp_1791631079917_1zbwql_user_bob_notif_002",
+    "groupId": "grp_1791631079917_1zbwql",
+    "userId": "user_bob_notif_002",
+    "role": "MEMBER",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T11:17:59.919Z",
+    "updatedAt": "2026-10-10T11:17:59.919Z"
+  },
+  {
+    "membershipId": "grp_1791631121474_9raych_user_alice_notif_001",
+    "groupId": "grp_1791631121474_9raych",
+    "userId": "user_alice_notif_001",
+    "role": "FOUNDER_ADMIN",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T11:18:41.474Z",
+    "updatedAt": "2026-10-10T11:18:41.474Z"
+  },
+  {
+    "membershipId": "grp_1791631121474_9raych_user_bob_notif_002",
+    "groupId": "grp_1791631121474_9raych",
+    "userId": "user_bob_notif_002",
+    "role": "MEMBER",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T11:18:41.476Z",
+    "updatedAt": "2026-10-10T11:18:41.476Z"
+  },
+  {
+    "membershipId": "grp_1791637693022_qitjuk_user_alice_notif_001",
+    "groupId": "grp_1791637693022_qitjuk",
+    "userId": "user_alice_notif_001",
+    "role": "FOUNDER_ADMIN",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T13:08:13.022Z",
+    "updatedAt": "2026-10-10T13:08:13.022Z"
+  },
+  {
+    "membershipId": "grp_1791637693022_qitjuk_user_bob_notif_002",
+    "groupId": "grp_1791637693022_qitjuk",
+    "userId": "user_bob_notif_002",
+    "role": "MEMBER",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T13:08:13.023Z",
+    "updatedAt": "2026-10-10T13:08:13.023Z"
+  },
+  {
+    "membershipId": "grp_1791638296119_y8rr9b_user_alice_notif_001",
+    "groupId": "grp_1791638296119_y8rr9b",
+    "userId": "user_alice_notif_001",
+    "role": "FOUNDER_ADMIN",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T13:18:16.119Z",
+    "updatedAt": "2026-10-10T13:18:16.119Z"
+  },
+  {
+    "membershipId": "grp_1791638296119_y8rr9b_user_bob_notif_002",
+    "groupId": "grp_1791638296119_y8rr9b",
+    "userId": "user_bob_notif_002",
+    "role": "MEMBER",
+    "status": "ACTIVE",
+    "joinedAt": "2026-10-10T13:18:16.120Z",
+    "updatedAt": "2026-10-10T13:18:16.120Z"
   }
 ]

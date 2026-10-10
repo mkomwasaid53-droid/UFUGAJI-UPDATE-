@@ -1,49 +1,49 @@
 [
   {
-    "membershipId": "grp_1791555324159_d6du0x_user_founder_alpha",
-    "groupId": "grp_1791555324159_d6du0x",
+    "membershipId": "grp_1791638288448_239qup_user_founder_alpha",
+    "groupId": "grp_1791638288448_239qup",
     "userId": "user_founder_alpha",
     "role": "MEMBER",
     "status": "ACTIVE",
-    "joinedAt": "2026-10-09T14:15:24.159Z",
-    "updatedAt": "2026-10-09T14:15:24.200Z"
+    "joinedAt": "2026-10-10T13:18:08.448Z",
+    "updatedAt": "2026-10-10T13:18:08.466Z"
   },
   {
-    "membershipId": "grp_1791555324165_c2cntd_user_founder_bravo",
-    "groupId": "grp_1791555324165_c2cntd",
+    "membershipId": "grp_1791638288452_ufsqeh_user_founder_bravo",
+    "groupId": "grp_1791638288452_ufsqeh",
     "userId": "user_founder_bravo",
     "role": "FOUNDER_ADMIN",
     "status": "ACTIVE",
-    "joinedAt": "2026-10-09T14:15:24.165Z",
-    "updatedAt": "2026-10-09T14:15:24.165Z"
+    "joinedAt": "2026-10-10T13:18:08.452Z",
+    "updatedAt": "2026-10-10T13:18:08.452Z"
   },
   {
-    "membershipId": "grp_1791555324159_d6du0x_user_leadership_charlie",
-    "groupId": "grp_1791555324159_d6du0x",
+    "membershipId": "grp_1791638288448_239qup_user_leadership_charlie",
+    "groupId": "grp_1791638288448_239qup",
     "userId": "user_leadership_charlie",
     "role": "LEADERSHIP_ADMIN",
     "status": "ACTIVE",
-    "joinedAt": "2026-10-09T14:15:24.171Z",
-    "updatedAt": "2026-10-09T14:15:24.171Z",
+    "joinedAt": "2026-10-10T13:18:08.453Z",
+    "updatedAt": "2026-10-10T13:18:08.453Z",
     "approvedBy": "user_platform_admin"
   },
   {
-    "membershipId": "grp_1791555324159_d6du0x_user_member_alice",
-    "groupId": "grp_1791555324159_d6du0x",
+    "membershipId": "grp_1791638288448_239qup_user_member_alice",
+    "groupId": "grp_1791638288448_239qup",
     "userId": "user_member_alice",
     "role": "MEMBER",
     "status": "ACTIVE",
-    "joinedAt": "2026-10-09T14:15:24.188Z",
-    "updatedAt": "2026-10-09T14:15:24.188Z"
+    "joinedAt": "2026-10-10T13:18:08.455Z",
+    "updatedAt": "2026-10-10T13:18:08.455Z"
   },
   {
-    "membershipId": "grp_1791555324159_d6du0x_user_future_founder",
-    "groupId": "grp_1791555324159_d6du0x",
+    "membershipId": "grp_1791638288448_239qup_user_future_founder",
+    "groupId": "grp_1791638288448_239qup",
     "userId": "user_future_founder",
     "role": "FOUNDER_ADMIN",
     "status": "ACTIVE",
-    "joinedAt": "2026-10-09T14:15:24.200Z",
-    "updatedAt": "2026-10-09T14:15:24.200Z",
+    "joinedAt": "2026-10-10T13:18:08.466Z",
+    "updatedAt": "2026-10-10T13:18:08.466Z",
     "approvedBy": "user_leadership_charlie"
   }
 ]

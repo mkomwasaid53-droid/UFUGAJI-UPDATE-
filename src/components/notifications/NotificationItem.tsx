@@ -1,7 +1,7 @@
 /**
- * Ufugaji Platform - Notification Item Component (V1.7H)
- * Displays structured notification with priority indicators, target navigation,
- * and read/unread status.
+ * Ufugaji Platform - Notification Item Component (V9.5)
+ * Displays structured notifications with module indicators, read/unread status,
+ * target navigation, single delete action, and bulk selection support.
  */
 
 import React from 'react';
@@ -18,23 +18,43 @@ import {
   Ban,
   ShieldCheck,
   AlertCircle,
-  MessageSquare
+  MessageSquare,
+  Users,
+  ShoppingBag,
+  Trash2
 } from 'lucide-react';
-import { AppNotification } from '../../types/notification';
+import { AppNotification, getNotificationModule } from '../../types/notification';
 
 interface NotificationItemProps {
   notification: AppNotification;
   onMarkAsRead: (notificationId: string) => void;
   onNavigate?: (actionUrl: string) => void;
+  onDelete?: (notificationId: string) => void;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (notificationId: string) => void;
 }
 
 export const NotificationItem: React.FC<NotificationItemProps> = ({
   notification,
   onMarkAsRead,
-  onNavigate
+  onNavigate,
+  onDelete,
+  isSelectionMode = false,
+  isSelected = false,
+  onToggleSelect
 }) => {
+  const moduleName = getNotificationModule(notification);
+
   const getIcon = () => {
     switch (notification.type) {
+      case 'GUMZO_COMMENT_RECEIVED':
+      case 'GUMZO_POST_CREATED':
+      case 'GUMZO_MEMBERSHIP_APPROVED':
+      case 'GUMZO_MEMBERSHIP_REQUEST':
+      case 'GUMZO_GROUP_STATUS_UPDATED':
+      case 'GUMZO_FOUNDER_TRANSFERRED':
+        return <Users className="w-4 h-4 text-blue-600 shrink-0" />;
       case 'SELLER_RESTRICTION_APPLIED':
       case 'LISTING_SUSPENDED':
       case 'SELLER_MONETIZATION_SUSPENDED':
@@ -86,35 +106,44 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
       case 'MARKETPLACE_PAYMENT_EXPIRED':
         return <Clock className="w-4 h-4 text-stone-400 shrink-0" />;
       default:
-        return <Info className="w-4 h-4 text-stone-500 shrink-0" />;
+        return moduleName === 'MARKETPLACE' ? (
+          <ShoppingBag className="w-4 h-4 text-emerald-600 shrink-0" />
+        ) : (
+          <Info className="w-4 h-4 text-stone-500 shrink-0" />
+        );
     }
   };
 
-  const getCategoryBadge = () => {
-    switch (notification.category) {
-      case 'ADMIN':
-      case 'GOVERNANCE':
-        return (
-          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 rounded">
-            Utawala
-          </span>
-        );
-      case 'SELLER':
-        return (
-          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 rounded">
-            Muuzaji
-          </span>
-        );
-      case 'USER':
+  const getModuleBadge = () => {
+    switch (moduleName) {
+      case 'GUMZO':
         return (
           <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded">
-            Mtumiaji
+            Gumzo
           </span>
         );
       case 'MARKETPLACE':
         return (
           <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
-            Soko
+            Gulio
+          </span>
+        );
+      case 'ADMIN':
+        return (
+          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 rounded">
+            Utawala
+          </span>
+        );
+      case 'DAKTARI':
+        return (
+          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-teal-50 text-teal-700 border border-teal-200 rounded">
+            Daktari
+          </span>
+        );
+      case 'MY_ASSISTANT':
+        return (
+          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+            Msaidizi
           </span>
         );
       case 'SYSTEM':
@@ -147,20 +176,38 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
       className={`p-3.5 rounded-xl border transition-all ${
         notification.read
           ? 'bg-white border-stone-200/80 text-stone-700'
-          : 'bg-emerald-50/40 border-emerald-200/80 text-stone-900 shadow-xs'
-      }`}
+          : 'bg-emerald-50/50 border-emerald-300/80 text-stone-900 shadow-xs'
+      } ${isSelected ? 'ring-2 ring-emerald-500 bg-emerald-50/80' : ''}`}
     >
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 p-2 rounded-lg bg-stone-100 border border-stone-200/60">
+        {/* Bulk Selection Checkbox */}
+        {isSelectionMode && (
+          <div className="pt-1">
+            <input
+              type="checkbox"
+              id={`select-notif-${notification.notificationId}`}
+              checked={isSelected}
+              onChange={() => onToggleSelect && onToggleSelect(notification.notificationId)}
+              aria-label={`Chagua arifa: ${notification.title}`}
+              className="w-4 h-4 rounded text-emerald-700 focus:ring-emerald-500 border-stone-300 cursor-pointer"
+            />
+          </div>
+        )}
+
+        <div className="mt-0.5 p-2 rounded-lg bg-stone-100 border border-stone-200/60 shrink-0">
           {getIcon()}
         </div>
 
         <div className="flex-1 min-w-0 space-y-1.5">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-1.5 flex-wrap">
-              {getCategoryBadge()}
+              {getModuleBadge()}
               {!notification.read && (
-                <span className="inline-block w-2 h-2 rounded-full bg-emerald-600 shrink-0" title="Haijasomwa" />
+                <span
+                  id={`unread-dot-${notification.notificationId}`}
+                  className="inline-block w-2 h-2 rounded-full bg-emerald-600 shrink-0"
+                  title="Haijasomwa"
+                />
               )}
               {notification.priority === 'URGENT' && (
                 <span className="px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 rounded">
@@ -169,9 +216,28 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-1 text-[11px] text-stone-400">
-              <Clock className="w-3 h-3" />
-              <span>{formatTime(notification.createdAt)}</span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 text-[11px] text-stone-400">
+                <Clock className="w-3 h-3" />
+                <span>{formatTime(notification.createdAt)}</span>
+              </div>
+
+              {/* Single item delete action */}
+              {onDelete && (
+                <button
+                  id={`btn-delete-${notification.notificationId}`}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(notification.notificationId);
+                  }}
+                  className="p-1 rounded text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                  title="Futa arifa hii"
+                  aria-label={`Futa arifa: ${notification.title}`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -188,7 +254,14 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
               <button
                 id={`btn-action-${notification.notificationId}`}
                 type="button"
-                onClick={() => onNavigate && onNavigate(notification.actionUrl!)}
+                onClick={() => {
+                  if (!notification.read) {
+                    onMarkAsRead(notification.notificationId);
+                  }
+                  if (onNavigate) {
+                    onNavigate(notification.actionUrl!);
+                  }
+                }}
                 className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-800 bg-emerald-100/80 hover:bg-emerald-200/80 rounded-md transition-colors cursor-pointer"
               >
                 <span>Fungua / Hatua</span>

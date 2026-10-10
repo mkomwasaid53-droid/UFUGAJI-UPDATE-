@@ -32,6 +32,7 @@ import {
 import { gumzoGroupService } from './gumzoGroupService';
 import { gumzoPostService } from './gumzoPostService';
 import { gumzoAuditService } from './gumzoAuditService';
+import { dispatchGumzoCommentNotification } from './notificationService';
 
 const isNode = typeof window === 'undefined';
 
@@ -82,8 +83,11 @@ export function initGumzoCommentsStorage(fsModule?: any, pathModule?: any, custo
   const baseDir = customDir || (diskPath ? diskPath.join(process.cwd(), 'data') : 'data');
   COMMENTS_FILE = diskPath ? diskPath.join(baseDir, 'gumzo_comments.json') : `${baseDir}/gumzo_comments.json`;
 
-  loadFromDisk();
+  hasLoadedFromDisk = false;
+  loadFromDisk(true);
 }
+
+let hasLoadedFromDisk = false;
 
 // Auto-initialize if running in Node.js
 if (isNode) {
@@ -100,8 +104,10 @@ if (isNode) {
   } catch {}
 }
 
-function loadFromDisk(): void {
+function loadFromDisk(force = false): void {
   if (!diskFs || !diskFs.existsSync) return;
+  if (hasLoadedFromDisk && !force) return;
+  hasLoadedFromDisk = true;
   try {
     const dataDir = diskPath ? diskPath.resolve(process.cwd(), 'data') : 'data';
     if (!diskFs.existsSync(dataDir)) {
@@ -344,8 +350,23 @@ export class GumzoCommentService {
     const activeCount = this.getActiveCommentCount(postId);
     gumzoPostService.updatePostCommentCount(postId, activeCount);
 
-    // 9. Emit event hook
+    // 9. Emit event hook and dispatch notification
     emitCommentEvent('GUMZO_COMMENT_CREATED', newComment, authenticatedUserId);
+    try {
+      const parentPost = gumzoPostService.getRawPost(postId);
+      if (parentPost && parentPost.authorUserId && parentPost.authorUserId !== authenticatedUserId) {
+        dispatchGumzoCommentNotification({
+          postAuthorUserId: parentPost.authorUserId,
+          commentAuthorUserId: authenticatedUserId,
+          commentAuthorName: authorDisplayName || undefined,
+          groupId,
+          groupName: 'Kikundi cha Gumzo',
+          postId,
+          commentId,
+          commentTextPreview: trimmedContent
+        }).catch(() => {});
+      }
+    } catch {}
 
     return newComment;
   }

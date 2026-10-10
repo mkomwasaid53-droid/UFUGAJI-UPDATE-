@@ -266,6 +266,15 @@ export interface CreateGumzoGroupInput {
   visibility: GumzoGroupVisibility;
 }
 
+export interface DiscoverableGroupsOptions {
+  callerUserId?: string;
+  categoryFilter?: string;
+  livestockTypeFilter?: string;
+  searchQuery?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export interface GumzoGroupAccessDecision {
   canAccess: boolean;
   canViewContent: boolean;
@@ -393,16 +402,25 @@ export function canAccessGumzoGroup(
         canViewContent: false,
         canJoin: false,
         membership,
-        reason: 'Ombi lako la kujiunga linasubiri idhini.',
+        reason: 'Ombi lako la kujiunga linasubiri idhini ya uongozi.',
       };
     }
-    if (membership.status === 'REMOVED' || membership.status === 'LEFT') {
+    if (membership.status === 'REMOVED') {
+      return {
+        canAccess: false,
+        canViewContent: false,
+        canJoin: false,
+        membership,
+        reason: 'Umeondolewa kwenye kikundi hiki na huwezi kujiunga tena bila idhini ya uongozi.',
+      };
+    }
+    if (membership.status === 'LEFT') {
       return {
         canAccess: group.visibility === 'PUBLIC',
         canViewContent: false,
         canJoin: group.visibility === 'PUBLIC',
         membership,
-        reason: 'Ulijiondoa au kuondolewa kwenye kikundi hiki.',
+        reason: 'Ulijiondoa kwenye kikundi hiki.',
       };
     }
   }

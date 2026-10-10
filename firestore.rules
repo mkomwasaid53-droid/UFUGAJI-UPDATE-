@@ -427,7 +427,8 @@ service cloud.firestore {
     // Platform User Notifications (V1.7H Notification Center Foundation)
     // Cross-user isolation: Regular users can only read their own notifications.
     // Admins can read their own and ADMIN_GROUP broadcast governance notifications.
-    // Normal users may ONLY update 'read' and 'readAt'.
+    // Normal users may update 'read', 'readAt', 'deleted', and 'deletedAt'.
+    // V9.5: Recipients or administrators can delete or soft-delete userNotifications.
     match /userNotifications/{notificationId} {
       allow get: if isAuthenticated() && (
         resource.data.recipientUserId == request.auth.uid ||
@@ -444,13 +445,17 @@ service cloud.firestore {
         request.resource.data.recipientUserId == request.auth.uid ||
         isAdmin()
       );
-      // Non-admin recipients can ONLY mark as read
+      // Recipients can update read, readAt, deleted, deletedAt
       allow update: if isAuthenticated() && (
         (resource.data.recipientUserId == request.auth.uid &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt', 'deleted', 'deletedAt'])) ||
         isAdmin()
       );
-      allow delete: if isAdmin();
+      // Recipients or admins can delete notification documents
+      allow delete: if isAuthenticated() && (
+        resource.data.recipientUserId == request.auth.uid ||
+        isAdmin()
+      );
     }
 
     // AI Usage Events (V1.8A AI Usage, Cost & Answer Cache Foundation - Immutable Server-Authoritative Audit Logs)

@@ -3,7 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Sprout, Shield, LogOut, Menu, Bell, SlidersHorizontal, ShieldCheck } from 'lucide-react';
 import { NotificationCenterModal } from './notifications/NotificationCenterModal';
-import { subscribeToUserNotifications, calculateUnreadCount } from '../services/notificationService';
+import {
+  subscribeToUserNotifications,
+  calculateUnreadCount,
+  clearUserNotificationsOnLogout
+} from '../services/notificationService';
 
 export const Header: React.FC = () => {
   const { currentUser, userProfile, role, isAdmin, logout } = useAuth();
@@ -38,6 +42,9 @@ export const Header: React.FC = () => {
 
   const handleLogout = async () => {
     try {
+      if (currentUser?.uid) {
+        clearUserNotificationsOnLogout(currentUser.uid);
+      }
       await logout();
       navigate('/login');
     } catch (err) {

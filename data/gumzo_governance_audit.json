@@ -1,5 +1,133 @@
 [
   {
+    "auditId": "gaudit_1791638296120_00uc9uh",
+    "actorUserId": "user_alice_notif_001",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791638296119_y8rr9b",
+    "groupId": "grp_1791638296119_y8rr9b",
+    "timestamp": "2026-10-10T13:18:16.120Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_alice_notif_001",
+      "groupName": "Kikundi cha Ufugaji Kuku Nyanda za Juu 1791638296118_rxjc",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791637693023_brssc58",
+    "actorUserId": "user_alice_notif_001",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791637693022_qitjuk",
+    "groupId": "grp_1791637693022_qitjuk",
+    "timestamp": "2026-10-10T13:08:13.023Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_alice_notif_001",
+      "groupName": "Kikundi cha Ufugaji Kuku Nyanda za Juu 1791637693021_ne6b",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791631121475_z95epub",
+    "actorUserId": "user_alice_notif_001",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791631121474_9raych",
+    "groupId": "grp_1791631121474_9raych",
+    "timestamp": "2026-10-10T11:18:41.475Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_alice_notif_001",
+      "groupName": "Kikundi cha Ufugaji Kuku Nyanda za Juu 1791631121474_fb1z",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791631079918_jmam84b",
+    "actorUserId": "user_alice_notif_001",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791631079917_1zbwql",
+    "groupId": "grp_1791631079917_1zbwql",
+    "timestamp": "2026-10-10T11:17:59.918Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_alice_notif_001",
+      "groupName": "Kikundi cha Ufugaji Kuku Nyanda za Juu 1791631079917_lc3g",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791631029248_fdd5w9u",
+    "actorUserId": "user_alice_notif_001",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791631029247_fk4taw",
+    "groupId": "grp_1791631029247_fk4taw",
+    "timestamp": "2026-10-10T11:17:09.248Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_alice_notif_001",
+      "groupName": "Kikundi cha Ufugaji Kuku Nyanda za Juu 1791631029246_4u99",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791630990629_ujqvk98",
+    "actorUserId": "user_alice_notif_001",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791630990629_iob5qj",
+    "groupId": "grp_1791630990629_iob5qj",
+    "timestamp": "2026-10-10T11:16:30.629Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_alice_notif_001",
+      "groupName": "Kikundi cha Ufugaji Kuku Nyanda za Juu 1791630990628_gh23",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791630931830_5p6ncsl",
+    "actorUserId": "user_alice_notif_001",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791630931829_27vuin",
+    "groupId": "grp_1791630931829_27vuin",
+    "timestamp": "2026-10-10T11:15:31.830Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_alice_notif_001",
+      "groupName": "Kikundi cha Ufugaji Kuku Nyanda za Juu 1791630931828_02v0",
+      "status": "ACTIVE"
+    }
+  },
+  {
+    "auditId": "gaudit_1791630838115_8tutyp1",
+    "actorUserId": "user_alice_notif_001",
+    "action": "FOUNDER_ADMIN_ASSIGNED",
+    "targetType": "GROUP",
+    "targetResourceId": "grp_1791630838113_7d7bku",
+    "groupId": "grp_1791630838113_7d7bku",
+    "timestamp": "2026-10-10T11:13:58.115Z",
+    "outcome": "SUCCESS",
+    "reason": "Mwanzilishi ameteuliwa rasmi wakati wa kuunda kikundi.",
+    "details": {
+      "founderAdminUserId": "user_alice_notif_001",
+      "groupName": "Kikundi cha Ufugaji Kuku Nyanda za Juu",
+      "status": "ACTIVE"
+    }
+  },
+  {
     "auditId": "gaudit_1791555186616_p3qa4ra",
     "actorUserId": "user_member_003",
     "action": "ADMIN_COMMENT_DELETED",

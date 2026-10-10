@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -18,11 +18,35 @@ import {
   AlertTriangle,
   PhoneCall
 } from 'lucide-react';
+import { subscribeToModuleUnreadCounts } from '../services/notificationService';
+import { ModuleBadge } from '../components/notifications/ModuleBadge';
+import { ModuleUnreadCounts } from '../types/notification';
 
 export const Home: React.FC = () => {
-  const { currentUser, userProfile, role } = useAuth();
+  const { currentUser, userProfile, role, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [searchQuestion, setSearchQuestion] = useState('');
+  const [moduleCounts, setModuleCounts] = useState<ModuleUnreadCounts>({
+    marketplace: 0,
+    gumzo: 0,
+    total: 0,
+    byModule: {
+      MARKETPLACE: 0,
+      GUMZO: 0,
+      ADMIN: 0,
+      SYSTEM: 0,
+      DAKTARI: 0,
+      MY_ASSISTANT: 0
+    }
+  });
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const unsub = subscribeToModuleUnreadCounts(currentUser.uid, isAdmin, (counts) => {
+      setModuleCounts(counts);
+    });
+    return () => unsub();
+  }, [currentUser?.uid, isAdmin]);
 
   const userName = userProfile?.displayName || userProfile?.name || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Mfugaji';
 
@@ -177,10 +201,11 @@ export const Home: React.FC = () => {
           <button
             id="home-quick-market"
             onClick={() => navigate('/market')}
-            className="p-4 bg-white hover:bg-emerald-50/40 border border-stone-200 rounded-2xl text-left space-y-2 shadow-xs transition-all group cursor-pointer"
+            className="p-4 bg-white hover:bg-emerald-50/40 border border-stone-200 rounded-2xl text-left space-y-2 shadow-xs transition-all group cursor-pointer relative"
           >
-            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center group-hover:scale-105 transition-transform relative">
               <ShoppingBag className="w-5 h-5" />
+              <ModuleBadge count={moduleCounts.marketplace} moduleName="Gulio" id="home-market-badge" />
             </div>
             <div>
               <h4 className="text-sm font-bold text-stone-900 group-hover:text-emerald-800 transition-colors">
@@ -220,10 +245,11 @@ export const Home: React.FC = () => {
           <button
             id="home-quick-community"
             onClick={() => navigate('/community')}
-            className="p-4 bg-white hover:bg-emerald-50/40 border border-stone-200 rounded-2xl text-left space-y-2 shadow-xs transition-all group cursor-pointer"
+            className="p-4 bg-white hover:bg-emerald-50/40 border border-stone-200 rounded-2xl text-left space-y-2 shadow-xs transition-all group cursor-pointer relative"
           >
-            <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center group-hover:scale-105 transition-transform relative">
               <Users className="w-5 h-5" />
+              <ModuleBadge count={moduleCounts.gumzo} moduleName="Gumzo" id="home-community-badge" />
             </div>
             <div>
               <h4 className="text-sm font-bold text-stone-900 group-hover:text-emerald-800 transition-colors">

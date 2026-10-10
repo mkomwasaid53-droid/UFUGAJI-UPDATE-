@@ -21,99 +21,120 @@ export const GumzoGroupCard: React.FC<GumzoGroupCardProps> = ({
   return (
     <div
       onClick={() => onSelectGroup(group)}
-      className="bg-white rounded-2xl border border-stone-200/90 hover:border-emerald-500/70 p-4 sm:p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group space-y-3.5 relative overflow-hidden"
+      className="bg-white rounded-2xl border border-stone-200/90 hover:border-emerald-600/70 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group overflow-hidden"
     >
-      {/* Top badges bar */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 inline-flex items-center gap-1">
-          {categoryDef?.nameSwahili || group.categoryId}
-        </span>
-
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Visibility badge */}
-          {group.visibility === 'PUBLIC' ? (
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 inline-flex items-center gap-1">
-              <Globe className="w-2.5 h-2.5 text-stone-500" />
-              Umma (Public)
-            </span>
-          ) : (
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center gap-1">
-              <Lock className="w-2.5 h-2.5 text-amber-600" />
-              Faragha (Private)
-            </span>
-          )}
-
-          {/* Status badge if not ACTIVE */}
-          {group.status === 'PENDING_APPROVAL' && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 inline-flex items-center gap-1">
-              <Clock className="w-2.5 h-2.5 text-blue-600" />
-              Inasubiri Idhini
-            </span>
-          )}
-          {group.status === 'SUSPENDED' && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 inline-flex items-center gap-1">
-              <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
-              Imesimamishwa
-            </span>
-          )}
-          {group.status === 'ARCHIVED' && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 border border-stone-200 inline-flex items-center gap-1">
-              <Archive className="w-2.5 h-2.5 text-stone-500" />
-              Kumbukumbu
-            </span>
-          )}
-          {group.status === 'REJECTED' && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 border border-stone-200 inline-flex items-center gap-1">
-              <XCircle className="w-2.5 h-2.5 text-stone-500" />
-              Imekataliwa
-            </span>
-          )}
+      {/* Cover Image or Thematic Banner */}
+      {group.coverImageUrl ? (
+        <div className="h-32 sm:h-36 w-full overflow-hidden relative bg-stone-100">
+          <img
+            src={group.coverImageUrl}
+            alt={group.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-stone-900/60 via-transparent to-transparent" />
         </div>
-      </div>
+      ) : null}
 
-      {/* Main content */}
-      <div className="space-y-1.5 flex-1">
-        <h3 className="text-base font-bold text-stone-900 group-hover:text-emerald-800 transition-colors line-clamp-1">
-          {group.name}
-        </h3>
-        <p className="text-xs text-stone-600 leading-relaxed line-clamp-2">
-          {group.description}
-        </p>
-      </div>
+      <div className="p-4 sm:p-5 space-y-3 flex-1 flex flex-col justify-between">
+        {/* Kicker metadata line (Zero-pill unboxed typography) */}
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-1.5 text-stone-600 font-medium">
+            <span className="text-emerald-800 font-bold uppercase tracking-wider text-[11px]">
+              {categoryDef?.nameSwahili || group.categoryId}
+            </span>
+            {group.livestockType && (
+              <>
+                <span className="text-stone-300">·</span>
+                <span className="text-stone-500 text-[11px] font-semibold">{group.livestockType}</span>
+              </>
+            )}
+          </div>
 
-      {/* Footer bar */}
-      <div className="pt-2 border-t border-stone-100 flex items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-1.5 text-stone-500 font-medium">
-          <Users className="w-3.5 h-3.5 text-emerald-700" />
-          <span>{group.memberCount} {group.memberCount === 1 ? 'Mwanachama' : 'Wanachama'}</span>
+          {/* Visibility indicator */}
+          <div className="flex items-center gap-1 text-[11px] text-stone-500 font-medium">
+            {group.visibility === 'PUBLIC' ? (
+              <>
+                <Globe className="w-3 h-3 text-emerald-700" />
+                <span>Umma</span>
+              </>
+            ) : (
+              <>
+                <Lock className="w-3 h-3 text-amber-700" />
+                <span className="text-amber-800 font-semibold">Faragha</span>
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* User role badge */}
-          {isFounder && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 border border-purple-200 inline-flex items-center gap-1">
-              <Shield className="w-2.5 h-2.5 text-purple-600" />
-              Founder Admin
-            </span>
-          )}
-          {isLeadership && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200 inline-flex items-center gap-1">
-              <Shield className="w-2.5 h-2.5 text-blue-600" />
-              Leadership Admin
-            </span>
-          )}
-          {isMember && (
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">
-              Mwanachama
-            </span>
-          )}
+        {/* Group Name & Description */}
+        <div className="space-y-1.5 flex-1">
+          <h3 className="text-base font-bold text-stone-900 group-hover:text-emerald-800 transition-colors line-clamp-1">
+            {group.name}
+          </h3>
+          <p className="text-xs text-stone-600 leading-relaxed line-clamp-2">
+            {group.description}
+          </p>
+        </div>
 
-          <span className="text-emerald-700 font-semibold inline-flex items-center gap-1 text-[11px] group-hover:translate-x-0.5 transition-transform">
-            <span>Fungua</span>
-            <ArrowRight className="w-3 h-3" />
-          </span>
+        {/* Footer bar */}
+        <div className="pt-2.5 border-t border-stone-100 flex items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-1.5 text-stone-600 font-medium">
+            <Users className="w-3.5 h-3.5 text-emerald-700" />
+            <span>
+              <strong>{group.memberCount}</strong> {group.memberCount === 1 ? 'mwanachama' : 'wanachama'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Membership state indicator */}
+            {isFounder && (
+              <span className="text-[11px] font-bold text-purple-700 inline-flex items-center gap-1">
+                <Shield className="w-3 h-3 text-purple-600" />
+                Founder
+              </span>
+            )}
+            {isLeadership && (
+              <span className="text-[11px] font-bold text-blue-700 inline-flex items-center gap-1">
+                <Shield className="w-3 h-3 text-blue-600" />
+                Kiongozi
+              </span>
+            )}
+            {isMember && !isFounder && !isLeadership && (
+              <span className="text-[11px] font-semibold text-emerald-700 inline-flex items-center gap-1">
+                Mwanachama
+              </span>
+            )}
+            {membership?.status === 'PENDING' && (
+              <span className="text-[11px] font-bold text-amber-700 inline-flex items-center gap-1">
+                <Clock className="w-3 h-3 text-amber-600" />
+                Ombi Linasubiri
+              </span>
+            )}
+            {membership?.status === 'SUSPENDED' && (
+              <span className="text-[11px] font-bold text-rose-700 inline-flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 text-rose-600" />
+                Umesimamishwa
+              </span>
+            )}
+            {membership?.status === 'REMOVED' && (
+              <span className="text-[11px] font-bold text-stone-600 inline-flex items-center gap-1">
+                <XCircle className="w-3 h-3 text-stone-400" />
+                Umeondolewa
+              </span>
+            )}
+            {membership?.status === 'LEFT' && (
+              <span className="text-[11px] font-medium text-stone-500">
+                Ulijiondoa
+              </span>
+            )}
+
+            <span className="text-emerald-700 font-semibold inline-flex items-center gap-1 text-[11px] group-hover:translate-x-0.5 transition-transform">
+              <span>Fungua</span>
+            </span>
+          </div>
         </div>
       </div>
     </div>
   );
 };
+

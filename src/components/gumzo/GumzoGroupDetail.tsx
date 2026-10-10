@@ -61,6 +61,7 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
   const [actionError, setActionError] = useState<string | null>(null);
   const [isAdminActing, setIsAdminActing] = useState(false);
   const [adminSuccessMsg, setAdminSuccessMsg] = useState<string | null>(null);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
 
   // Authoritative admin posting check
   const postAuth = canUserCreatePost(currentUserId, group, membership, isAdmin);
@@ -163,14 +164,12 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
   };
 
   const handleLeave = async () => {
-    if (!window.confirm('Je, una uhakika unataka kujiondoa kwenye kikundi hiki?')) {
-      return;
-    }
     try {
       setIsLeaving(true);
       setActionError(null);
       const updatedMembership = await gumzoGroupService.postBrowserLeaveGroup(group.groupId, currentUserId);
       setMembership(updatedMembership);
+      setShowLeaveConfirm(false);
       const nextCount = Math.max(1, memberCount - 1);
       setMemberCount(nextCount);
       if (onGroupUpdated) {
@@ -198,28 +197,43 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
       {/* Main Group Header Card */}
       <div className="bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-xs">
         {/* Banner pattern / Cover image */}
-        <div className="h-32 sm:h-40 bg-gradient-to-r from-stone-900 via-stone-800 to-emerald-950 relative p-5 flex flex-col justify-between text-white">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold px-3 py-1 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-emerald-200 inline-flex items-center gap-1.5">
-              <span>{categoryDef?.nameSwahili || group.categoryId}</span>
-            </span>
+        <div className="h-32 sm:h-44 bg-gradient-to-r from-stone-900 via-stone-800 to-emerald-950 relative p-5 flex flex-col justify-between text-white">
+          {group.coverImageUrl && (
+            <img
+              src={group.coverImageUrl}
+              alt={group.name}
+              className="absolute inset-0 w-full h-full object-cover opacity-35"
+            />
+          )}
+          <div className="flex items-center justify-between gap-2 relative z-10 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-emerald-300 uppercase tracking-wider text-[11px]">
+                {categoryDef?.nameSwahili || group.categoryId}
+              </span>
+              {group.livestockType && (
+                <>
+                  <span className="text-stone-400">·</span>
+                  <span className="text-stone-200 text-[11px] font-semibold">{group.livestockType}</span>
+                </>
+              )}
+            </div>
 
             <div className="flex items-center gap-2">
               {group.visibility === 'PUBLIC' ? (
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-lg bg-black/30 backdrop-blur-md text-stone-200 border border-white/10 inline-flex items-center gap-1">
-                  <Globe className="w-3 h-3 text-emerald-400" />
+                <span className="text-xs font-semibold text-emerald-300 inline-flex items-center gap-1">
+                  <Globe className="w-3.5 h-3.5 text-emerald-400" />
                   Kikundi cha Umma
                 </span>
               ) : (
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-lg bg-amber-900/60 backdrop-blur-md text-amber-200 border border-amber-500/30 inline-flex items-center gap-1">
-                  <Lock className="w-3 h-3 text-amber-400" />
+                <span className="text-xs font-semibold text-amber-300 inline-flex items-center gap-1">
+                  <Lock className="w-3.5 h-3.5 text-amber-400" />
                   Kikundi cha Faragha
                 </span>
               )}
             </div>
           </div>
 
-          <div>
+          <div className="relative z-10">
             <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight drop-shadow-xs">
               {group.name}
             </h1>
@@ -231,33 +245,72 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
           {/* Metadata bar */}
           <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-stone-100 text-xs">
             <div className="flex items-center gap-4 flex-wrap text-stone-600 font-medium">
-              <span className="inline-flex items-center gap-1.5 bg-stone-100 px-3 py-1 rounded-xl">
+              <span className="inline-flex items-center gap-1.5 text-stone-700">
                 <Users className="w-4 h-4 text-emerald-700" />
-                <strong className="text-stone-900">{memberCount}</strong> {memberCount === 1 ? 'Mwanachama' : 'Wanachama'}
+                <span>
+                  <strong className="text-stone-900">{memberCount}</strong> {memberCount === 1 ? 'mwanachama' : 'wanachama'}
+                </span>
               </span>
 
               {isFounder && (
-                <span className="inline-flex items-center gap-1 text-purple-700 font-bold bg-purple-50 px-2.5 py-1 rounded-xl border border-purple-200">
+                <span className="inline-flex items-center gap-1 text-purple-700 font-bold">
                   <Shield className="w-3.5 h-3.5 text-purple-600" />
                   Wewe ni Mwanzilishi (Founder Admin)
                 </span>
               )}
               {isLeadership && (
-                <span className="inline-flex items-center gap-1 text-blue-700 font-bold bg-blue-50 px-2.5 py-1 rounded-xl border border-blue-200">
+                <span className="inline-flex items-center gap-1 text-blue-700 font-bold">
                   <Shield className="w-3.5 h-3.5 text-blue-600" />
                   Wewe ni Kiongozi (Leadership Admin)
                 </span>
               )}
               {isMember && !isFounder && !isLeadership && (
-                <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
+                <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
                   Mwanachama Hai
                 </span>
               )}
             </div>
 
             {/* Action buttons */}
-            <div className="flex items-center gap-2">
-              {!isMember && group.status === 'ACTIVE' && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {membership?.status === 'PENDING' && (
+                <span className="px-3.5 py-2 bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-2xs">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Ombi Linasubiri Idhini</span>
+                </span>
+              )}
+
+              {membership?.status === 'SUSPENDED' && (
+                <span className="px-3.5 py-2 bg-rose-50 text-rose-800 border border-rose-200 text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-2xs">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Uanachama Umesimamishwa</span>
+                </span>
+              )}
+
+              {membership?.status === 'REMOVED' && (
+                <span className="px-3.5 py-2 bg-stone-100 text-stone-700 border border-stone-200 text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-2xs">
+                  <XCircle className="w-3.5 h-3.5 text-stone-500" />
+                  <span>Umeondolewa Kwenye Kikundi</span>
+                </span>
+              )}
+
+              {membership?.status === 'LEFT' && group.visibility === 'PUBLIC' && group.status === 'ACTIVE' && (
+                <button
+                  type="button"
+                  onClick={handleJoin}
+                  disabled={isJoining}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs min-h-[40px]"
+                >
+                  {isJoining ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <UserPlus className="w-3.5 h-3.5" />
+                  )}
+                  <span>Jiunge Tena na Kikundi</span>
+                </button>
+              )}
+
+              {!membership && group.status === 'ACTIVE' && (
                 <button
                   type="button"
                   onClick={handleJoin}
@@ -274,19 +327,43 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
               )}
 
               {isMember && !isFounder && (
-                <button
-                  type="button"
-                  onClick={handleLeave}
-                  disabled={isLeaving}
-                  className="px-3.5 py-2 bg-stone-100 hover:bg-rose-50 text-stone-600 hover:text-rose-700 border border-stone-200 hover:border-rose-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
-                >
-                  {isLeaving ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
+                showLeaveConfirm ? (
+                  <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 p-1 rounded-xl">
+                    <span className="text-[11px] text-rose-800 font-semibold px-2">Kujiondoa?</span>
+                    <button
+                      type="button"
+                      onClick={handleLeave}
+                      disabled={isLeaving}
+                      className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg cursor-pointer inline-flex items-center gap-1"
+                    >
+                      {isLeaving ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                      <span>Ndio, Ondoka</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowLeaveConfirm(false)}
+                      className="px-2.5 py-1.5 bg-white text-stone-600 hover:text-stone-800 text-xs font-semibold rounded-lg border border-stone-200 cursor-pointer"
+                    >
+                      Ghairi
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowLeaveConfirm(true)}
+                    className="px-3.5 py-2 bg-stone-100 hover:bg-rose-50 text-stone-600 hover:text-rose-700 border border-stone-200 hover:border-rose-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
+                  >
                     <LogOut className="w-3.5 h-3.5" />
-                  )}
-                  <span>Ondoka Kwenye Kikundi</span>
-                </button>
+                    <span>Ondoka Kwenye Kikundi</span>
+                  </button>
+                )
+              )}
+
+              {isFounder && (
+                <span className="px-3 py-1.5 bg-purple-50 text-purple-800 border border-purple-200 text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-2xs">
+                  <Shield className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Mwanzilishi (Founder Admin)</span>
+                </span>
               )}
             </div>
           </div>
@@ -433,108 +510,143 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
             </div>
           )}
 
-          {/* V9.2 — GUMZO ADMIN POSTS FEED & CONTROLS */}
-          <div className="pt-6 border-t border-stone-100 space-y-4">
-            {/* Feed Header */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
-                  <MessageSquare className="w-4 h-4" />
+          {/* Content Access Control (Requirement 3: Respect PUBLIC and PRIVATE visibility) */}
+          {!accessDecision.canViewContent ? (
+            <div className="pt-6 border-t border-stone-100">
+              <div className="p-8 bg-stone-50/80 border border-dashed border-stone-200 rounded-3xl text-center space-y-3.5">
+                <div className="w-12 h-12 bg-amber-50 text-amber-700 rounded-2xl flex items-center justify-center mx-auto border border-amber-200/80">
+                  <Lock className="w-6 h-6" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-stone-900">
-                    Machapisho ya Viongozi (Admin Posts)
-                  </h3>
-                  <p className="text-[11px] text-stone-500">
-                    Mada na miongozo rasmi kutoka kwa viongozi wa kikundi hiki
+                <div className="space-y-1.5 max-w-md mx-auto">
+                  <h4 className="text-sm font-bold text-stone-900">
+                    {membership?.status === 'PENDING'
+                      ? 'Ombi Lako Linasubiri Idhini ya Uongozi'
+                      : membership?.status === 'SUSPENDED'
+                      ? 'Uanachama Wako Umesimamishwa'
+                      : membership?.status === 'REMOVED'
+                      ? 'Umeondolewa Kwenye Kikundi Hiki'
+                      : group.visibility === 'PRIVATE'
+                      ? 'Maudhui ya Kikundi cha Faragha'
+                      : 'Maudhui Yanahitaji Uanachama'}
+                  </h4>
+                  <p className="text-xs text-stone-500 leading-relaxed">
+                    {membership?.status === 'PENDING'
+                      ? 'Ombi lako la kujiunga linasubiri idhini ya msimamizi wa kikundi. Machapisho na majadiliano yatafunguka pindi ombi lako litakapoidhinishwa.'
+                      : membership?.status === 'SUSPENDED'
+                      ? 'Uanachama wako katika kikundi hiki umesimamishwa kiutawala. Huwezi kusoma machapisho wala kushiriki katika mijadala.'
+                      : membership?.status === 'REMOVED'
+                      ? 'Huna ruhusa ya kuona wala kushiriki katika mijadala ya kikundi hiki kwa sababu uliondolewa na uongozi.'
+                      : group.visibility === 'PRIVATE'
+                      ? 'Kikundi hiki kiko kwenye mpangilio wa faragha. Machapisho na wanachama yanaonekana kwa wanachama walioidhinishwa pekee.'
+                      : 'Jiunge na kikundi hiki cha wafugaji ili kuona mada zote na kushiriki katika mijadala.'}
                   </p>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={loadPosts}
-                  disabled={isLoadingPosts}
-                  className="p-2 text-stone-400 hover:text-stone-700 bg-stone-50 border border-stone-200 rounded-xl hover:bg-stone-100 transition-colors cursor-pointer"
-                  title="Onyesha upya machapisho"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin' : ''}`} />
-                </button>
-
-                {/* Only authorized Gumzo admins see the Create Post button */}
-                {postAuth.allowed && (
-                  <button
-                    type="button"
-                    onClick={() => setIsCreateModalOpen(true)}
-                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs min-h-[38px]"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>+ Andika Post</span>
-                  </button>
-                )}
               </div>
             </div>
-
-            {/* Member informational banner explaining admin-led principle */}
-            {!postAuth.allowed && accessDecision.canViewContent && (
-              <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-600 flex items-center gap-2">
-                <Info className="w-4 h-4 text-stone-400 shrink-0" />
-                <span>
-                  <strong>Mfumo wa Uongozi wa Gumzo:</strong> Viongozi pekee (Founder & Leadership Admin) wanaweza kuanzisha mada au machapisho. Wanachama watatoa maoni (Comments) kwenye machapisho haya kuanzia Awamu ya V9.3.
-                </span>
-              </div>
-            )}
-
-            {/* Posts List */}
-            {isLoadingPosts ? (
-              <div className="p-12 text-center space-y-2">
-                <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-700" />
-                <p className="text-xs text-stone-500 font-medium">Inapakia machapisho ya kikundi...</p>
-              </div>
-            ) : posts.length === 0 ? (
-              <div className="p-10 bg-stone-50/80 border border-dashed border-stone-200 rounded-2xl text-center space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-white border border-stone-200 flex items-center justify-center mx-auto text-stone-400 shadow-2xs">
-                  <MessageSquare className="w-6 h-6 text-stone-300" />
+          ) : (
+            /* V9.2 — GUMZO ADMIN POSTS FEED & CONTROLS */
+            <div className="pt-6 border-t border-stone-100 space-y-4">
+              {/* Feed Header */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                    <MessageSquare className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-stone-900">
+                      Machapisho ya Viongozi (Admin Posts)
+                    </h3>
+                    <p className="text-[11px] text-stone-500">
+                      Mada na miongozo rasmi kutoka kwa viongozi wa kikundi hiki
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <h4 className="text-sm font-bold text-stone-800">
-                    Bado Hakuna Machapisho Katika Kikundi Hiki
-                  </h4>
-                  <p className="text-xs text-stone-500 max-w-md mx-auto leading-relaxed">
-                    {postAuth.allowed
-                      ? 'Wewe ni kiongozi wa kikundi hiki! Bonyeza kitufe cha "+ Andika Post" kuanzisha mada ya kwanza ya ufugaji, kutoa mwongozo au taarifa kwa wanachama.'
-                      : 'Kikundi hiki hakijapokea mada au machapisho rasmi kutoka kwa viongozi wake bado. Endelea kufuatilia.'}
-                  </p>
-                </div>
-                {postAuth.allowed && (
+
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsCreateModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                    onClick={loadPosts}
+                    disabled={isLoadingPosts}
+                    className="p-2 text-stone-400 hover:text-stone-700 bg-stone-50 border border-stone-200 rounded-xl hover:bg-stone-100 transition-colors cursor-pointer"
+                    title="Onyesha upya machapisho"
                   >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>Anzisha Mada ya Kwanza</span>
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin' : ''}`} />
                   </button>
-                )}
+
+                  {/* Only authorized Gumzo admins see the Create Post button */}
+                  {postAuth.allowed && (
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateModalOpen(true)}
+                      className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs min-h-[38px]"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>+ Andika Post</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            ) : (
-              <div className="space-y-3.5">
-                {posts.map((post) => (
-                  <GumzoPostCard
-                    key={post.postId}
-                    post={post}
-                    group={group}
-                    currentUserId={currentUserId}
-                    membership={membership}
-                    isPlatformAdmin={isAdmin}
-                    onPostUpdated={handlePostUpdated}
-                    onPostDeleted={handlePostDeleted}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+
+              {/* Member informational banner explaining admin-led principle */}
+              {!postAuth.allowed && accessDecision.canViewContent && (
+                <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-600 flex items-center gap-2">
+                  <Info className="w-4 h-4 text-stone-400 shrink-0" />
+                  <span>
+                    <strong>Mfumo wa Uongozi wa Gumzo:</strong> Viongozi pekee (Founder & Leadership Admin) wanaweza kuanzisha mada au machapisho. Wanachama watatoa maoni (Comments) kwenye machapisho haya kuanzia Awamu ya V9.3.
+                  </span>
+                </div>
+              )}
+
+              {/* Posts List */}
+              {isLoadingPosts ? (
+                <div className="p-12 text-center space-y-2">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-700" />
+                  <p className="text-xs text-stone-500 font-medium">Inapakia machapisho ya kikundi...</p>
+                </div>
+              ) : posts.length === 0 ? (
+                <div className="p-10 bg-stone-50/80 border border-dashed border-stone-200 rounded-2xl text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-white border border-stone-200 flex items-center justify-center mx-auto text-stone-400 shadow-2xs">
+                    <MessageSquare className="w-6 h-6 text-stone-300" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-stone-800">
+                      Bado Hakuna Machapisho Katika Kikundi Hiki
+                    </h4>
+                    <p className="text-xs text-stone-500 max-w-md mx-auto leading-relaxed">
+                      {postAuth.allowed
+                        ? 'Wewe ni kiongozi wa kikundi hiki! Bonyeza kitufe cha "+ Andika Post" kuanzisha mada ya kwanza ya ufugaji, kutoa mwongozo au taarifa kwa wanachama.'
+                        : 'Kikundi hiki hakijapokea mada au machapisho rasmi kutoka kwa viongozi wake bado. Endelea kufuatilia.'}
+                    </p>
+                  </div>
+                  {postAuth.allowed && (
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>Anzisha Mada ya Kwanza</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3.5">
+                  {posts.map((post) => (
+                    <GumzoPostCard
+                      key={post.postId}
+                      post={post}
+                      group={group}
+                      currentUserId={currentUserId}
+                      membership={membership}
+                      isPlatformAdmin={isAdmin}
+                      onPostUpdated={handlePostUpdated}
+                      onPostDeleted={handlePostDeleted}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

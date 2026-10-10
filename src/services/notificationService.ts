@@ -23,7 +23,12 @@ import {
   AppNotification,
   CreateNotificationInput,
   NotificationPriority,
-  NotificationCategory
+  NotificationCategory,
+  NotificationModule,
+  ModuleUnreadCounts,
+  DeleteNotificationResult,
+  BulkDeleteNotificationResult,
+  getNotificationModule
 } from '../types/notification';
 
 const NOTIFICATIONS_COLLECTION = 'userNotifications';
@@ -49,7 +54,7 @@ function notifySubscribers(userId: string) {
       const adminList = sub.isAdmin ? getLocalCachedNotifications(ADMIN_GROUP_RECIPIENT) : [];
       const combinedMap = new Map<string, AppNotification>();
       for (const n of [...userList, ...adminList]) {
-        if (n && n.notificationId) combinedMap.set(n.notificationId, n);
+        if (n && n.notificationId && !n.deleted) combinedMap.set(n.notificationId, n);
       }
       let combined = Array.from(combinedMap.values());
       combined.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
@@ -164,15 +169,19 @@ export async function createAuthoritativeNotification(
     return existingDup;
   }
 
+  const resolvedModule = input.module || getNotificationModule(input);
   const notification: AppNotification = {
     notificationId,
     recipientUserId: recipient,
     type: input.type,
     category: input.category,
+    module: resolvedModule,
     title: input.title.trim(),
     message: input.message.trim(),
     read: false,
     readAt: null,
+    deleted: false,
+    deletedAt: null,
     priority: input.priority || 'NORMAL',
     targetType: input.targetType,
     targetId: input.targetId,
@@ -180,6 +189,9 @@ export async function createAuthoritativeNotification(
     relatedListingId: input.relatedListingId,
     relatedShopId: input.relatedShopId,
     relatedSellerId: input.relatedSellerId,
+    relatedGroupId: input.relatedGroupId,
+    relatedPostId: input.relatedPostId,
+    relatedCommentId: input.relatedCommentId,
     relatedReportId: input.relatedReportId,
     relatedModerationId: input.relatedModerationId,
     relatedWarningId: input.relatedWarningId,
@@ -191,6 +203,7 @@ export async function createAuthoritativeNotification(
     deduplicationKey: input.deduplicationKey,
     metadata: {
       ...input.metadata,
+      module: resolvedModule,
       deduplicationKey: input.deduplicationKey || input.metadata?.deduplicationKey
     }
   };
@@ -303,6 +316,9 @@ export async function fetchUserNotifications(
     return false;
   });
 
+  // V9.5: Filter out deleted notifications
+  results = results.filter((n) => !n.deleted);
+
   // Sort newest first
   results.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
@@ -315,17 +331,282 @@ export async function fetchUserNotifications(
   }
 
   if (options?.unreadOnly) {
-    results = results.filter((n) => !n.read);
+    results = results.filter((n) => !n.read && !n.deleted);
   }
 
   return results.slice(0, maxItems);
 }
 
 /**
- * Calculates unread count quickly for badge displays
+ * Calculates total unread count for badge displays (V9.5).
+ * Excludes notifications that are marked read OR deleted.
  */
 export function calculateUnreadCount(notifications: AppNotification[]): number {
-  return notifications.filter((n) => !n.read).length;
+  return notifications.filter((n) => !n.read && !n.deleted).length;
+}
+
+/**
+ * Calculates module-specific unread counts (V9.5).
+ * Grouped by module: Marketplace/Gulio, Gumzo, Admin, System, etc.
+ * Includes only notifications that are unread AND not deleted.
+ */
+export function calculateModuleUnreadCounts(notifications: AppNotification[]): ModuleUnreadCounts {
+  const activeUnread = notifications.filter((n) => !n.read && !n.deleted);
+  let marketplace = 0;
+  let gumzo = 0;
+  const byModule: Record<NotificationModule, number> = {
+    MARKETPLACE: 0,
+    GUMZO: 0,
+    ADMIN: 0,
+    SYSTEM: 0,
+    DAKTARI: 0,
+    MY_ASSISTANT: 0
+  };
+
+  for (const n of activeUnread) {
+    const mod = getNotificationModule(n);
+    byModule[mod] = (byModule[mod] || 0) + 1;
+    if (mod === 'MARKETPLACE') {
+      marketplace++;
+    } else if (mod === 'GUMZO') {
+      gumzo++;
+    }
+  }
+
+  return {
+    marketplace,
+    gumzo,
+    total: activeUnread.length,
+    byModule
+  };
+}
+
+/**
+ * Deletes a single notification safely (V9.5).
+ * Enforces recipient authorization at the service boundary:
+ * Rejects unauthorized attempts to delete other users' notifications with 403 error.
+ * Preserves underlying business records and audit trails.
+ */
+export async function deleteNotification(
+  userId: string,
+  notificationId: string,
+  isAdmin: boolean = false
+): Promise<DeleteNotificationResult> {
+  if (!userId || !notificationId) {
+    throw new Error('Mtumiaji au kitambulisho cha arifa hakipo.');
+  }
+
+  const now = new Date().toISOString();
+
+  // Verify ownership from local cache
+  const userCached = getLocalCachedNotifications(userId);
+  const adminCached = isAdmin ? getLocalCachedNotifications(ADMIN_GROUP_RECIPIENT) : [];
+  const target = userCached.find((n) => n.notificationId === notificationId) ||
+                 adminCached.find((n) => n.notificationId === notificationId);
+
+  if (target) {
+    const isOwner = target.recipientUserId === userId;
+    const isAdminGroup = isAdmin && target.recipientUserId === ADMIN_GROUP_RECIPIENT;
+    if (!isOwner && !isAdminGroup && !isAdmin) {
+      throw new Error('Huruhusiwi kufuta arifa ya mtumiaji mwingine (403 Forbidden).');
+    }
+  } else {
+    // If not found in caller's cache:
+    // If caller is NOT an admin, they are strictly prohibited from deleting notifications they do not own (403 Forbidden)
+    if (!isAdmin) {
+      throw new Error('Huruhusiwi kufuta arifa ya mtumiaji mwingine (403 Forbidden).');
+    }
+  }
+
+  // Soft-delete in user cache
+  let found = false;
+  const updatedUser = userCached.map((n) => {
+    if (n.notificationId === notificationId) {
+      if (n.recipientUserId !== userId && !(isAdmin && n.recipientUserId === ADMIN_GROUP_RECIPIENT)) {
+        throw new Error('Huruhusiwi kufuta arifa ya mtumiaji mwingine (403 Forbidden).');
+      }
+      found = true;
+      return { ...n, deleted: true, deletedAt: now };
+    }
+    return n;
+  });
+
+  if (found) {
+    saveNotificationsToCache(userId, updatedUser);
+  }
+
+  if (isAdmin) {
+    let foundAdmin = false;
+    const updatedAdmin = adminCached.map((n) => {
+      if (n.notificationId === notificationId) {
+        foundAdmin = true;
+        return { ...n, deleted: true, deletedAt: now };
+      }
+      return n;
+    });
+    if (foundAdmin) {
+      saveNotificationsToCache(ADMIN_GROUP_RECIPIENT, updatedAdmin);
+    }
+
+    // Admin moderation: also mark deleted in any user's cache where this notification lives
+    for (const [otherUid, list] of inMemoryNodeNotifications.entries()) {
+      if (otherUid !== ADMIN_GROUP_RECIPIENT && list.some((n) => n.notificationId === notificationId)) {
+        const updatedOther = list.map((n) =>
+          n.notificationId === notificationId ? { ...n, deleted: true, deletedAt: now } : n
+        );
+        saveNotificationsToCache(otherUid, updatedOther);
+      }
+    }
+  }
+
+  // Update in Firestore
+  if (!isNode && db) {
+    const activeAuthUser = auth.currentUser;
+    if (activeAuthUser) {
+      try {
+        await activeAuthUser.getIdToken();
+        const notifRef = doc(db, NOTIFICATIONS_COLLECTION, notificationId);
+        await updateDoc(notifRef, {
+          deleted: true,
+          deletedAt: now
+        });
+      } catch (err) {
+        console.warn('Hitilafu ya kufuta arifa Firestore:', err);
+      }
+    }
+  }
+
+  return { success: true, deletedNotificationId: notificationId };
+}
+
+/**
+ * Deletes multiple selected notifications safely (V9.5).
+ * Only deletes notifications belonging to the authenticated recipient.
+ */
+export async function deleteSelectedNotifications(
+  userId: string,
+  notificationIds: string[],
+  isAdmin: boolean = false
+): Promise<BulkDeleteNotificationResult> {
+  if (!userId || !notificationIds || notificationIds.length === 0) {
+    return { success: true, successCount: 0, failedCount: 0, deletedIds: [] };
+  }
+
+  const idSet = new Set(notificationIds);
+  const now = new Date().toISOString();
+  const deletedIds: string[] = [];
+
+  const userCached = getLocalCachedNotifications(userId);
+  const updatedUser = userCached.map((n) => {
+    if (idSet.has(n.notificationId)) {
+      if (n.recipientUserId === userId || (isAdmin && n.recipientUserId === ADMIN_GROUP_RECIPIENT)) {
+        deletedIds.push(n.notificationId);
+        return { ...n, deleted: true, deletedAt: now };
+      }
+    }
+    return n;
+  });
+  saveNotificationsToCache(userId, updatedUser);
+
+  if (isAdmin) {
+    const adminCached = getLocalCachedNotifications(ADMIN_GROUP_RECIPIENT);
+    const updatedAdmin = adminCached.map((n) => {
+      if (idSet.has(n.notificationId)) {
+        if (!deletedIds.includes(n.notificationId)) {
+          deletedIds.push(n.notificationId);
+        }
+        return { ...n, deleted: true, deletedAt: now };
+      }
+      return n;
+    });
+    saveNotificationsToCache(ADMIN_GROUP_RECIPIENT, updatedAdmin);
+  }
+
+  if (!isNode && db) {
+    const activeAuthUser = auth.currentUser;
+    if (activeAuthUser) {
+      for (const id of deletedIds) {
+        try {
+          const notifRef = doc(db, NOTIFICATIONS_COLLECTION, id);
+          await updateDoc(notifRef, { deleted: true, deletedAt: now });
+        } catch {}
+      }
+    }
+  }
+
+  return {
+    success: true,
+    successCount: deletedIds.length,
+    failedCount: notificationIds.length - deletedIds.length,
+    deletedIds
+  };
+}
+
+/**
+ * Deletes all notifications for the authenticated user (V9.5).
+ * Applies strictly to authenticated user's notifications.
+ */
+export async function deleteAllNotifications(
+  userId: string,
+  isAdmin: boolean = false
+): Promise<{ success: boolean; deletedCount: number }> {
+  if (!userId) return { success: false, deletedCount: 0 };
+
+  const now = new Date().toISOString();
+  const userCached = getLocalCachedNotifications(userId);
+  const activeItems = userCached.filter((n) => !n.deleted && n.recipientUserId === userId);
+  const deletedCount = activeItems.length;
+
+  const updatedUser = userCached.map((n) => {
+    if (n.recipientUserId === userId) {
+      return { ...n, deleted: true, deletedAt: now };
+    }
+    return n;
+  });
+  saveNotificationsToCache(userId, updatedUser);
+
+  if (!isNode && db) {
+    const activeAuthUser = auth.currentUser;
+    if (activeAuthUser && activeAuthUser.uid === userId) {
+      for (const item of activeItems) {
+        try {
+          const notifRef = doc(db, NOTIFICATIONS_COLLECTION, item.notificationId);
+          await updateDoc(notifRef, { deleted: true, deletedAt: now });
+        } catch {}
+      }
+    }
+  }
+
+  return { success: true, deletedCount };
+}
+
+/**
+ * Clears cached notifications and subscribers when user logs out or switches accounts (V9.5).
+ */
+export function clearUserNotificationsOnLogout(userId?: string): void {
+  if (userId) {
+    inMemoryNodeNotifications.delete(userId);
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.removeItem(`ufugaji_notifications_cache_${userId}`);
+      } catch {}
+    }
+    notifySubscribers(userId);
+  }
+}
+
+/**
+ * Subscribes to module-specific unread counts for navigation badges (V9.5).
+ */
+export function subscribeToModuleUnreadCounts(
+  userId: string,
+  isAdmin: boolean,
+  callback: (counts: ModuleUnreadCounts) => void
+): () => void {
+  return subscribeToUserNotifications(userId, isAdmin, (notifications) => {
+    const counts = calculateModuleUnreadCounts(notifications);
+    callback(counts);
+  });
 }
 
 /**
@@ -459,7 +740,7 @@ export function subscribeToUserNotifications(
   const initialAdminList = isAdmin ? getLocalCachedNotifications(ADMIN_GROUP_RECIPIENT) : [];
   const map = new Map<string, AppNotification>();
   for (const n of [...initialUserList, ...initialAdminList]) {
-    if (n && n.notificationId) map.set(n.notificationId, n);
+    if (n && n.notificationId && !n.deleted) map.set(n.notificationId, n);
   }
   let initialList = Array.from(map.values());
   initialList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
@@ -835,6 +1116,153 @@ export async function dispatchAppealDecisionNotification(params: {
     relatedAppealId: params.appealId,
     relatedSellerId: params.sellerId,
     actionUrl: '/market'
+  });
+}
+
+/**
+ * Dispatches an authoritative Gumzo notification when a comment is made on a user's post (V9.5).
+ */
+export async function dispatchGumzoCommentNotification(params: {
+  postAuthorUserId: string;
+  commentAuthorUserId: string;
+  commentAuthorName?: string;
+  groupId: string;
+  groupName: string;
+  postId: string;
+  commentId: string;
+  commentTextPreview: string;
+}): Promise<AppNotification | null> {
+  // Prevent self-notification
+  if (params.postAuthorUserId === params.commentAuthorUserId) return null;
+
+  return createAuthoritativeNotification({
+    recipientUserId: params.postAuthorUserId,
+    senderUserId: params.commentAuthorUserId,
+    module: 'GUMZO',
+    category: 'GUMZO',
+    type: 'GUMZO_COMMENT_RECEIVED',
+    title: `Maoni Mapya: ${params.groupName}`,
+    message: `${params.commentAuthorName || 'Mwanachama'} ametoa maoni kwenye chapisho lako: "${params.commentTextPreview.slice(0, 100)}"`,
+    priority: 'NORMAL',
+    targetType: 'POST',
+    targetId: params.postId,
+    relatedGroupId: params.groupId,
+    relatedPostId: params.postId,
+    relatedCommentId: params.commentId,
+    actionUrl: `/community?group=${params.groupId}&post=${params.postId}`,
+    deduplicationKey: `gumzo_cmt_${params.commentId}`
+  });
+}
+
+/**
+ * Dispatches a notification when a Gumzo membership request is approved (V9.5/V9.6).
+ */
+export async function dispatchGumzoMembershipApprovedNotification(params: {
+  userId: string;
+  groupId: string;
+  groupName: string;
+}): Promise<AppNotification | null> {
+  return createAuthoritativeNotification({
+    recipientUserId: params.userId,
+    module: 'GUMZO',
+    category: 'GUMZO',
+    type: 'GUMZO_MEMBERSHIP_APPROVED',
+    title: 'Umeidhinishwa Kujiunga na Kikundi',
+    message: `Ombi lako la kujiunga na kikundi cha "${params.groupName}" limeidhinishwa. Karibu ushiriki katika mijadala!`,
+    priority: 'NORMAL',
+    targetType: 'GROUP',
+    targetId: params.groupId,
+    relatedGroupId: params.groupId,
+    actionUrl: `/community?group=${params.groupId}`,
+    deduplicationKey: `gumzo_join_${params.groupId}_${params.userId}`
+  });
+}
+
+/**
+ * Dispatches a notification when a user submits a join request for a private Gumzo group (V9.6).
+ */
+export async function dispatchGumzoMembershipRequestNotification(params: {
+  recipientAdminUserId: string;
+  requesterUserId: string;
+  requesterName?: string;
+  groupId: string;
+  groupName: string;
+}): Promise<AppNotification | null> {
+  if (!params.recipientAdminUserId) return null;
+  return createAuthoritativeNotification({
+    recipientUserId: params.recipientAdminUserId,
+    senderUserId: params.requesterUserId,
+    module: 'GUMZO',
+    category: 'GUMZO',
+    type: 'GUMZO_MEMBERSHIP_REQUEST',
+    title: `Ombi Jipya la Kujiunga: ${params.groupName}`,
+    message: `${params.requesterName || 'Mtumiaji'} ameomba kujiunga na kikundi cha faragha cha "${params.groupName}".`,
+    priority: 'NORMAL',
+    targetType: 'GROUP',
+    targetId: params.groupId,
+    relatedGroupId: params.groupId,
+    actionUrl: `/community?group=${params.groupId}`,
+    deduplicationKey: `gumzo_req_${params.groupId}_${params.requesterUserId}`
+  });
+}
+
+/**
+ * Dispatches a notification when a member's status is changed (SUSPENDED or REMOVED) (V9.6).
+ */
+export async function dispatchGumzoMembershipStatusUpdatedNotification(params: {
+  userId: string;
+  groupId: string;
+  groupName: string;
+  newStatus: 'SUSPENDED' | 'REMOVED';
+  reason?: string;
+}): Promise<AppNotification | null> {
+  if (!params.userId) return null;
+  const isSuspended = params.newStatus === 'SUSPENDED';
+  const title = isSuspended ? 'Uanachama Wako Umesimamishwa' : 'Umeondolewa Kwenye Kikundi';
+  const reasonText = params.reason ? ` Sababu: ${params.reason}.` : '';
+  const message = isSuspended
+    ? `Uanachama wako katika kikundi cha "${params.groupName}" umesimamishwa na msimamizi.${reasonText}`
+    : `Umeondolewa kwenye kikundi cha "${params.groupName}" na msimamizi.${reasonText}`;
+
+  return createAuthoritativeNotification({
+    recipientUserId: params.userId,
+    module: 'GUMZO',
+    category: 'GUMZO',
+    type: 'GUMZO_GROUP_STATUS_UPDATED',
+    title,
+    message,
+    priority: 'HIGH',
+    targetType: 'GROUP',
+    targetId: params.groupId,
+    relatedGroupId: params.groupId,
+    actionUrl: `/community?group=${params.groupId}`,
+    deduplicationKey: `gumzo_status_${params.groupId}_${params.userId}_${params.newStatus}`
+  });
+}
+
+/**
+ * Dispatches a notification when Founder Admin ownership is transferred (V9.5).
+ */
+export async function dispatchGumzoFounderTransferredNotification(params: {
+  newFounderUserId: string;
+  groupId: string;
+  groupName: string;
+  actingAdminUserId: string;
+}): Promise<AppNotification | null> {
+  return createAuthoritativeNotification({
+    recipientUserId: params.newFounderUserId,
+    senderUserId: params.actingAdminUserId,
+    module: 'GUMZO',
+    category: 'GUMZO',
+    type: 'GUMZO_FOUNDER_TRANSFERRED',
+    title: 'Uteuzi wa Uongozi wa Kikundi (Founder Admin)',
+    message: `Umekabidhiwa mamlaka ya Msimamizi Mwanzilishi (Founder Admin) wa kikundi cha "${params.groupName}".`,
+    priority: 'HIGH',
+    targetType: 'GROUP',
+    targetId: params.groupId,
+    relatedGroupId: params.groupId,
+    actionUrl: `/community?group=${params.groupId}`,
+    deduplicationKey: `gumzo_founder_transfer_${params.groupId}_${params.newFounderUserId}`
   });
 }
 

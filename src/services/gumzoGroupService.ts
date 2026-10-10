@@ -17,6 +17,7 @@ import {
   GumzoGroupRole,
   GumzoMembershipStatus,
   CreateGumzoGroupInput,
+  DiscoverableGroupsOptions,
   GUMZO_CATEGORIES,
   canAccessGumzoGroup,
   isGroupFounderAdmin,
@@ -27,6 +28,12 @@ import {
   GumzoGovernanceAuditEvent,
 } from '../types/gumzo';
 import { gumzoAuditService } from './gumzoAuditService';
+import {
+  dispatchGumzoFounderTransferredNotification,
+  dispatchGumzoMembershipApprovedNotification,
+  dispatchGumzoMembershipRequestNotification,
+  dispatchGumzoMembershipStatusUpdatedNotification
+} from './notificationService';
 
 const isNode = typeof window === 'undefined';
 
@@ -75,6 +82,7 @@ let diskFs: any = null;
 let diskPath: any = null;
 let GROUPS_FILE = 'data/gumzo_groups.json';
 let MEMBERSHIPS_FILE = 'data/gumzo_memberships.json';
+let hasLoadedFromDisk = false;
 
 export function initGumzoStorage(fsModule?: any, pathModule?: any, customDir?: string): void {
   if (fsModule && pathModule) {
@@ -86,7 +94,8 @@ export function initGumzoStorage(fsModule?: any, pathModule?: any, customDir?: s
   GROUPS_FILE = diskPath ? diskPath.join(baseDir, 'gumzo_groups.json') : `${baseDir}/gumzo_groups.json`;
   MEMBERSHIPS_FILE = diskPath ? diskPath.join(baseDir, 'gumzo_memberships.json') : `${baseDir}/gumzo_memberships.json`;
 
-  loadFromDisk();
+  hasLoadedFromDisk = false;
+  loadFromDisk(true);
 }
 
 // Auto-initialize if running in Node.js
@@ -104,8 +113,10 @@ if (isNode) {
   } catch {}
 }
 
-function loadFromDisk(): void {
+function loadFromDisk(force = false): void {
   if (!diskFs || !diskFs.existsSync) return;
+  if (hasLoadedFromDisk && !force) return;
+  hasLoadedFromDisk = true;
   try {
     const dataDir = diskPath ? diskPath.resolve(process.cwd(), 'data') : 'data';
     if (!diskFs.existsSync(dataDir)) {
@@ -425,39 +436,131 @@ export class GumzoGroupService {
   }
 
   /**
-   * 6. GET PUBLIC DISCOVERABLE GROUPS
+   * Authoritative member count calculation (V9.6 Requirement 6).
+   * Counts strictly memberships where canonical status is ACTIVE.
+   * PENDING, SUSPENDED, REMOVED and LEFT memberships are NEVER counted as active members.
    */
-  public getDiscoverableGroups(callerUserId?: string, categoryFilter?: string): GumzoGroup[] {
+  public reconcileGroupMemberCount(groupId: string): number {
+    let count = 0;
+    for (const m of membershipsStore.values()) {
+      if (m.groupId === groupId && m.status === 'ACTIVE') {
+        count++;
+      }
+    }
+    return Math.max(1, count); // At least 1 (Founder is the initial member)
+  }
+
+  /**
+   * 6. GET PUBLIC DISCOVERABLE GROUPS (V9.6 Group Discovery)
+   * Public discovery rules:
+   * - Group status must be ACTIVE
+   * - Group visibility must be PUBLIC
+   * - The current user must not be blocked from accessing the group (SUSPENDED or REMOVED)
+   * - Suspended, rejected, archived, draft, and pending-approval groups must not appear as joinable active groups
+   * - Supports categoryFilter, livestockTypeFilter, searchQuery, and pagination (offset, limit)
+   */
+  public getDiscoverableGroups(
+    optionsOrCaller?: string | DiscoverableGroupsOptions,
+    categoryFilterLegacy?: string
+  ): GumzoGroup[] {
+    const res = this.getDiscoverableGroupsWithTotal(optionsOrCaller, categoryFilterLegacy);
+    return res.groups;
+  }
+
+  /**
+   * 6b. GET DISCOVERABLE GROUPS WITH TOTAL COUNT (V9.6 Bounded Loading & Pagination)
+   */
+  public getDiscoverableGroupsWithTotal(
+    optionsOrCaller?: string | DiscoverableGroupsOptions,
+    categoryFilterLegacy?: string
+  ): { groups: GumzoGroup[]; total: number } {
     if (isNode) loadFromDisk();
     const groups = Array.from(groupsStore.values());
 
-    return groups.filter((g) => {
-      // Must be ACTIVE and PUBLIC, unless caller is founder or member
+    let callerUserId: string | undefined;
+    let categoryFilter: string | undefined;
+    let livestockTypeFilter: string | undefined;
+    let searchQuery: string | undefined;
+    let limit: number | undefined;
+    let offset: number = 0;
+
+    if (optionsOrCaller && typeof optionsOrCaller === 'object') {
+      callerUserId = optionsOrCaller.callerUserId;
+      categoryFilter = optionsOrCaller.categoryFilter;
+      livestockTypeFilter = optionsOrCaller.livestockTypeFilter;
+      searchQuery = optionsOrCaller.searchQuery;
+      limit = optionsOrCaller.limit;
+      offset = optionsOrCaller.offset || 0;
+    } else {
+      callerUserId = typeof optionsOrCaller === 'string' ? optionsOrCaller : undefined;
+      categoryFilter = categoryFilterLegacy;
+    }
+
+    const filtered = groups.filter((g) => {
+      // 1. Must strictly be ACTIVE and PUBLIC for public discovery
+      if (g.status !== 'ACTIVE' || g.visibility !== 'PUBLIC') {
+        return false;
+      }
+
+      // 2. Caller must not be blocked from accessing the group (SUSPENDED or REMOVED)
+      if (callerUserId) {
+        const m = membershipsStore.get(`${g.groupId}_${callerUserId}`);
+        if (m && (m.status === 'SUSPENDED' || m.status === 'REMOVED')) {
+          return false;
+        }
+      }
+
+      // 3. Category filter
       if (categoryFilter && categoryFilter !== 'all' && g.categoryId !== categoryFilter) {
         return false;
       }
 
-      if (g.status === 'ACTIVE' && g.visibility === 'PUBLIC') {
-        return true;
+      // 4. Livestock type filter
+      if (livestockTypeFilter && livestockTypeFilter !== 'all') {
+        const cat = GUMZO_CATEGORIES.find((c) => c.categoryId === g.categoryId);
+        const groupLt = (g.livestockType || cat?.livestockType || '').toUpperCase();
+        if (groupLt !== livestockTypeFilter.toUpperCase()) {
+          return false;
+        }
       }
 
-      // If caller is founder, allow seeing pending/draft
-      if (callerUserId && g.founderAdminUserId === callerUserId) {
-        return true;
+      // 5. Search query (matches name, description, or category swahili name)
+      if (searchQuery && searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const cat = GUMZO_CATEGORIES.find((c) => c.categoryId === g.categoryId);
+        const nameMatch = g.name.toLowerCase().includes(q);
+        const descMatch = (g.description || '').toLowerCase().includes(q);
+        const catMatch = (cat?.nameSwahili || '').toLowerCase().includes(q);
+        if (!nameMatch && !descMatch && !catMatch) {
+          return false;
+        }
       }
 
-      return false;
+      return true;
     });
+
+    const total = filtered.length;
+    let paginated = filtered;
+    if (offset > 0 || (limit !== undefined && limit > 0)) {
+      const start = Math.max(0, offset);
+      const end = limit !== undefined && limit > 0 ? start + limit : undefined;
+      paginated = filtered.slice(start, end);
+    }
+
+    return { groups: paginated, total };
   }
 
   /**
-   * 7. JOIN GROUP (Authoritative)
-   * - Cannot join non-existent, archived, or rejected group
-   * - Enforces uniqueness: cannot create duplicate active membership
+   * 7. JOIN GROUP (Authoritative - V9.6 Membership State Machine)
+   * - Cannot join non-existent, archived, suspended, draft, or rejected group
+   * - Enforces uniqueness: cannot create duplicate active or pending membership
    * - Member role is strictly MEMBER (cannot self-assign admin)
+   * - Rejoining permitted for LEFT memberships in public groups
+   * - Rejoining strictly BLOCKED for SUSPENDED and REMOVED memberships without admin reinstatement
+   * - Private groups require approval: status set to PENDING, notification sent to founder admin
    */
   public joinGroup(groupId: string, userId: string): GumzoMembership {
-    if (!userId) throw new Error('Hujaingia kwenye mfumo (Authentication required).');
+    if (!userId || !userId.trim()) throw new Error('Hujaingia kwenye mfumo (Authentication required).');
     if (isNode) loadFromDisk();
 
     const group = groupsStore.get(groupId);
@@ -465,6 +568,18 @@ export class GumzoGroupService {
 
     if (group.status !== 'ACTIVE') {
       throw new Error(`Huwezi kujiunga na kikundi hiki kwa sababu kiko katika hali ya ${group.status}.`);
+    }
+
+    // Founder / Leadership Admin cannot duplicate join
+    if (group.founderAdminUserId === userId) {
+      const founderKey = `${groupId}_${userId}`;
+      const fM = membershipsStore.get(founderKey);
+      if (fM) return fM;
+    }
+    if (group.leadershipAdminUserId && group.leadershipAdminUserId === userId) {
+      const leaderKey = `${groupId}_${userId}`;
+      const lM = membershipsStore.get(leaderKey);
+      if (lM) return lM;
     }
 
     const membershipId = `${groupId}_${userId}`;
@@ -475,11 +590,52 @@ export class GumzoGroupService {
       return existing;
     }
 
+    if (existing && existing.status === 'PENDING') {
+      // Idempotent: Request already pending decision, prevent duplicate requests
+      return existing;
+    }
+
     if (existing && existing.status === 'SUSPENDED') {
       throw new Error('Uanachama wako katika kikundi hiki umesimamishwa kiutawala.');
     }
 
+    if (existing && existing.status === 'REMOVED') {
+      throw new Error('Uliondolewa kwenye kikundi hiki na huwezi kujiunga tena bila idhini ya uongozi.');
+    }
+
     const now = new Date().toISOString();
+
+    // Rejoining from LEFT status
+    if (existing && existing.status === 'LEFT') {
+      if (group.visibility === 'PUBLIC') {
+        existing.status = 'ACTIVE';
+        existing.role = 'MEMBER';
+        existing.updatedAt = now;
+        membershipsStore.set(membershipId, existing);
+        group.memberCount = this.reconcileGroupMemberCount(groupId);
+        group.updatedAt = now;
+        groupsStore.set(groupId, group);
+        persistToDisk();
+        return existing;
+      } else {
+        // Private group rejoin requires review
+        existing.status = 'PENDING';
+        existing.role = 'MEMBER';
+        existing.updatedAt = now;
+        membershipsStore.set(membershipId, existing);
+        persistToDisk();
+        if (group.founderAdminUserId) {
+          dispatchGumzoMembershipRequestNotification({
+            recipientAdminUserId: group.founderAdminUserId,
+            requesterUserId: userId,
+            groupId,
+            groupName: group.name,
+          }).catch(() => {});
+        }
+        return existing;
+      }
+    }
+
     // For PUBLIC groups, status is ACTIVE. For PRIVATE groups, PENDING approval.
     const initialMembershipStatus: GumzoMembershipStatus = group.visibility === 'PUBLIC' ? 'ACTIVE' : 'PENDING';
 
@@ -489,28 +645,41 @@ export class GumzoGroupService {
       userId,
       role: 'MEMBER', // Strictly MEMBER
       status: initialMembershipStatus,
-      joinedAt: existing?.joinedAt || now,
+      joinedAt: now,
       updatedAt: now,
     };
 
     membershipsStore.set(membershipId, membership);
 
-    // Only increment member count if membership is ACTIVE
-    if (initialMembershipStatus === 'ACTIVE' && (!existing || existing.status !== 'ACTIVE')) {
-      group.memberCount = (group.memberCount || 0) + 1;
-      group.updatedAt = now;
-      groupsStore.set(groupId, group);
-    }
+    // Reconcile authoritative member count (counts only ACTIVE members)
+    group.memberCount = this.reconcileGroupMemberCount(groupId);
+    group.updatedAt = now;
+    groupsStore.set(groupId, group);
 
     persistToDisk();
+
+    // Trigger notification if private group join request
+    if (initialMembershipStatus === 'PENDING' && group.founderAdminUserId) {
+      dispatchGumzoMembershipRequestNotification({
+        recipientAdminUserId: group.founderAdminUserId,
+        requesterUserId: userId,
+        groupId,
+        groupName: group.name,
+      }).catch(() => {});
+    }
+
     return membership;
   }
 
   /**
-   * 8. LEAVE GROUP (Authoritative)
+   * 8. LEAVE GROUP (Authoritative - V9.6)
+   * - Only authenticated member can leave their own membership
+   * - Founder Admin cannot leave without transferring ownership first
+   * - Transitions membership status to LEFT
+   * - Reconciles memberCount safely (only counts ACTIVE members)
    */
   public leaveGroup(groupId: string, userId: string): GumzoMembership {
-    if (!userId) throw new Error('Hujaingia kwenye mfumo.');
+    if (!userId || !userId.trim()) throw new Error('Hujaingia kwenye mfumo.');
     if (isNode) loadFromDisk();
 
     const group = groupsStore.get(groupId);
@@ -531,7 +700,7 @@ export class GumzoGroupService {
     existing.updatedAt = now;
     membershipsStore.set(membershipId, existing);
 
-    group.memberCount = Math.max(1, (group.memberCount || 1) - 1);
+    group.memberCount = this.reconcileGroupMemberCount(groupId);
     group.updatedAt = now;
     groupsStore.set(groupId, group);
 
@@ -540,18 +709,95 @@ export class GumzoGroupService {
   }
 
   /**
-   * 8b. UPDATE MEMBERSHIP STATUS (Admin moderation: ACTIVE, SUSPENDED, REMOVED)
+   * 8b. UPDATE MEMBERSHIP STATUS (Admin moderation: ACTIVE, SUSPENDED, REMOVED - V9.6)
+   * Reconciles authoritative member count on every transition.
+   * Dispatches notifications on approval, suspension or removal.
    */
-  public updateMembershipStatus(groupId: string, userId: string, newStatus: GumzoMembershipStatus): GumzoMembership {
+  public updateMembershipStatus(
+    groupId: string,
+    userId: string,
+    newStatus: GumzoMembershipStatus,
+    callerAdminUserId?: string,
+    reason?: string,
+    isPlatformAdmin = false
+  ): GumzoMembership {
     if (isNode) loadFromDisk();
+    const group = groupsStore.get(groupId);
+    if (!group) throw new Error('Kikundi hakikupatikana.');
+
+    if (callerAdminUserId && !isPlatformAdmin && !isGroupAdmin(callerAdminUserId, group)) {
+      throw new Error('Huna mamlaka ya kubadilisha uanachama wa kikundi hiki (403 Forbidden).');
+    }
+
+    if (group.founderAdminUserId === userId) {
+      throw new Error('Huwezi kubadilisha hali ya Mwanzilishi (Founder Admin) kupitia mfumo wa kawaida wa uanachama.');
+    }
+
     const membershipId = `${groupId}_${userId}`;
     const membership = membershipsStore.get(membershipId);
     if (!membership) throw new Error('Uanachama haukupatikana.');
+
+    const oldStatus = membership.status;
+    const now = new Date().toISOString();
     membership.status = newStatus;
-    membership.updatedAt = new Date().toISOString();
+    membership.updatedAt = now;
+    if (newStatus === 'ACTIVE' && callerAdminUserId) {
+      membership.approvedBy = callerAdminUserId;
+    }
     membershipsStore.set(membershipId, membership);
+
+    group.memberCount = this.reconcileGroupMemberCount(groupId);
+    group.updatedAt = now;
+    groupsStore.set(groupId, group);
+
     persistToDisk();
+
+    // Trigger notification
+    if (newStatus === 'ACTIVE' && oldStatus === 'PENDING') {
+      dispatchGumzoMembershipApprovedNotification({
+        userId,
+        groupId,
+        groupName: group.name,
+      }).catch(() => {});
+    } else if (newStatus === 'SUSPENDED' || newStatus === 'REMOVED') {
+      dispatchGumzoMembershipStatusUpdatedNotification({
+        userId,
+        groupId,
+        groupName: group.name,
+        newStatus,
+        reason,
+      }).catch(() => {});
+    }
+
     return membership;
+  }
+
+  /**
+   * 8c. GET GROUP MEMBERS (Protected for private groups - V9.6)
+   */
+  public getGroupMembers(
+    groupId: string,
+    callerUserId?: string,
+    isPlatformAdmin = false
+  ): GumzoMembership[] {
+    if (isNode) loadFromDisk();
+    const group = groupsStore.get(groupId);
+    if (!group) return [];
+
+    const callerMembership = callerUserId ? this.getMembership(groupId, callerUserId) : null;
+    const access = canAccessGumzoGroup(callerUserId, group, callerMembership, isPlatformAdmin);
+    if (!access.canAccess) {
+      return [];
+    }
+
+    // For private group, only active members or admins can view member roster
+    if (group.visibility === 'PRIVATE' && !access.canViewContent) {
+      return [];
+    }
+
+    return Array.from(membershipsStore.values()).filter(
+      (m) => m.groupId === groupId && m.status === 'ACTIVE'
+    );
   }
 
   /**
@@ -807,6 +1053,15 @@ export class GumzoGroupService {
       },
     });
 
+    try {
+      dispatchGumzoFounderTransferredNotification({
+        newFounderUserId: targetUserId,
+        groupId,
+        groupName: group.name,
+        actingAdminUserId
+      }).catch(() => {});
+    } catch {}
+
     return {
       group,
       previousFounderUserId,
@@ -818,12 +1073,32 @@ export class GumzoGroupService {
   /**
    * 11. BROWSER API BRIDGES
    */
-  public async fetchBrowserGroups(category?: string, callerUserId?: string): Promise<GumzoGroup[]> {
+  public async fetchBrowserGroups(
+    optionsOrCategory?: string | DiscoverableGroupsOptions,
+    callerUserId?: string
+  ): Promise<GumzoGroup[]> {
+    let options: DiscoverableGroupsOptions = {};
+    if (optionsOrCategory && typeof optionsOrCategory === 'object') {
+      options = optionsOrCategory;
+    } else {
+      options = {
+        categoryFilter: optionsOrCategory as string | undefined,
+        callerUserId
+      };
+    }
+
     if (typeof window !== 'undefined') {
       try {
-        const query = category ? `?category=${encodeURIComponent(category)}` : '';
-        const res = await fetch(`/api/gumzo/groups${query}`, {
-          headers: callerUserId ? { 'x-user-id': callerUserId } : {}
+        const params = new URLSearchParams();
+        if (options.categoryFilter && options.categoryFilter !== 'all') params.set('category', options.categoryFilter);
+        if (options.livestockTypeFilter && options.livestockTypeFilter !== 'all') params.set('livestockType', options.livestockTypeFilter);
+        if (options.searchQuery && options.searchQuery.trim()) params.set('search', options.searchQuery.trim());
+        if (options.limit) params.set('limit', String(options.limit));
+        if (options.offset) params.set('offset', String(options.offset));
+
+        const queryString = params.toString() ? `?${params.toString()}` : '';
+        const res = await fetch(`/api/gumzo/groups${queryString}`, {
+          headers: options.callerUserId ? { 'x-user-id': options.callerUserId } : {}
         });
         if (res.ok) {
           const data = await res.json();
@@ -836,7 +1111,7 @@ export class GumzoGroupService {
         console.warn('[gumzoGroupService] API fetch groups error, falling back to local store:', err);
       }
     }
-    return this.getDiscoverableGroups(callerUserId, category);
+    return this.getDiscoverableGroups(options);
   }
 
   public async fetchBrowserGroupById(groupId: string, callerUserId?: string): Promise<{ group: GumzoGroup | null; membership: GumzoMembership | null }> {
@@ -964,6 +1239,72 @@ export class GumzoGroupService {
       }
     }
     return this.leaveGroup(groupId, userId);
+  }
+
+  public async postBrowserUpdateMembershipStatus(params: {
+    groupId: string;
+    userId: string;
+    newStatus: GumzoMembershipStatus;
+    callerAdminUserId?: string;
+    reason?: string;
+    token?: string | null;
+  }): Promise<{ membership: GumzoMembership; group: GumzoGroup | null }> {
+    const { groupId, userId, newStatus, callerAdminUserId, reason, token } = params;
+    if (typeof window !== 'undefined') {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        else if (callerAdminUserId) headers['x-user-id'] = callerAdminUserId;
+
+        const res = await fetch(`/api/gumzo/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}/status`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ newStatus, reason })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.membership) {
+            membershipsStore.set(data.membership.membershipId, data.membership);
+            if (data.group) {
+              groupsStore.set(data.group.groupId, data.group);
+            }
+            return { membership: data.membership, group: data.group || null };
+          }
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Imeshindwa kubadilisha hali ya uanachama.');
+        }
+      } catch (err: any) {
+        if (err.message && !err.message.includes('fetch')) {
+          throw err;
+        }
+      }
+    }
+    const mem = this.updateMembershipStatus(groupId, userId, newStatus, callerAdminUserId, reason);
+    const grp = this.getGroupById(groupId, callerAdminUserId);
+    return { membership: mem, group: grp };
+  }
+
+  public async fetchBrowserGroupMembers(groupId: string, callerUserId?: string, token?: string | null): Promise<GumzoMembership[]> {
+    if (typeof window !== 'undefined') {
+      try {
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        else if (callerUserId) headers['x-user-id'] = callerUserId;
+
+        const res = await fetch(`/api/gumzo/groups/${encodeURIComponent(groupId)}/members`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.members)) {
+            data.members.forEach((m: GumzoMembership) => membershipsStore.set(m.membershipId, m));
+            return data.members;
+          }
+        }
+      } catch (err) {
+        console.warn('[gumzoGroupService] fetchBrowserGroupMembers error:', err);
+      }
+    }
+    return this.getGroupMembers(groupId, callerUserId);
   }
 
   public async fetchBrowserUserMemberships(userId: string, token?: string | null): Promise<{ memberships: GumzoMembership[]; groups: GumzoGroup[] }> {

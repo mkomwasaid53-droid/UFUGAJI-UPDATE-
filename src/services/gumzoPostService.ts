@@ -78,8 +78,11 @@ export function initGumzoPostsStorage(fsModule?: any, pathModule?: any, customDi
   const baseDir = customDir || (diskPath ? diskPath.join(process.cwd(), 'data') : 'data');
   POSTS_FILE = diskPath ? diskPath.join(baseDir, 'gumzo_posts.json') : `${baseDir}/gumzo_posts.json`;
 
-  loadFromDisk();
+  hasLoadedFromDisk = false;
+  loadFromDisk(true);
 }
+
+let hasLoadedFromDisk = false;
 
 // Auto-initialize if running in Node.js
 if (isNode) {
@@ -96,8 +99,10 @@ if (isNode) {
   } catch {}
 }
 
-function loadFromDisk(): void {
+function loadFromDisk(force = false): void {
   if (!diskFs || !diskFs.existsSync) return;
+  if (hasLoadedFromDisk && !force) return;
+  hasLoadedFromDisk = true;
   try {
     const dataDir = diskPath ? diskPath.resolve(process.cwd(), 'data') : 'data';
     if (!diskFs.existsSync(dataDir)) {
