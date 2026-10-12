@@ -115,12 +115,31 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
         {/* Owner Governance Notice if not eligible */}
         {isOwner && !governance.isEligible && (
-          <div className="px-2.5 py-1 bg-amber-100 border border-amber-300 text-amber-950 font-bold text-[10.5px] rounded-lg flex items-center justify-between">
-            <span className="flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
-              <span>{governance.moderationStatus || 'IMEZUIWA'}</span>
-            </span>
-            <span className="text-[9.5px] uppercase font-bold tracking-wider text-amber-800">Haionekani Sokoni</span>
+          <div className="p-2 bg-amber-50 border border-amber-200 text-amber-950 text-[11px] rounded-xl space-y-1">
+            <div className="flex items-center justify-between font-bold">
+              <span className="flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                <span>
+                  {governance.moderationStatus === 'PENDING_REVIEW'
+                    ? 'Inasubiri Idhini (PENDING)'
+                    : governance.moderationStatus === 'REJECTED'
+                    ? 'Imekataliwa (REJECTED)'
+                    : governance.moderationStatus === 'HIDDEN'
+                    ? 'Imefichwa (HIDDEN)'
+                    : governance.moderationStatus === 'SUSPENDED'
+                    ? 'Imesimamishwa (SUSPENDED)'
+                    : governance.moderationStatus === 'DRAFT'
+                    ? 'Rasimu (DRAFT)'
+                    : governance.moderationStatus || 'Haionekani Sokoni'}
+                </span>
+              </span>
+              <span className="text-[9.5px] uppercase font-bold tracking-wider text-amber-800">Haionekani Sokoni</span>
+            </div>
+            {(product.moderationPublicReason || governance.sellerNotice || governance.publicUnavailableReason) && (
+              <p className="text-[10px] text-amber-900/90 leading-tight">
+                {product.moderationPublicReason || governance.sellerNotice || governance.publicUnavailableReason}
+              </p>
+            )}
           </div>
         )}
 

@@ -77,10 +77,12 @@ export function syncAuthoritativeModerationState(product: MarketplaceProduct): M
     authoritativeStatus === 'SUSPENDED'
   ) {
     authoritativeProductStatus = 'inactive';
-  } else if (authoritativeStatus === 'UNDER_REVIEW') {
+  } else if (authoritativeStatus === 'UNDER_REVIEW' || authoritativeStatus === 'PENDING_REVIEW') {
     if (authoritativeProductStatus === 'active') {
-      authoritativeProductStatus = 'draft';
+      authoritativeProductStatus = 'inactive';
     }
+  } else if (authoritativeStatus === 'DRAFT') {
+    authoritativeProductStatus = 'draft';
   } else if (sellerRestriction.isRestricted && authoritativeProductStatus === 'active') {
     authoritativeProductStatus = 'inactive';
   }
@@ -108,18 +110,35 @@ export function evaluateProductMarketplaceEligibility(
   product: MarketplaceProduct,
   options?: { checkMonetization?: boolean }
 ): ProductGovernanceEligibility {
-  const synced = syncAuthoritativeModerationState(product);
-  const modStatus = (synced.moderationStatus as ModerationStatus) || 'NOT_REVIEWED';
+  if (!product || !product.productId) {
+    return {
+      isEligible: false,
+      isBlockedByModeration: true,
+      moderationStatus: 'NOT_REVIEWED',
+      isSellerRestricted: false,
+      isCategoryInactive: false,
+      isValidationBlocked: false,
+      publicUnavailableReason: 'Tangazo halikupatikana.'
+    };
+  }
 
-  // 1. Check Moderation Status
+  const synced = syncAuthoritativeModerationState(product);
+  const modStatus = (synced?.moderationStatus as ModerationStatus) || 'NOT_REVIEWED';
+
+  // 1. Check Moderation Status: Only APPROVED or RESTORED are permitted in public feeds
   const blockedModerationStatuses: ModerationStatus[] = [
     'REJECTED',
     'HIDDEN',
     'SUSPENDED',
+    'PENDING_REVIEW',
     'UNDER_REVIEW',
+    'DRAFT',
+    'NOT_REVIEWED',
     'ESCALATED'
   ];
-  const isBlockedByModeration = blockedModerationStatuses.includes(modStatus);
+  const isBlockedByModeration =
+    blockedModerationStatuses.includes(modStatus) ||
+    (modStatus !== 'APPROVED' && modStatus !== 'RESTORED');
 
   // 2. Check Seller Restrictions (V1.7E)
   const isSellerRestricted = synced.sellerId
@@ -178,8 +197,10 @@ export function evaluateProductMarketplaceEligibility(
     publicUnavailableReason = 'Tangazo hili limefichwa kwa sasa na msimamizi wa mfumo.';
   } else if (modStatus === 'SUSPENDED') {
     publicUnavailableReason = 'Tangazo hili limesimamishwa kwa muda kwa sababu za kiutawala au usalama.';
-  } else if (modStatus === 'UNDER_REVIEW') {
-    publicUnavailableReason = 'Tangazo hili lipo kwenye ukaguzi wa wasimamizi na halijaidhinishwa bado.';
+  } else if (modStatus === 'PENDING_REVIEW' || modStatus === 'UNDER_REVIEW') {
+    publicUnavailableReason = 'Tangazo hili linasubiri idhini na ukaguzi wa wasimamizi kabla ya kuonekana sokoni.';
+  } else if (modStatus === 'DRAFT') {
+    publicUnavailableReason = 'Tangazo hili bado ni Rasimu (Draft) na halijachapishwa sokoni.';
   } else if (isSellerRestricted) {
     publicUnavailableReason = 'Huduma za muuzaji huyu zimesitishwa kwa muda kwa mujibu wa sera za soko.';
   } else if (isCategoryInactive) {
@@ -198,9 +219,11 @@ export function evaluateProductMarketplaceEligibility(
   } else if (modStatus === 'SUSPENDED') {
     sellerNotice =
       'Tangazo hili limesimamishwa na wasimamizi. Huwezi kuliwasha hadi masuala ya kiutawala yatakapotatuliwa.';
-  } else if (modStatus === 'UNDER_REVIEW') {
+  } else if (modStatus === 'PENDING_REVIEW' || modStatus === 'UNDER_REVIEW') {
     sellerNotice =
-      'Tangazo lako linakaguliwa na wasimamizi wa soko. Litaonekana sokoni mara tu litakapoidhinishwa.';
+      'Tangazo lako linasubiri ukaguzi na idhini ya msimamizi. Litaonekana sokoni mara tu litakapoidhinishwa.';
+  } else if (modStatus === 'DRAFT') {
+    sellerNotice = 'Tangazo hili bado ni rasimu (Draft).';
   } else if (isSellerMonetizationRestricted) {
     sellerNotice =
       monetizationEligibility?.reasonSwahili || 'Usajili wa muuzaji unahitaji kuamilishwa au kufanywa upya.';
@@ -273,10 +296,13 @@ export function assertListingCanBeActivated(
     modStatus === 'HIDDEN' ||
     modStatus === 'SUSPENDED' ||
     modStatus === 'UNDER_REVIEW' ||
-    modStatus === 'ESCALATED'
+    modStatus === 'PENDING_REVIEW' ||
+    modStatus === 'DRAFT' ||
+    modStatus === 'ESCALATED' ||
+    (modStatus !== 'APPROVED' && modStatus !== 'RESTORED')
   ) {
     throw new Error(
-      `Huwezi kuweka tangazo kuwa ACTIVE kwa sababu limewekewa vikwazo vya kiutawala (${modStatus}). Tafadhali wasilisha rufaa au fanya marekebisho yaliyoagizwa na usubiri idhini ya msimamizi.`
+      `Huwezi kuweka tangazo kuwa ACTIVE kwa sababu linahitaji idhini ya msimamizi (${modStatus}). Tafadhali wasilisha tangazo kwa ukaguzi (PENDING_REVIEW) na usubiri idhini ya msimamizi.`
     );
   }
 }

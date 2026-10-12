@@ -35,8 +35,18 @@ import { ProductLocationDeliveryTrust } from './marketplace';
 
 /**
  * Controlled Moderation Statuses
+ * V1.0 Content Moderation Foundation:
+ * - DRAFT: Seller is still editing, not published
+ * - PENDING_REVIEW: Submitted by seller, waiting for admin approval
+ * - APPROVED: Approved by admin, eligible for public discovery
+ * - REJECTED: Rejected by admin with structured reason, not public
+ * - HIDDEN: Hidden by admin or moderation action, not public
+ * - SUSPENDED: Temporarily suspended, not public
+ * - Legacy compatibility: NOT_REVIEWED, UNDER_REVIEW, RESTORED, ESCALATED
  */
 export type ModerationStatus =
+  | 'DRAFT'
+  | 'PENDING_REVIEW'
   | 'NOT_REVIEWED'
   | 'UNDER_REVIEW'
   | 'APPROVED'
@@ -45,6 +55,114 @@ export type ModerationStatus =
   | 'SUSPENDED'
   | 'RESTORED'
   | 'ESCALATED';
+
+/**
+ * Controlled Seller Trust Statuses (V1.0 Content Moderation Foundation)
+ * Strictly separated from identity verification, registration, and payments.
+ * - NEW_SELLER: Listings require admin approval before becoming active
+ * - TRUSTED_SELLER: Can be granted only by authorized admin action
+ * - RESTRICTED_SELLER: Active restrictions imposed by governance; cannot bypass review
+ */
+export type SellerTrustStatus = 'NEW_SELLER' | 'TRUSTED_SELLER' | 'RESTRICTED_SELLER';
+
+/**
+ * AI Screening Statuses (V1.0 AI Screening)
+ * - PASS: Content passed policy evaluation
+ * - BLOCK: Violates one or more prohibited content policies
+ * - REVIEW_REQUIRED: Complex, ambiguous, or sensitive context (e.g., veterinary, wound, medical slaughter)
+ * - SCREENING_ERROR: Model failure, timeout, unparseable response, or unreachable image
+ */
+export type AIScreeningStatus = 'PASS' | 'BLOCK' | 'REVIEW_REQUIRED' | 'SCREENING_ERROR';
+
+/**
+ * Controlled AI Screening Categories
+ */
+export type AIScreeningCategory =
+  | 'SEXUAL_OR_EXPLICIT_CONTENT'
+  | 'GRAPHIC_VIOLENCE'
+  | 'WEAPONS_OR_DANGEROUS_GOODS'
+  | 'SCAM_OR_FRAUD'
+  | 'ILLEGAL_OR_PROHIBITED_GOODS'
+  | 'HATE_OR_HARASSMENT'
+  | 'SPAM_OR_MISLEADING_CLAIMS'
+  | 'IRRELEVANT_OR_NON_AGRICULTURAL'
+  | 'ANIMAL_WELFARE_CONCERN'
+  | 'POTENTIALLY_LEGITIMATE_VETERINARY_CONTENT'
+  | 'UNCERTAIN';
+
+export const AI_SCREENING_CATEGORY_LABELS: Record<AIScreeningCategory, { sw: string; en: string }> = {
+  SEXUAL_OR_EXPLICIT_CONTENT: {
+    sw: 'Maudhui ya ngono au yasiyo na staha',
+    en: 'Sexual or explicit content'
+  },
+  GRAPHIC_VIOLENCE: {
+    sw: 'Ukatili au picha za kutisha zisizo na muktadha',
+    en: 'Graphic violence'
+  },
+  WEAPONS_OR_DANGEROUS_GOODS: {
+    sw: 'Silaha au bidhaa hatari zilizopigwa marufuku',
+    en: 'Weapons or dangerous goods'
+  },
+  SCAM_OR_FRAUD: {
+    sw: 'Ulaghai au madai ya uongo ya kifedha',
+    en: 'Scam or fraud'
+  },
+  ILLEGAL_OR_PROHIBITED_GOODS: {
+    sw: 'Bidhaa haramu au zilizopigwa marufuku kisheria',
+    en: 'Illegal or prohibited goods'
+  },
+  HATE_OR_HARASSMENT: {
+    sw: 'Chuki, udhalilishaji au matamshi ya uchochezi',
+    en: 'Hate or harassment'
+  },
+  SPAM_OR_MISLEADING_CLAIMS: {
+    sw: 'Spam au madai ya kupotosha wanunuzi',
+    en: 'Spam or misleading claims'
+  },
+  IRRELEVANT_OR_NON_AGRICULTURAL: {
+    sw: 'Bidhaa isiyohusiana na kilimo, mifugo au uvuvi',
+    en: 'Non-agricultural / irrelevant product'
+  },
+  ANIMAL_WELFARE_CONCERN: {
+    sw: 'Hofu kuhusu ustawi au mateso ya wanyama',
+    en: 'Animal welfare concern'
+  },
+  POTENTIALLY_LEGITIMATE_VETERINARY_CONTENT: {
+    sw: 'Maudhui halali ya kitabibu/matibabu ya mifugo (yanahitaji uhakiki)',
+    en: 'Potentially legitimate veterinary content'
+  },
+  UNCERTAIN: {
+    sw: 'Maudhui yenye utata au yasiyo wazi',
+    en: 'Uncertain context'
+  }
+};
+
+/**
+ * Immutable Record of an AI Screening Evaluation
+ */
+export interface AIScreeningResult {
+  screeningId: string;
+  requestId: string;
+  status: AIScreeningStatus;
+  categories: AIScreeningCategory[];
+  explanation: string; // Concise, non-defamatory, auditable explanation
+  explanationSwahili: string;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  model: string;
+  policyVersion: string;
+  contentFingerprint: string;
+  timestamp: string; // ISO 8601
+  latencyMs?: number;
+  evaluatedFields: {
+    hasTitle: boolean;
+    hasDescription: boolean;
+    hasCategory: boolean;
+    hasPrice: boolean;
+    imageCount: number;
+  };
+  cached?: boolean;
+}
+
 
 /**
  * Controlled Moderation Actions
@@ -173,6 +291,7 @@ export interface MarketplaceModerationRecord {
   reviewedByUserId?: string | null;
   reviewedByDisplayName?: string | null;
   reviewedAt?: string | null;
+  aiScreening?: AIScreeningResult | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -213,6 +332,8 @@ export type ModerationQueueFilter =
   | 'NEEDS_REVIEW'
   | 'AI_CLASSIFICATION_AMBIGUOUS'
   | 'CATEGORY_MISMATCH'
+  | 'AI_SCREENING_REVIEW_REQUIRED'
+  | 'AI_SCREENING_BLOCKED'
   | 'SUSPENDED'
   | 'RECENTLY_UPDATED';
 
@@ -230,6 +351,7 @@ export interface ModerationQueueItem {
   reports: MarketplaceReport[];
   publishedReviews: MarketplaceReview[];
   aiClassification?: AiClassificationResult | null;
+  aiScreening?: AIScreeningResult | null;
   ownershipValidation: ProductOwnershipValidation;
   priceStockTrust: ProductPriceStockTrust;
   locationDeliveryTrust: ProductLocationDeliveryTrust;

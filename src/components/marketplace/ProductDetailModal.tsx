@@ -417,6 +417,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       <strong>Maelekezo ya Marekebisho:</strong> {currentProduct.moderationCorrectionNote}
                     </p>
                   )}
+                  {currentProduct.aiScreening && currentProduct.aiScreening.status !== 'PASS' && (
+                    <div className="bg-stone-100 p-2 rounded-lg border border-stone-200 text-stone-700 space-y-1">
+                      <p className="font-semibold text-[11px] text-stone-800">
+                        Ukaguzi wa Kiotomatiki (AI Screening): {currentProduct.aiScreening.status}
+                      </p>
+                      <p className="text-[11px]">
+                        {currentProduct.aiScreening.explanationSwahili || currentProduct.aiScreening.explanation}
+                      </p>
+                    </div>
+                  )}
                   <p className="text-[11px] font-bold text-amber-900 pt-1 border-t border-amber-200">
                     Kumbuka: Wanunuzi hawawezi kuona wala kuagiza tangazo hili hadi msimamizi atakapoidhinisha kufuata vigezo vya soko.
                   </p>

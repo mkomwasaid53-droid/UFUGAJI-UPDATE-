@@ -155,7 +155,10 @@ service cloud.firestore {
 
     // Marketplace Products collection (Gulio la Mifugo & Pembejeo - Scalable Foundation)
     match /marketplaceProducts/{productId} {
-      allow read: if true;
+      // V1.0 Content Moderation: Only APPROVED and active listings are readable by regular public
+      allow read: if (resource != null && resource.data.status == 'active' && resource.data.get('moderationStatus', 'APPROVED') in ['APPROVED', 'RESTORED']) ||
+        (isAuthenticated() && (isAdmin() || (resource != null && resource.data.sellerId == request.auth.uid)));
+
       allow create: if isAuthenticated() && (
         isAdmin() || (
           request.resource.data.sellerId == request.auth.uid &&
@@ -168,15 +171,8 @@ service cloud.firestore {
           (!('subcategoryId' in request.resource.data) || request.resource.data.subcategoryId == null || (request.resource.data.subcategoryId is string && request.resource.data.subcategoryId.size() <= 100)) &&
           (!('sellerVerificationStatus' in request.resource.data) || request.resource.data.sellerVerificationStatus in ['unverified', 'pending', 'verified']) &&
           (!('validationStatus' in request.resource.data) || request.resource.data.validationStatus in ['VALID', 'INCOMPLETE', 'INVALID', 'BLOCKED', 'UNAVAILABLE']) &&
-          (
-            request.resource.data.status != 'active' || (
-              request.resource.data.categoryId is string && request.resource.data.categoryId.size() > 0 &&
-              request.resource.data.title is string && request.resource.data.title.size() >= 3 &&
-              request.resource.data.price is number && request.resource.data.price >= 0 &&
-              request.resource.data.quantityAvailable is number && request.resource.data.quantityAvailable >= 0 &&
-              request.resource.data.location is string && request.resource.data.location.size() > 0
-            )
-          )
+          (!('moderationStatus' in request.resource.data) || request.resource.data.moderationStatus in ['DRAFT', 'PENDING_REVIEW']) &&
+          request.resource.data.status != 'active'
         )
       );
       allow update: if isAuthenticated() && (
@@ -193,15 +189,8 @@ service cloud.firestore {
           (!('categoryId' in request.resource.data) || (request.resource.data.categoryId is string && request.resource.data.categoryId.size() <= 100)) &&
           (!('subcategoryId' in request.resource.data) || request.resource.data.subcategoryId == null || (request.resource.data.subcategoryId is string && request.resource.data.subcategoryId.size() <= 100)) &&
           (!('validationStatus' in request.resource.data) || request.resource.data.validationStatus in ['VALID', 'INCOMPLETE', 'INVALID', 'BLOCKED', 'UNAVAILABLE']) &&
-          (
-            request.resource.data.status != 'active' || (
-              request.resource.data.categoryId is string && request.resource.data.categoryId.size() > 0 &&
-              request.resource.data.title is string && request.resource.data.title.size() >= 3 &&
-              request.resource.data.price is number && request.resource.data.price >= 0 &&
-              request.resource.data.quantityAvailable is number && request.resource.data.quantityAvailable >= 0 &&
-              request.resource.data.location is string && request.resource.data.location.size() > 0
-            )
-          ) &&
+          (!('moderationStatus' in request.resource.data) || request.resource.data.moderationStatus == resource.data.get('moderationStatus', 'PENDING_REVIEW') || (request.resource.data.moderationStatus in ['DRAFT', 'PENDING_REVIEW'] && resource.data.get('moderationStatus', 'PENDING_REVIEW') != 'APPROVED')) &&
+          (request.resource.data.status != 'active' || resource.data.get('moderationStatus', '') in ['APPROVED', 'RESTORED']) &&
           (
             !('sellerVerificationStatus' in request.resource.data) ||
             request.resource.data.sellerVerificationStatus in ['unverified', 'pending', 'verified'] ||

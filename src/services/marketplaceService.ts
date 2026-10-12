@@ -20,7 +20,8 @@ import {
   ProductStatus,
   DigitalShop,
   ShopCatalogue,
-  ProductOwnershipValidation
+  ProductOwnershipValidation,
+  ModerationStatus
 } from '../types/marketplace';
 import {
   INITIAL_SAMPLE_PRODUCTS,
@@ -56,6 +57,12 @@ import {
   isShopMarketplaceEligible,
   canSellerSellOnMarketplace
 } from './marketplaceGovernanceEnforcement';
+import { registerListingModerationRecord } from './marketplaceModerationService';
+import {
+  stripProtectedSellerTrustFields,
+  getSellerTrustStatus,
+  saveSellerProfileToCache
+} from './sellerTrustService';
 
 const LOCAL_PRODUCTS_CACHE_KEY = 'ufugaji_marketplace_products_cache';
 const LOCAL_SELLER_PROFILES_KEY = 'ufugaji_seller_profiles_cache';
@@ -323,26 +330,34 @@ export async function fetchSellerProfile(uid: string): Promise<SellerProfile | n
 // Save or create seller profile (Preserves the farmer identity and /users/{uid} profile intact)
 export async function saveSellerProfile(
   uid: string,
-  profileData: Partial<SellerProfile>
+  profileData: Partial<SellerProfile>,
+  isAdmin: boolean = false
 ): Promise<SellerProfile> {
   if (!uid) throw new Error('Hujaingia kwenye mfumo');
 
+  const sanitized = stripProtectedSellerTrustFields(profileData, isAdmin);
   const now = new Date().toISOString();
   const existing = await fetchSellerProfile(uid);
 
   const merged: SellerProfile = {
     uid,
-    businessName: profileData.businessName?.trim() || existing?.businessName || 'Biashara ya Mifugo',
-    displayName: profileData.displayName?.trim() || existing?.displayName || 'Muuzaji',
-    phone: profileData.phone?.trim() || existing?.phone || '',
-    location: profileData.location?.trim() || existing?.location || 'Dar es Salaam',
-    region: profileData.region || profileData.location || existing?.region || 'Dar es Salaam',
-    district: profileData.district || existing?.district || '',
-    description: profileData.description?.trim() || existing?.description || '',
+    businessName: sanitized.businessName?.trim() || existing?.businessName || 'Biashara ya Mifugo',
+    displayName: sanitized.displayName?.trim() || existing?.displayName || 'Muuzaji',
+    phone: sanitized.phone?.trim() || existing?.phone || '',
+    location: sanitized.location?.trim() || existing?.location || 'Dar es Salaam',
+    region: sanitized.region || sanitized.location || existing?.region || 'Dar es Salaam',
+    district: sanitized.district || existing?.district || '',
+    description: sanitized.description?.trim() || existing?.description || '',
     verificationStatus: existing?.verificationStatus || 'unverified',
+    trustStatus: isAdmin && profileData.trustStatus ? profileData.trustStatus : (existing?.trustStatus || 'NEW_SELLER'),
+    trustGrantedAt: isAdmin && profileData.trustStatus ? (profileData.trustGrantedAt || now) : existing?.trustGrantedAt,
+    trustGrantedBy: isAdmin && profileData.trustStatus ? (profileData.trustGrantedBy || 'admin') : existing?.trustGrantedBy,
+    trustReason: isAdmin && profileData.trustStatus ? (profileData.trustReason || '') : existing?.trustReason,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   };
+
+  saveSellerProfileToCache(merged);
 
   try {
     const profileRef = doc(db, 'users', uid, 'sellerProfile', 'profile');
@@ -918,12 +933,37 @@ export async function createMarketplaceProduct(
     imageUrl: primaryImageUrl,
     images: productData.images || (primaryImageUrl ? [{ id: 'primary-img', url: primaryImageUrl, isPrimary: true, uploadedAt: now }] : []),
     video: productData.video || undefined,
-    status: productData.status || 'active',
+    status: productData.status === 'draft' ? 'draft' : 'inactive',
+    moderationStatus: (productData.status === 'draft' ? 'DRAFT' : 'PENDING_REVIEW') as ModerationStatus,
     createdAt: now,
     updatedAt: now,
     isTestDemo: false,
     livestockLink: productData.livestockLink,
   };
+
+  // V1.0 Content Moderation Foundation:
+  // Register initial moderation record in moderation engine (PENDING_REVIEW or DRAFT)
+  registerListingModerationRecord({
+    moderationId: `mod_${productId}`,
+    targetType: 'LISTING',
+    targetId: productId,
+    productId,
+    listingId: productId,
+    sellerId: cleanSellerId,
+    shopId: cleanSellerId,
+    status: newProduct.moderationStatus || 'PENDING_REVIEW',
+    priority: 'NORMAL',
+    reasonCode: null,
+    reasonText: null,
+    internalNote: null,
+    publicExplanation: 'Tangazo limewasilishwa kwa ukaguzi wa wasimamizi (PENDING_REVIEW).',
+    correctionInstructions: null,
+    reviewedByUserId: null,
+    reviewedByDisplayName: null,
+    reviewedAt: null,
+    createdAt: now,
+    updatedAt: now
+  });
 
   // V1.7B: Deterministic Marketplace Listing Validation
   const validationResult = validateMarketplaceListing({
@@ -962,6 +1002,14 @@ export async function createMarketplaceProduct(
       }
       if (serverSaved && Array.isArray(serverSaved.images)) {
         newProduct.images = serverSaved.images;
+      }
+      if (serverSaved && serverSaved.aiScreening) {
+        newProduct.aiScreening = serverSaved.aiScreening;
+        newProduct.aiScreenedAt = serverSaved.aiScreenedAt;
+      }
+      if (serverSaved && serverSaved.moderationStatus) {
+        newProduct.moderationStatus = serverSaved.moderationStatus;
+        newProduct.status = serverSaved.status;
       }
     }
   } catch (serverErr) {
@@ -1239,6 +1287,14 @@ export async function updateMarketplaceProduct(
       }
       if (serverSaved && Array.isArray(serverSaved.images)) {
         updatedProduct.images = serverSaved.images;
+      }
+      if (serverSaved && serverSaved.aiScreening) {
+        updatedProduct.aiScreening = serverSaved.aiScreening;
+        updatedProduct.aiScreenedAt = serverSaved.aiScreenedAt;
+      }
+      if (serverSaved && serverSaved.moderationStatus) {
+        updatedProduct.moderationStatus = serverSaved.moderationStatus;
+        updatedProduct.status = serverSaved.status;
       }
     }
   } catch (serverErr) {

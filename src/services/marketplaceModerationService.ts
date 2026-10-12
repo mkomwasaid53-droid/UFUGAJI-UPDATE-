@@ -209,6 +209,9 @@ export function deriveListingModerationPriority(
   if (hasMismatchReview) {
     reasons.push('Kuna tofauti kati ya kundi alilochagua muuzaji na pendekezo la mfumo');
   }
+  if (currentStatus === 'PENDING_REVIEW') {
+    reasons.push('Tangazo linasubiri ukaguzi na idhini ya msimamizi (PENDING_REVIEW)');
+  }
   if (currentStatus === 'NOT_REVIEWED' && product.status === 'active') {
     reasons.push('Tangazo jipya lipo LIVE linasubiri ukaguzi wa awali');
   }
@@ -274,6 +277,20 @@ export function getListingModerationRecord(
   };
 
   return defaultRecord;
+}
+
+/**
+ * Registers or updates an authoritative moderation record in cache and storage.
+ */
+export function registerListingModerationRecord(record: MarketplaceModerationRecord): void {
+  const cachedRecords = getLocalCachedModerationRecords();
+  const idx = cachedRecords.findIndex((r) => r.productId === record.productId || r.targetId === record.productId);
+  if (idx >= 0) {
+    cachedRecords[idx] = record;
+  } else {
+    cachedRecords.unshift(record);
+  }
+  saveModerationRecordsToCache(cachedRecords);
 }
 
 /**
@@ -365,6 +382,7 @@ export async function fetchModerationQueue(
       reports: productReports,
       publishedReviews,
       aiClassification,
+      aiScreening: product.aiScreening || moderationRecord.aiScreening || null,
       ownershipValidation,
       priceStockTrust,
       locationDeliveryTrust
@@ -374,10 +392,14 @@ export async function fetchModerationQueue(
     let matchesFilter = true;
     switch (filter) {
       case 'NOT_REVIEWED':
-        matchesFilter = moderationRecord.status === 'NOT_REVIEWED';
+        matchesFilter =
+          moderationRecord.status === 'NOT_REVIEWED' ||
+          moderationRecord.status === 'PENDING_REVIEW';
         break;
       case 'UNDER_REVIEW':
-        matchesFilter = moderationRecord.status === 'UNDER_REVIEW';
+        matchesFilter =
+          moderationRecord.status === 'UNDER_REVIEW' ||
+          moderationRecord.status === 'PENDING_REVIEW';
         break;
       case 'REPORTED':
         matchesFilter = productReports.length > 0;
@@ -387,9 +409,17 @@ export async function fetchModerationQueue(
         break;
       case 'NEEDS_REVIEW':
         matchesFilter =
+          moderationRecord.status === 'PENDING_REVIEW' ||
           moderationRecord.status === 'UNDER_REVIEW' ||
           moderationRecord.status === 'NOT_REVIEWED' ||
-          productReports.length > 0;
+          productReports.length > 0 ||
+          product.aiScreening?.status === 'REVIEW_REQUIRED';
+        break;
+      case 'AI_SCREENING_REVIEW_REQUIRED':
+        matchesFilter = product.aiScreening?.status === 'REVIEW_REQUIRED';
+        break;
+      case 'AI_SCREENING_BLOCKED':
+        matchesFilter = product.aiScreening?.status === 'BLOCK';
         break;
       case 'AI_CLASSIFICATION_AMBIGUOUS':
         matchesFilter = aiClassification.classificationStatus === 'AMBIGUOUS';

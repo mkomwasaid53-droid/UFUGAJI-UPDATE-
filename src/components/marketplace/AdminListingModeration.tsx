@@ -324,6 +324,8 @@ export const AdminListingModeration: React.FC = () => {
               <option value="ALL">Yote (All)</option>
               <option value="NOT_REVIEWED">Hayajakaguliwa (Not Reviewed)</option>
               <option value="UNDER_REVIEW">Yenye Ukaguzi (Under Review)</option>
+              <option value="AI_SCREENING_REVIEW_REQUIRED">AI: Inahitaji Ukaguzi (Review Required)</option>
+              <option value="AI_SCREENING_BLOCKED">AI: Yaliyozuiwa (Blocked by AI)</option>
               <option value="REPORTED">Yenye Ripoti (Reported)</option>
               <option value="INVALID">Yasiyokidhi Vigezo (Invalid)</option>
               <option value="CATEGORY_MISMATCH">Mgongano wa Kundi (Category Mismatch)</option>
@@ -426,6 +428,23 @@ export const AdminListingModeration: React.FC = () => {
                     {aiClassification?.isMismatchWithSellerCategory && (
                       <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
                         <Sparkles className="w-3 h-3 text-amber-600" /> Tofauti ya Kundi (AI)
+                      </span>
+                    )}
+
+                    {item.aiScreening && (
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                          item.aiScreening.status === 'PASS'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                            : item.aiScreening.status === 'BLOCK'
+                            ? 'bg-rose-100 text-rose-800 border-rose-300'
+                            : 'bg-amber-100 text-amber-900 border-amber-300'
+                        }`}
+                        title={item.aiScreening.explanationSwahili || item.aiScreening.explanation}
+                      >
+                        <Shield className="w-3 h-3" />
+                        AI: {item.aiScreening.status}
+                        {item.aiScreening.categories?.length > 0 && ` (${item.aiScreening.categories[0]})`}
                       </span>
                     )}
                   </div>

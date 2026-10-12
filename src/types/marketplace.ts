@@ -33,6 +33,9 @@ export interface MarketplaceCategory {
   subcategories: string[];
 }
 
+import { SellerTrustStatus, ModerationStatus } from './marketplaceModeration';
+export type { SellerTrustStatus };
+
 export interface SellerProfile {
   uid: string;
   businessName: string;
@@ -44,6 +47,10 @@ export interface SellerProfile {
   description?: string;
   verificationStatus: VerificationStatus;
   logoImage?: string;
+  trustStatus?: SellerTrustStatus;
+  trustGrantedAt?: string;
+  trustGrantedBy?: string;
+  trustReason?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -140,14 +147,18 @@ export interface MarketplaceProduct {
   validationErrors?: Array<{ checkType: string; code: string; message: string }>;
   validationWarnings?: Array<{ checkType: string; code: string; message: string }>;
 
-  // V1.7D Admin Moderation
-  moderationStatus?: 'NOT_REVIEWED' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'HIDDEN' | 'SUSPENDED' | 'RESTORED' | 'ESCALATED';
+  // V1.7D Admin Moderation & V1.0 Content Moderation Foundation
+  moderationStatus?: ModerationStatus;
   moderationId?: string;
   moderatedAt?: string;
   moderatedBy?: string;
   moderationReasonCode?: string;
   moderationPublicReason?: string;
   moderationCorrectionNote?: string;
+
+  // V1.0 AI Content Screening
+  aiScreening?: import('./marketplaceModeration').AIScreeningResult | null;
+  aiScreenedAt?: string;
 
   createdAt: string;
   updatedAt: string;

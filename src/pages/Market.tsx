@@ -98,6 +98,7 @@ export const Market: React.FC = () => {
   } = useSellerMonetization(user?.uid, undefined);
 
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
+  const [mySellerProducts, setMySellerProducts] = useState<MarketplaceProduct[]>([]);
   const [sellerProfile, setSellerProfile] = useState<SellerProfile | null>(authSellerProfile);
   const [myShop, setMyShop] = useState<DigitalShop | null>(null);
   const [myCatalogues, setMyCatalogues] = useState<ShopCatalogue[]>([]);
@@ -331,6 +332,15 @@ export const Market: React.FC = () => {
         } finally {
           setIsLoadingVerification(false);
         }
+
+        // Fetch all seller products including non-eligible (draft, pending, rejected, hidden)
+        try {
+          const allUserProds = await fetchMarketplaceProducts({ includeNonEligible: true });
+          const ownProds = allUserProds.filter((p) => p.sellerId === user.uid);
+          setMySellerProducts(ownProds);
+        } catch (perr) {
+          console.warn('Hitilafu ya kupakia bidhaa za duka la muuzaji:', perr);
+        }
       }
     } catch (err) {
       console.error('Hitilafu ya kupakia soko:', err);
@@ -446,8 +456,10 @@ export const Market: React.FC = () => {
   // Count user products
   const myProductsCount = useMemo(() => {
     if (!user?.uid) return 0;
-    return products.filter((p) => p.sellerId === user.uid).length;
-  }, [products, user?.uid]);
+    return mySellerProducts.length > 0
+      ? mySellerProducts.length
+      : products.filter((p) => p.sellerId === user.uid).length;
+  }, [products, mySellerProducts, user?.uid]);
 
   // Open a specific seller's Digital Shop for buyers (with optional deep-linked catalogue/product)
   const handleOpenBuyerShop = async (
