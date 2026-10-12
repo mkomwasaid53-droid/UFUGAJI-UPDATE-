@@ -216,7 +216,11 @@ export async function createAuthoritativeNotification(
   if (db) {
     try {
       const notifRef = doc(db, NOTIFICATIONS_COLLECTION, notificationId);
-      await setDoc(notifRef, notification, { merge: true });
+      const effectiveTimeout = typeof window === 'undefined' ? 50 : 800;
+      await Promise.race([
+        setDoc(notifRef, notification, { merge: true }),
+        new Promise((resolve) => setTimeout(resolve, effectiveTimeout))
+      ]);
     } catch (err) {
       // Graceful fallback to local cache if network or unauthenticated in testing
       console.warn('[notificationService] Firestore persistence notice (cached locally):', err);
@@ -1056,6 +1060,81 @@ export async function dispatchReportAdminNotification(params: {
     targetId: params.reportId,
     relatedReportId: params.reportId,
     actionUrl: '/admin'
+  });
+}
+
+/**
+ * Dispatches a confirmation notification to the reporter upon receiving their report.
+ * Preserves reporter privacy and uses deduplicationKey to prevent duplicate notifications.
+ */
+export async function dispatchReportReceivedReporterNotification(params: {
+  reporterUserId: string;
+  reportId: string;
+  targetTitle?: string;
+}): Promise<AppNotification | null> {
+  if (!params.reporterUserId) return null;
+  return createAuthoritativeNotification({
+    recipientUserId: params.reporterUserId,
+    type: 'REPORT_RECEIVED',
+    category: 'GOVERNANCE',
+    title: 'Ripoti Yako Imepokelewa',
+    message: `Ripoti yako kuhusu "${params.targetTitle || 'maudhui ya soko'}" imepokelewa salama. Timu ya usimamizi itaichunguza kwa haki na kuchukua hatua stahiki kulingana na miongozo.`,
+    priority: 'NORMAL',
+    targetType: 'REPORT',
+    targetId: params.reportId,
+    relatedReportId: params.reportId,
+    actionUrl: '/market',
+    deduplicationKey: `rep_rcv_${params.reporterUserId}_${params.reportId}`
+  });
+}
+
+/**
+ * Dispatches a notification to the reporter when their report has been reviewed and closed.
+ * Privacy Rule: NEVER leaks seller private details, moderator notes, or internal sanctions.
+ */
+export async function dispatchReportClosedReporterNotification(params: {
+  reporterUserId: string;
+  reportId: string;
+  targetTitle?: string;
+}): Promise<AppNotification | null> {
+  if (!params.reporterUserId) return null;
+  return createAuthoritativeNotification({
+    recipientUserId: params.reporterUserId,
+    type: 'REPORT_CLOSED',
+    category: 'GOVERNANCE',
+    title: 'Ukaguzi wa Ripoti Yako Umekamilika',
+    message: `Ukaguzi wa ripoti yako kuhusu "${params.targetTitle || 'tangazo la soko'}" umekamilika. Hatua stahiki za kiutawala zimechukuliwa kulingana na sera za jukwaa. Asante kwa kusaidia kudumisha soko salama.`,
+    priority: 'NORMAL',
+    targetType: 'REPORT',
+    targetId: params.reportId,
+    relatedReportId: params.reportId,
+    actionUrl: '/market',
+    deduplicationKey: `rep_cls_${params.reporterUserId}_${params.reportId}`
+  });
+}
+
+/**
+ * Dispatches an admin notification when a listing requires administrative review
+ * (e.g., NEW_SELLER listing, AI REVIEW_REQUIRED, or AI SCREENING_ERROR).
+ */
+export async function dispatchListingReviewRequiredAdminNotification(params: {
+  productId: string;
+  productTitle: string;
+  sellerName?: string;
+  reason: string;
+}): Promise<AppNotification | null> {
+  return createAuthoritativeNotification({
+    recipientUserId: ADMIN_GROUP_RECIPIENT,
+    type: 'ADMIN_REVIEW_REQUIRED',
+    category: 'GOVERNANCE',
+    title: 'Tangazo Linahitaji Ukaguzi',
+    message: `Tangazo "${params.productTitle}" ${params.sellerName ? `la muuzaji ${params.sellerName}` : ''} linahitaji ukaguzi wa msimamizi. Sababu: ${params.reason}.`,
+    priority: 'HIGH',
+    targetType: 'LISTING',
+    targetId: params.productId,
+    relatedProductId: params.productId,
+    actionUrl: '/admin',
+    deduplicationKey: `adm_rev_req_${params.productId}`
   });
 }
 

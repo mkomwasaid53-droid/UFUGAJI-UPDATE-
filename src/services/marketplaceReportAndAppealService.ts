@@ -56,9 +56,23 @@ import {
 } from './marketplaceModerationService';
 import {
   dispatchReportAdminNotification,
+  dispatchReportReceivedReporterNotification,
+  dispatchReportClosedReporterNotification,
   dispatchAppealAdminNotification,
   dispatchAppealDecisionNotification
 } from './notificationService';
+
+async function safeFirestoreOp<T>(promise: Promise<T>, timeoutMs?: number): Promise<T | null> {
+  const effectiveTimeout = timeoutMs !== undefined ? timeoutMs : (typeof window === 'undefined' ? 50 : 800);
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), effectiveTimeout))
+    ]);
+  } catch (err) {
+    return null;
+  }
+}
 
 // ==========================================
 // LOCAL STORAGE KEYS & IN-MEMORY CACHE
@@ -145,7 +159,7 @@ async function recordGovernanceAuditEntry(
 
   try {
     const ref = doc(db, 'marketplaceReportsAppealsAudit', auditId);
-    await setDoc(ref, fullEntry);
+    await safeFirestoreOp(setDoc(ref, fullEntry));
   } catch (err) {
     console.warn('Could not persist report/appeal audit to Firestore immediately:', err);
   }
@@ -171,10 +185,24 @@ export function assertReportAppealAuditImmutable(): void {
  * - Never automatically punishes the target
  */
 export async function submitMarketplaceReport(
-  reporterUserId: string,
-  reporterDisplayName: string,
-  input: SubmitReportInput
+  reporterUserIdOrInput: string | (SubmitReportInput & { reporterUserId?: string; reporterDisplayName?: string }),
+  reporterDisplayNameArg?: string,
+  inputArg?: SubmitReportInput
 ): Promise<{ report: MarketplaceReportRecord; auditEntry: MarketplaceReportAppealAuditEntry }> {
+  let reporterUserId: string;
+  let reporterDisplayName: string;
+  let input: SubmitReportInput;
+
+  if (typeof reporterUserIdOrInput === 'object' && reporterUserIdOrInput !== null) {
+    reporterUserId = reporterUserIdOrInput.reporterUserId || '';
+    reporterDisplayName = reporterUserIdOrInput.reporterDisplayName || 'Mfugaji';
+    input = reporterUserIdOrInput;
+  } else {
+    reporterUserId = reporterUserIdOrInput || '';
+    reporterDisplayName = reporterDisplayNameArg || 'Mfugaji';
+    input = inputArg || ({} as SubmitReportInput);
+  }
+
   if (!reporterUserId || typeof reporterUserId !== 'string' || reporterUserId.trim().length === 0) {
     throw new Error('Hujaingia kwenye mfumo. Tafadhali ingia kwenye akaunti yako ili kuwasilisha ripoti.');
   }
@@ -197,6 +225,11 @@ export async function submitMarketplaceReport(
     throw new Error('Tafadhali toa maelezo ya kina (angalau herufi 5) ili kusaidia ukaguzi wa haki.');
   }
 
+  // Prevent seller from reporting their own listing
+  if (input.sellerId && input.sellerId.trim() === reporterUserId.trim()) {
+    throw new Error('Huwezi kuripoti tangazo au akaunti yako mwenyewe.');
+  }
+
   // Sanitize untrusted input (remove tags, limit length)
   const sanitizedText = cleanReasonText.replace(/<[^>]*>?/gm, '').substring(0, 1500);
 
@@ -213,7 +246,19 @@ export async function submitMarketplaceReport(
   );
 
   if (existingActive) {
-    throw new Error('Tayari umewasilisha ripoti inayoendelea kufanyiwa kazi kwa sababu hii kuhusu maudhui haya. Timu inashughulikia.');
+    return {
+      report: existingActive,
+      auditEntry: {
+        auditId: `aud_dup_${existingActive.reportId}`,
+        recordType: 'REPORT',
+        recordId: existingActive.reportId,
+        action: 'SUBMIT_REPORT',
+        performedByUserId: reporterUserId,
+        performedByDisplayName: reporterDisplayName,
+        performedAt: existingActive.createdAt,
+        details: { isDuplicateIgnored: true }
+      }
+    };
   }
 
   const now = new Date().toISOString();
@@ -252,7 +297,7 @@ export async function submitMarketplaceReport(
   // Persist report to Firestore
   try {
     const reportRef = doc(db, 'marketplaceReports', reportId);
-    await setDoc(reportRef, report);
+    await safeFirestoreOp(setDoc(reportRef, report));
   } catch (err) {
     console.warn('Could not persist report to Firestore immediately:', err);
   }
@@ -273,7 +318,7 @@ export async function submitMarketplaceReport(
     reasonText: sanitizedText
   });
 
-  // Dispatch Authoritative Admin Notification (V1.7H)
+  // Dispatch Authoritative Admin & Reporter Notifications (V1.7H)
   try {
     await dispatchReportAdminNotification({
       reportId,
@@ -282,8 +327,13 @@ export async function submitMarketplaceReport(
       targetTitle: input.targetId,
       reasonCategory: input.reasonCode
     });
+    await dispatchReportReceivedReporterNotification({
+      reporterUserId,
+      reportId,
+      targetTitle: input.targetId
+    });
   } catch (notifErr) {
-    console.warn('Hitilafu ya kutoa arifa ya ripoti kwa wasimamizi:', notifErr);
+    console.warn('Hitilafu ya kutoa arifa ya ripoti:', notifErr);
   }
 
   return { report, auditEntry };
@@ -377,10 +427,20 @@ export async function reviewMarketplaceReport(
   adminUserId: string,
   adminName: string,
   isAdmin: boolean,
-  reportId: string,
-  input: ReviewReportInput
+  reportIdOrInput: string | (ReviewReportInput & { reportId?: string }),
+  inputArg?: ReviewReportInput
 ): Promise<{ report: MarketplaceReportRecord; auditEntry: MarketplaceReportAppealAuditEntry }> {
   assertAdminAuthorized(adminUserId, isAdmin);
+
+  let reportId: string;
+  let input: ReviewReportInput;
+  if (typeof reportIdOrInput === 'object' && reportIdOrInput !== null) {
+    reportId = (reportIdOrInput as any).reportId || '';
+    input = reportIdOrInput;
+  } else {
+    reportId = reportIdOrInput;
+    input = inputArg || ({} as ReviewReportInput);
+  }
 
   const allReports = getLocalReportsCache();
   const index = allReports.findIndex((r) => r.reportId === reportId);
@@ -416,19 +476,21 @@ export async function reviewMarketplaceReport(
 
   try {
     const ref = doc(db, 'marketplaceReports', reportId);
-    await updateDoc(ref, {
-      status: updated.status,
-      resolutionCode: updated.resolutionCode,
-      resolutionText: updated.resolutionText,
-      moderatorNotes: updated.moderatorNotes,
-      relatedModerationId: updated.relatedModerationId,
-      relatedWarningId: updated.relatedWarningId,
-      relatedRestrictionId: updated.relatedRestrictionId,
-      reviewedAt: updated.reviewedAt,
-      reviewedBy: updated.reviewedBy,
-      reviewedByName: updated.reviewedByName,
-      updatedAt: updated.updatedAt
-    });
+    await safeFirestoreOp(
+      updateDoc(ref, {
+        status: updated.status,
+        resolutionCode: updated.resolutionCode,
+        resolutionText: updated.resolutionText,
+        moderatorNotes: updated.moderatorNotes,
+        relatedModerationId: updated.relatedModerationId,
+        relatedWarningId: updated.relatedWarningId,
+        relatedRestrictionId: updated.relatedRestrictionId,
+        reviewedAt: updated.reviewedAt,
+        reviewedBy: updated.reviewedBy,
+        reviewedByName: updated.reviewedByName,
+        updatedAt: updated.updatedAt
+      })
+    );
   } catch (err) {
     console.warn('Could not update report in Firestore immediately:', err);
   }
@@ -453,6 +515,19 @@ export async function reviewMarketplaceReport(
     internalNote: input.moderatorNotes,
     relatedGovernanceRecordId: updated.relatedModerationId || updated.relatedWarningId || updated.relatedRestrictionId
   });
+
+  // Notify reporter upon resolution/closure if status moved to ACTION_TAKEN, RESOLVED, or DISMISSED
+  if (updated.status === 'ACTION_TAKEN' || updated.status === 'RESOLVED' || updated.status === 'DISMISSED') {
+    try {
+      await dispatchReportClosedReporterNotification({
+        reporterUserId: updated.reporterUserId,
+        reportId: updated.reportId,
+        targetTitle: updated.productId || updated.targetId
+      });
+    } catch (notifErr) {
+      console.warn('Hitilafu ya kutoa arifa ya kufungwa kwa ripoti:', notifErr);
+    }
+  }
 
   return { report: updated, auditEntry };
 }

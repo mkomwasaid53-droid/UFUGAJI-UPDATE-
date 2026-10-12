@@ -168,20 +168,44 @@ export const AdminListingModeration: React.FC = () => {
   const stats = useMemo(() => {
     const total = queue.length;
     let notReviewed = 0;
+    let newSellerPending = 0;
+    let aiReviewRequired = 0;
+    let aiScreeningError = 0;
     let reported = 0;
+    let underReview = 0;
     let invalid = 0;
     let approved = 0;
     let suspended = 0;
 
     for (const item of queue) {
-      if (item.moderationRecord.status === 'NOT_REVIEWED') notReviewed++;
+      if (item.moderationRecord.status === 'NOT_REVIEWED' || item.moderationRecord.status === 'PENDING_REVIEW') notReviewed++;
+      if (
+        (item.product.sellerTrustStatus || 'NEW_SELLER') === 'NEW_SELLER' &&
+        (item.moderationRecord.status === 'PENDING_REVIEW' || item.moderationRecord.status === 'NOT_REVIEWED')
+      ) {
+        newSellerPending++;
+      }
+      if (item.aiScreening?.status === 'REVIEW_REQUIRED') aiReviewRequired++;
+      if (item.aiScreening?.status === 'SCREENING_ERROR') aiScreeningError++;
       if (item.reportCount > 0) reported++;
+      if (item.moderationRecord.status === 'UNDER_REVIEW') underReview++;
       if (!item.validationResult.isEligibleForActive) invalid++;
       if (item.moderationRecord.status === 'APPROVED') approved++;
       if (item.moderationRecord.status === 'SUSPENDED' || item.moderationRecord.status === 'HIDDEN') suspended++;
     }
 
-    return { total, notReviewed, reported, invalid, approved, suspended };
+    return {
+      total,
+      notReviewed,
+      newSellerPending,
+      aiReviewRequired,
+      aiScreeningError,
+      reported,
+      underReview,
+      invalid,
+      approved,
+      suspended
+    };
   }, [queue]);
 
   if (!isAdmin) {
@@ -268,30 +292,54 @@ export const AdminListingModeration: React.FC = () => {
             <p className="text-base font-bold text-stone-900">{stats.total}</p>
           </div>
           <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200">
-            <span className="text-[10px] text-blue-700 font-medium">Hayajakaguliwa</span>
-            <p className="text-base font-bold text-blue-900">{stats.notReviewed}</p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200">
-            <span className="text-[10px] text-rose-700 font-medium">Yenye Ripoti</span>
-            <p className="text-base font-bold text-rose-900">{stats.reported}</p>
+            <span className="text-[10px] text-blue-700 font-medium">Wauzaji Wapya</span>
+            <p className="text-base font-bold text-blue-900">{stats.newSellerPending}</p>
           </div>
           <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
-            <span className="text-[10px] text-amber-700 font-medium">Yenye Hitilafu</span>
-            <p className="text-base font-bold text-amber-900">{stats.invalid}</p>
+            <span className="text-[10px] text-amber-700 font-medium">AI: Review Req</span>
+            <p className="text-base font-bold text-amber-900">{stats.aiReviewRequired}</p>
           </div>
-          <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
-            <span className="text-[10px] text-emerald-700 font-medium">Yaliyoidhinishwa</span>
-            <p className="text-base font-bold text-emerald-900">{stats.approved}</p>
+          <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200">
+            <span className="text-[10px] text-rose-700 font-medium">AI: Hitilafu Error</span>
+            <p className="text-base font-bold text-rose-900">{stats.aiScreeningError}</p>
           </div>
-          <div className="p-2.5 rounded-xl bg-stone-100 border border-stone-300">
-            <span className="text-[10px] text-stone-600 font-medium">Yaliyosimamishwa</span>
-            <p className="text-base font-bold text-stone-800">{stats.suspended}</p>
+          <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-300">
+            <span className="text-[10px] text-rose-800 font-medium">Yenye Ripoti</span>
+            <p className="text-base font-bold text-rose-900">{stats.reported}</p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-purple-50 border border-purple-200">
+            <span className="text-[10px] text-purple-700 font-medium">Under Review</span>
+            <p className="text-base font-bold text-purple-900">{stats.underReview}</p>
           </div>
         </div>
       </div>
 
       {/* Filter & Search Toolbar */}
       <div className="bg-white border border-stone-200/80 rounded-2xl p-3 shadow-xs space-y-3">
+        {/* Quick Filter Pill Buttons */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+          {[
+            { id: 'ALL', label: `Zote (${stats.total})` },
+            { id: 'NEW_SELLER_PENDING', label: `Wauzaji Wapya (${stats.newSellerPending})` },
+            { id: 'AI_SCREENING_REVIEW_REQUIRED', label: `AI Review (${stats.aiReviewRequired})` },
+            { id: 'AI_SCREENING_ERROR', label: `AI Hitilafu (${stats.aiScreeningError})` },
+            { id: 'REPORTED', label: `Ripoti (${stats.reported})` },
+            { id: 'UNDER_REVIEW', label: `Under Review (${stats.underReview})` }
+          ].map((pill) => (
+            <button
+              key={pill.id}
+              onClick={() => setFilter(pill.id as ModerationQueueFilter)}
+              className={`px-3 py-1.5 rounded-xl font-medium shrink-0 transition-colors cursor-pointer ${
+                filter === pill.id
+                  ? 'bg-stone-900 text-white shadow-xs'
+                  : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+              }`}
+            >
+              {pill.label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-col sm:flex-row gap-2">
           {/* Search Input */}
           <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center gap-2">
@@ -321,16 +369,18 @@ export const AdminListingModeration: React.FC = () => {
               onChange={(e) => setFilter(e.target.value as ModerationQueueFilter)}
               className="text-xs py-2 px-2.5 rounded-xl border border-stone-200 bg-stone-50 font-medium focus:outline-emerald-600"
             >
-              <option value="ALL">Yote (All)</option>
-              <option value="NOT_REVIEWED">Hayajakaguliwa (Not Reviewed)</option>
-              <option value="UNDER_REVIEW">Yenye Ukaguzi (Under Review)</option>
-              <option value="AI_SCREENING_REVIEW_REQUIRED">AI: Inahitaji Ukaguzi (Review Required)</option>
+              <option value="ALL">Yote ({stats.total})</option>
+              <option value="NEW_SELLER_PENDING">Wauzaji Wapya Wanaosubiri ({stats.newSellerPending})</option>
+              <option value="AI_SCREENING_REVIEW_REQUIRED">AI: Inahitaji Ukaguzi ({stats.aiReviewRequired})</option>
+              <option value="AI_SCREENING_ERROR">AI: Hitilafu ya Screening ({stats.aiScreeningError})</option>
+              <option value="REPORTED">Yenye Ripoti ({stats.reported})</option>
+              <option value="UNDER_REVIEW">Yenye Ukaguzi Unaondelea ({stats.underReview})</option>
+              <option value="NOT_REVIEWED">Hayajakaguliwa ({stats.notReviewed})</option>
               <option value="AI_SCREENING_BLOCKED">AI: Yaliyozuiwa (Blocked by AI)</option>
-              <option value="REPORTED">Yenye Ripoti (Reported)</option>
-              <option value="INVALID">Yasiyokidhi Vigezo (Invalid)</option>
+              <option value="INVALID">Yasiyokidhi Vigezo ({stats.invalid})</option>
               <option value="CATEGORY_MISMATCH">Mgongano wa Kundi (Category Mismatch)</option>
-              <option value="SUSPENDED">Yaliyofungiwa / Kufichwa (Suspended/Hidden)</option>
-              <option value="RECENTLY_UPDATED">Yaliyoboreshwa Karibuni (Recently Updated)</option>
+              <option value="SUSPENDED">Yaliyofungiwa / Kufichwa ({stats.suspended})</option>
+              <option value="RECENTLY_UPDATED">Yaliyoboreshwa Karibuni</option>
             </select>
           </div>
         </div>

@@ -44,11 +44,14 @@ import {
   Navigation,
   Edit2,
   Compass,
-  Building
+  Building,
+  Flag
 } from 'lucide-react';
 import { ProductVideoPlayer } from './ProductVideoPlayer';
 import { ProductReviewsSection } from './ProductReviewsSection';
 import { MarketplaceTrustPanel } from './MarketplaceTrustPanel';
+import { ReportModal } from './ReportModal';
+import { useAuth } from '../../context/AuthContext';
 import { resolveProductTrustSignals } from '../../services/marketplaceTrustService';
 
 interface ProductDetailModalProps {
@@ -72,7 +75,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onProductUpdated,
   onContactSeller
 }) => {
+  const { user } = useAuth();
   const [currentProduct, setCurrentProduct] = useState<MarketplaceProduct | null>(product || null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportSuccessNotice, setReportSuccessNotice] = useState<string | null>(null);
+  const [authPromptNotice, setAuthPromptNotice] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (product) {
@@ -381,13 +388,34 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             </h3>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-stone-400 hover:text-white bg-stone-800/80 hover:bg-stone-700 rounded-full transition-colors cursor-pointer shrink-0"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {!isOwner && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!user) {
+                    setAuthPromptNotice('Tafadhali ingia kwenye akaunti yako ili kuripoti tangazo hili.');
+                    setTimeout(() => setAuthPromptNotice(null), 4000);
+                    return;
+                  }
+                  setIsReportModalOpen(true);
+                }}
+                className="px-2.5 py-1 text-xs text-rose-300 hover:text-white bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                title="Ripoti tangazo hili kwa wasimamizi"
+              >
+                <Flag className="w-3.5 h-3.5 text-rose-400" />
+                <span className="hidden sm:inline">Ripoti</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-stone-400 hover:text-white bg-stone-800/80 hover:bg-stone-700 rounded-full transition-colors cursor-pointer shrink-0"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Scrollable Content */}
@@ -1464,6 +1492,42 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <strong>Tahadhari ya Usalama:</strong> UFUGAJI UPDATE inashauri kukagua mifugo au bidhaa ana kwa ana kabla ya kukamilisha malipo. Epuka kutuma pesa kabla ya kupokea huduma.
             </p>
           </div>
+
+          {/* User Report Entry Point (Requirement 3) */}
+          {!isOwner && (
+            <div className="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-stone-500 bg-stone-50 p-2.5 rounded-xl border border-stone-200/80">
+              <span className="text-[11px] text-stone-600">Una mashaka kuhusu maelezo, picha, au uhalali wa tangazo hili?</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!user) {
+                    setAuthPromptNotice('Tafadhali ingia kwenye akaunti yako ili kuripoti tangazo hili.');
+                    setTimeout(() => setAuthPromptNotice(null), 4000);
+                    return;
+                  }
+                  setIsReportModalOpen(true);
+                }}
+                className="text-rose-700 hover:text-rose-800 font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+              >
+                <Flag className="w-3.5 h-3.5" />
+                <span>Ripoti Tangazo Hili</span>
+              </button>
+            </div>
+          )}
+
+          {reportSuccessNotice && (
+            <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{reportSuccessNotice}</span>
+            </div>
+          )}
+
+          {authPromptNotice && (
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>{authPromptNotice}</span>
+            </div>
+          )}
         </div>
 
         {/* Footer Actions */}
@@ -1528,6 +1592,25 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* User Report Modal (Requirement 3) */}
+      {currentProduct && !isOwner && (
+        <ReportModal
+          isOpen={isReportModalOpen}
+          onClose={() => setIsReportModalOpen(false)}
+          targetType="PRODUCT"
+          targetId={currentProduct.productId}
+          productId={currentProduct.productId}
+          listingId={currentProduct.productId}
+          sellerId={currentProduct.sellerId}
+          shopId={currentProduct.shopId}
+          targetTitle={currentProduct.title}
+          onReportSubmitted={() => {
+            setReportSuccessNotice('Ripoti yako imepokelewa na kupelekwa kwa wasimamizi.');
+            setTimeout(() => setReportSuccessNotice(null), 5000);
+          }}
+        />
+      )}
 
       {/* Fullscreen Lightbox Modal */}
       {isLightboxOpen && (

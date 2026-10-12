@@ -42,6 +42,8 @@ interface ListingModerationActionModalProps {
     internalNote?: string;
     publicExplanation?: string;
     correctionInstructions?: string;
+    relatedReportId?: string;
+    manualReviewOverride?: boolean;
   }) => Promise<void>;
   isProcessing: boolean;
 }
@@ -60,7 +62,15 @@ export const ListingModerationActionModal: React.FC<ListingModerationActionModal
   const [publicExplanation, setPublicExplanation] = useState('');
   const [correctionInstructions, setCorrectionInstructions] = useState('');
   const [internalNote, setInternalNote] = useState('');
+  const [manualReviewOverride, setManualReviewOverride] = useState(false);
+  const [selectedReportId, setSelectedReportId] = useState<string>(
+    item.reports && item.reports.length > 0 ? item.reports[0].reportId : ''
+  );
   const [formError, setFormError] = useState<string | null>(null);
+
+  const hasScreeningError =
+    item.aiScreening?.status === 'SCREENING_ERROR' ||
+    product.aiScreening?.status === 'SCREENING_ERROR';
 
   // Map actionType to actual ModerationAction
   const getAction = (): ModerationAction => {
@@ -110,6 +120,22 @@ export const ListingModerationActionModal: React.FC<ListingModerationActionModal
       return;
     }
 
+    // SCREENING_ERROR guard (Requirement 6)
+    if (action === 'APPROVE_LISTING' && hasScreeningError) {
+      if (!manualReviewOverride) {
+        setFormError(
+          'Tangazo hili lina hitilafu ya uchunguzi wa AI (SCREENING_ERROR). Msimamizi hawezi kuidhinisha bila kuthibitisha manual review override na kuweka maelezo ya kina ya ukaguzi.'
+        );
+        return;
+      }
+      if (!internalNote.trim() || internalNote.trim().length < 5) {
+        setFormError(
+          'Tafadhali toa maelezo ya kina ya ukaguzi wa mwongozo (internal note angalau herufi 5) kwenye kumbukumbu ya utawala kabla ya kuidhinisha tangazo lenye hitilafu ya screening.'
+        );
+        return;
+      }
+    }
+
     try {
       await onSubmit({
         action,
@@ -117,7 +143,9 @@ export const ListingModerationActionModal: React.FC<ListingModerationActionModal
         reasonText: reasonText.trim() || undefined,
         internalNote: internalNote.trim() || undefined,
         publicExplanation: publicExplanation.trim() || undefined,
-        correctionInstructions: correctionInstructions.trim() || undefined
+        correctionInstructions: correctionInstructions.trim() || undefined,
+        relatedReportId: selectedReportId ? selectedReportId : undefined,
+        manualReviewOverride: hasScreeningError ? Boolean(manualReviewOverride) : undefined
       });
     } catch (err: any) {
       setFormError(err.message || 'Hitilafu wakati wa kutekeleza hatua ya ukaguzi.');
@@ -188,16 +216,65 @@ export const ListingModerationActionModal: React.FC<ListingModerationActionModal
                 </div>
               )}
 
+              {/* SCREENING_ERROR Warning & Manual Override Checkbox (Requirement 6) */}
+              {hasScreeningError && (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-300 text-amber-950 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-xs text-amber-900">
+                    <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>Uchunguzi wa AI Ulikwama (SCREENING_ERROR)</span>
+                  </div>
+                  <p className="text-[11px] text-amber-900 leading-relaxed">
+                    Tangazo hili lilipata hitilafu wakati wa ukaguzi wa AI (mfano: picha haikufunguka au mtandao ulikatika). Msimamizi hawezi kuidhinisha kiholela bila ukaguzi wa kina wa macho na kuthibitisha hapa chini.
+                  </p>
+                  <label className="flex items-start gap-2 pt-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={manualReviewOverride}
+                      onChange={(e) => setManualReviewOverride(e.target.checked)}
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500 rounded cursor-pointer"
+                    />
+                    <span className="text-[11px] font-bold text-stone-900">
+                      Nathibitisha kuwa nimekagua tangazo hili kwa macho (maandishi, picha zote, bei, na vigezo) na linakidhi sera (Manual Review Override).
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {/* Link Action to Related Report if present */}
+              {item.reports && item.reports.length > 0 && (
+                <div>
+                  <label className="block text-stone-700 font-semibold mb-1">
+                    Tatua Ripoti ya Mtumiaji (Link Report):
+                  </label>
+                  <select
+                    value={selectedReportId}
+                    onChange={(e) => setSelectedReportId(e.target.value)}
+                    className="w-full p-2.5 rounded-lg border border-stone-300 bg-white font-medium focus:outline-emerald-600"
+                  >
+                    <option value="">-- Hatua ya kawaida ya ukaguzi --</option>
+                    {item.reports.map((rep) => (
+                      <option key={rep.reportId} value={rep.reportId}>
+                        Ripoti: {rep.reason || (rep as any).reasonCode} ({rep.reportId})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-stone-600 font-semibold mb-1">
-                  Kumbukumbu ya Ndani (Internal Note - Haionekani kwa Muuzaji):
+                  Kumbukumbu ya Ndani (Internal Note - Haionekani kwa Muuzaji){hasScreeningError && <span className="text-rose-600">*</span>}:
                 </label>
                 <textarea
                   value={internalNote}
                   onChange={(e) => setInternalNote(e.target.value)}
                   rows={2}
                   className="w-full p-2 rounded-lg border border-stone-300 focus:outline-emerald-600 font-normal"
-                  placeholder="Mfano: Picha zimekaguliwa na bei ipo sawa."
+                  placeholder={
+                    hasScreeningError
+                      ? 'Eleza kwa kina ukaguzi wa macho uliofanya (inahitajika kwa sababu ya screening error)...'
+                      : 'Mfano: Picha zimekaguliwa na bei ipo sawa.'
+                  }
                 />
               </div>
             </div>

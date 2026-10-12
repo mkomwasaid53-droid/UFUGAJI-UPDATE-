@@ -24,16 +24,20 @@
 export type ReportTargetType = 'PRODUCT' | 'LISTING' | 'SELLER' | 'SHOP' | 'REVIEW';
 
 export type ReportReasonCode =
-  | 'SPAM'
+  | 'SUSPECTED_SCAM'
+  | 'PROHIBITED_PRODUCT'
   | 'MISLEADING_INFORMATION'
   | 'WRONG_CATEGORY'
+  | 'ANIMAL_WELFARE_CONCERN'
+  | 'INAPPROPRIATE_CONTENT'
+  | 'COUNTERFEIT_OR_STOLEN'
+  | 'SPAM'
   | 'WRONG_PRODUCT'
   | 'MISLEADING_PRICE'
   | 'MISLEADING_STOCK'
   | 'MISLEADING_LOCATION'
   | 'MISLEADING_DELIVERY'
   | 'DUPLICATE_LISTING'
-  | 'INAPPROPRIATE_CONTENT'
   | 'NON_MARKETPLACE_CONTENT'
   | 'SUSPECTED_IMPERSONATION'
   | 'PRIVACY_VIOLATION'
@@ -45,6 +49,7 @@ export type ReportReasonCode =
 export type ReportStatus =
   | 'OPEN'
   | 'UNDER_REVIEW'
+  | 'ACTION_TAKEN'
   | 'RESOLVED'
   | 'DISMISSED'
   | 'UNAVAILABLE';
@@ -63,6 +68,26 @@ export const REPORT_REASON_METADATA: Record<
   ReportReasonCode,
   { sw: string; en: string; description: string }
 > = {
+  SUSPECTED_SCAM: {
+    sw: 'Shaka ya Utapeli au Ulaghai (Suspected Scam)',
+    en: 'Suspected scam or fraudulent offer',
+    description: 'Ombi la kutuma pesa bila dhamana, bidhaa hewa, au utapeli wa kibiashara.'
+  },
+  PROHIBITED_PRODUCT: {
+    sw: 'Bidhaa Iliyopigwa Marufuku (Prohibited Product)',
+    en: 'Prohibited or illegal product',
+    description: 'Dawa zilizopigwa marufuku, silaha, meno ya tembo, au bidhaa zisizoruhusiwa kisheria.'
+  },
+  ANIMAL_WELFARE_CONCERN: {
+    sw: 'Hofu ya Ustawi wa Wanyama (Animal Welfare Concern)',
+    en: 'Animal welfare or cruelty concern',
+    description: 'Mateso kwa wanyama, mapigano yasiyo halali, au ukatili dhidi ya mifugo.'
+  },
+  COUNTERFEIT_OR_STOLEN: {
+    sw: 'Bidhaa Feki au ya Wizi (Counterfeit or Stolen)',
+    en: 'Counterfeit, fake or suspected stolen goods',
+    description: 'Dawa bandia za mifugo, vifaa feki, au mifugo inayoshukiwa kuwa ya wizi.'
+  },
   SPAM: {
     sw: 'Barua taka au Ujumbe Unaorudiarudia (Spam)',
     en: 'Spam or repetitive content',

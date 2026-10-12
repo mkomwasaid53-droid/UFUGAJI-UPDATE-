@@ -160,6 +160,9 @@ export interface MarketplaceProduct {
   aiScreening?: import('./marketplaceModeration').AIScreeningResult | null;
   aiScreenedAt?: string;
 
+  // Seller Trust Status reference (V1.0 Admin Review & Trust Integration)
+  sellerTrustStatus?: SellerTrustStatus;
+
   createdAt: string;
   updatedAt: string;
   isTestDemo?: boolean; // Clearly indicates sample/test data

@@ -92,6 +92,11 @@ import {
   stripProtectedSellerTrustFields
 } from './src/services/sellerTrustService';
 import { performModerationAction } from './src/services/marketplaceModerationService';
+import {
+  dispatchReportAdminNotification,
+  dispatchReportReceivedReporterNotification,
+  dispatchReportClosedReporterNotification
+} from './src/services/notificationService';
 import { checkSellerRestriction } from './src/services/sellerGovernanceService';
 import {
   evaluateListingContentDeterministically,
@@ -215,6 +220,33 @@ function writeMarketplaceProductsToDisk(products: any[]): void {
     fs.writeFileSync(MARKETPLACE_PRODUCTS_FILE, JSON.stringify(products, null, 2), 'utf-8');
   } catch (err) {
     console.error('Failed to write marketplace products to disk:', err);
+  }
+}
+
+// Persistent marketplace reports storage helpers (V1.0 Reports & Admin Review)
+const MARKETPLACE_REPORTS_FILE = path.join(DATA_DIR, 'marketplace_reports.json');
+
+function readMarketplaceReportsFromDisk(): any[] {
+  try {
+    if (fs.existsSync(MARKETPLACE_REPORTS_FILE)) {
+      const content = fs.readFileSync(MARKETPLACE_REPORTS_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (err) {
+    console.error('Failed to read marketplace reports from disk:', err);
+  }
+  return [];
+}
+
+function writeMarketplaceReportsToDisk(reports: any[]): void {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(MARKETPLACE_REPORTS_FILE, JSON.stringify(reports, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to write marketplace reports to disk:', err);
   }
 }
 
@@ -951,12 +983,33 @@ async function startServer() {
         reasonText,
         internalNote,
         publicExplanation,
-        correctionInstructions
+        correctionInstructions,
+        relatedReportId,
+        manualReviewOverride
       } = req.body;
+
+      const diskProducts = readMarketplaceProductsFromDisk();
+      const targetProduct = diskProducts.find((p: any) => p && p.productId === targetProductId);
+
+      // SCREENING_ERROR manual review guard (Requirement 6)
+      if (action === 'APPROVE_LISTING' && targetProduct?.aiScreening?.status === 'SCREENING_ERROR') {
+        if (!manualReviewOverride) {
+          return res.status(400).json({
+            error:
+              'Tangazo hili lina hitilafu ya uchunguzi wa AI (SCREENING_ERROR). Msimamizi hawezi kuidhinisha bila utaratibu wa manual review override na maelezo ya kina ya ukaguzi (internal note).'
+          });
+        }
+        if (!internalNote || internalNote.trim().length < 5) {
+          return res.status(400).json({
+            error:
+              'Tafadhali weka maelezo ya kina ya ukaguzi wa mwongozo (internal note angalau herufi 5) kuthibitisha ukaguzi kabla ya kuidhinisha.'
+          });
+        }
+      }
 
       const result = await performModerationAction(
         adminUserId,
-        req.body.adminDisplayName || 'Msimamizi Mkuu',
+        req.body.adminDisplayName || authInfo?.userName || 'Msimamizi Mkuu',
         true,
         {
           targetProductId,
@@ -965,7 +1018,9 @@ async function startServer() {
           reasonText,
           internalNote,
           publicExplanation,
-          correctionInstructions
+          correctionInstructions,
+          relatedReportId,
+          manualReviewOverride: Boolean(manualReviewOverride)
         }
       );
 
@@ -975,7 +1030,6 @@ async function startServer() {
 
       // Sync disk products with the moderation result
       if (result.updatedProduct) {
-        const diskProducts = readMarketplaceProductsFromDisk();
         const pIdx = diskProducts.findIndex((p: any) => p.productId === targetProductId);
         if (pIdx >= 0) {
           diskProducts[pIdx] = { ...diskProducts[pIdx], ...result.updatedProduct };
@@ -983,9 +1037,257 @@ async function startServer() {
         }
       }
 
+      // If relatedReportId was passed, also sync report on disk
+      if (relatedReportId) {
+        const reports = readMarketplaceReportsFromDisk();
+        const rIdx = reports.findIndex((r: any) => r.reportId === relatedReportId);
+        if (rIdx >= 0) {
+          reports[rIdx] = {
+            ...reports[rIdx],
+            status: 'ACTION_TAKEN',
+            resolutionCode: 'LISTING_MODERATED',
+            resolutionText: `Hatua ya ${action} imetekelezwa na msimamizi.`,
+            relatedModerationId: result.moderationRecord?.moderationId,
+            reviewedBy: adminUserId,
+            reviewedByName: req.body.adminDisplayName || authInfo?.userName || 'Msimamizi Mkuu',
+            reviewedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          writeMarketplaceReportsToDisk(reports);
+        }
+      }
+
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Hitilafu ya kutekeleza hatua ya ukaguzi' });
+    }
+  });
+
+  // User Reports: Submit a report against a listing/product (Requirement 3 & 4)
+  app.post('/api/marketplace/reports', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Mtumiaji lazima awe authenticated ili kuwasilisha ripoti.' });
+      }
+
+      const {
+        targetType = 'PRODUCT',
+        targetId,
+        productId,
+        listingId,
+        sellerId,
+        reasonCode,
+        reasonText
+      } = req.body;
+
+      if (!targetId || !targetId.trim()) {
+        return res.status(400).json({ error: 'Kitambulisho cha maudhui (targetId) kinahitajika.' });
+      }
+
+      if (!reasonCode) {
+        return res.status(400).json({ error: 'Sababu ya ripoti (reasonCode) inahitajika.' });
+      }
+
+      const validReasons = [
+        'SUSPECTED_SCAM',
+        'PROHIBITED_PRODUCT',
+        'MISLEADING_INFORMATION',
+        'WRONG_CATEGORY',
+        'ANIMAL_WELFARE_CONCERN',
+        'INAPPROPRIATE_CONTENT',
+        'COUNTERFEIT_OR_STOLEN',
+        'OTHER',
+        'SPAM',
+        'NON_MARKETPLACE_CONTENT',
+        'SUSPECTED_FRAUD'
+      ];
+
+      if (!validReasons.includes(reasonCode)) {
+        return res.status(400).json({ error: `Sababu ya ripoti "${reasonCode}" haitambuliwi.` });
+      }
+
+      // Check: Seller cannot report their own listing
+      const cleanSellerId = (sellerId || '').trim();
+      if (cleanSellerId && cleanSellerId === callerUserId) {
+        return res.status(400).json({ error: 'Muuzaji hawezi kuripoti tangazo au akaunti yake mwenyewe.' });
+      }
+
+      // Duplicate protection: prevent duplicate active report for same user, target, and reason
+      const reports = readMarketplaceReportsFromDisk();
+      const existingActive = reports.find(
+        (r: any) =>
+          r.reporterUserId === callerUserId &&
+          r.targetId === targetId &&
+          r.reasonCode === reasonCode &&
+          (r.status === 'OPEN' || r.status === 'UNDER_REVIEW')
+      );
+
+      if (existingActive) {
+        return res.status(409).json({
+          error: 'Tayari umewasilisha ripoti inayoendelea kufanyiwa kazi kwa sababu hii kuhusu maudhui haya.',
+          reportId: existingActive.reportId
+        });
+      }
+
+      const reportId = `rep_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const now = new Date().toISOString();
+      const sanitizedText = (reasonText || '').trim().replace(/<[^>]*>?/gm, '').substring(0, 1500);
+
+      const newReport = {
+        reportId,
+        reporterUserId: callerUserId,
+        reporterDisplayName: authInfo?.userName || req.body.reporterDisplayName || 'Mtumiaji',
+        targetType,
+        targetId,
+        productId: productId || targetId,
+        listingId: listingId || targetId,
+        sellerId: cleanSellerId || null,
+        reasonCode,
+        reasonText: sanitizedText,
+        status: 'OPEN',
+        createdAt: now,
+        updatedAt: now,
+        reviewedAt: null,
+        reviewedBy: null,
+        reviewedByName: null,
+        resolutionCode: null,
+        resolutionText: null,
+        moderatorNotes: null,
+        relatedModerationId: null
+      };
+
+      reports.unshift(newReport);
+      writeMarketplaceReportsToDisk(reports);
+
+      // Dispatch authoritative notifications (admin + reporter receipt confirmation)
+      try {
+        await dispatchReportAdminNotification({
+          reportId,
+          targetType,
+          targetId,
+          targetTitle: targetId,
+          reasonCategory: reasonCode
+        });
+        await dispatchReportReceivedReporterNotification({
+          reporterUserId: callerUserId,
+          reportId,
+          targetTitle: targetId
+        });
+      } catch (notifErr) {
+        console.warn('Could not dispatch notifications:', notifErr);
+      }
+
+      res.status(201).json({ success: true, report: newReport });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Hitilafu ya kuwasilisha ripoti' });
+    }
+  });
+
+  // Get marketplace reports (Admin gets all, ordinary user gets only their own with notes stripped)
+  app.get('/api/marketplace/reports', (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Mtumiaji lazima awe authenticated ili kuona ripoti.' });
+      }
+
+      let reports = readMarketplaceReportsFromDisk();
+
+      // Privacy boundary: non-admins only see their own reports and never moderator notes
+      if (!isAdmin) {
+        reports = reports
+          .filter((r: any) => r.reporterUserId === callerUserId)
+          .map((r: any) => {
+            const { moderatorNotes, ...rest } = r;
+            return rest;
+          });
+        return res.json(reports);
+      }
+
+      // Admin filters
+      const { status, targetType, productId, sellerId } = req.query;
+      if (status && typeof status === 'string') {
+        reports = reports.filter((r: any) => r.status === status);
+      }
+      if (targetType && typeof targetType === 'string') {
+        reports = reports.filter((r: any) => r.targetType === targetType);
+      }
+      if (productId && typeof productId === 'string') {
+        reports = reports.filter((r: any) => r.productId === productId || r.targetId === productId);
+      }
+      if (sellerId && typeof sellerId === 'string') {
+        reports = reports.filter((r: any) => r.sellerId === sellerId);
+      }
+
+      res.json(reports);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Hitilafu ya kupata ripoti' });
+    }
+  });
+
+  // Review a report (Admin only)
+  app.post('/api/marketplace/reports/:id/review', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+      const adminUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      if (!isAdmin || !adminUserId) {
+        return res.status(403).json({ error: 'Ruhusa imekataliwa: Inahitaji mamlaka ya Msimamizi (Admin).' });
+      }
+
+      const { id } = req.params;
+      const { status, resolutionCode, resolutionText, moderatorNotes, relatedModerationId } = req.body;
+
+      if (!status || !['OPEN', 'UNDER_REVIEW', 'ACTION_TAKEN', 'RESOLVED', 'DISMISSED'].includes(status)) {
+        return res.status(400).json({ error: 'Hali ya ripoti (status) si sahihi.' });
+      }
+
+      const reports = readMarketplaceReportsFromDisk();
+      const rIdx = reports.findIndex((r: any) => r.reportId === id);
+      if (rIdx === -1) {
+        return res.status(404).json({ error: 'Ripoti haikupatikana.' });
+      }
+
+      const existing = reports[rIdx];
+      const now = new Date().toISOString();
+
+      const updated = {
+        ...existing,
+        status,
+        resolutionCode: resolutionCode !== undefined ? resolutionCode : existing.resolutionCode,
+        resolutionText: resolutionText !== undefined ? resolutionText : existing.resolutionText,
+        moderatorNotes: moderatorNotes !== undefined ? moderatorNotes : existing.moderatorNotes,
+        relatedModerationId: relatedModerationId || existing.relatedModerationId,
+        reviewedAt: now,
+        reviewedBy: adminUserId,
+        reviewedByName: req.body.adminDisplayName || authInfo?.userName || 'Msimamizi Mkuu',
+        updatedAt: now
+      };
+
+      reports[rIdx] = updated;
+      writeMarketplaceReportsToDisk(reports);
+
+      // Dispatch reporter closure notification if concluded
+      if (status === 'ACTION_TAKEN' || status === 'RESOLVED' || status === 'DISMISSED') {
+        try {
+          await dispatchReportClosedReporterNotification({
+            reporterUserId: updated.reporterUserId,
+            reportId: updated.reportId,
+            targetTitle: updated.productId || updated.targetId
+          });
+        } catch (notifErr) {
+          console.warn('Could not dispatch report closed notification:', notifErr);
+        }
+      }
+
+      res.json({ success: true, report: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Hitilafu ya kufanya ukaguzi wa ripoti' });
     }
   });
 
@@ -3977,7 +4279,8 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
   });
 
   // Helper to extract caller identity from JWT Bearer token or authenticated header
-  function extractUserAuthFromRequest(req: express.Request): { callerUserId: string | null; isAdmin: boolean } {
+  function extractUserAuthFromRequest(req: express.Request): { callerUserId: string | null; isAdmin: boolean; userName?: string | null } {
+    let userName: string | null = null;
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
@@ -3988,8 +4291,9 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
           const uid = payload.user_id || payload.sub || payload.uid;
           const email = (payload.email || '').toLowerCase();
           const isAdmin = email === 'mkomwasaid53@gmail.com' || payload.role === 'admin' || payload.admin === true;
+          userName = payload.name || payload.display_name || payload.displayName || null;
           if (uid) {
-            return { callerUserId: uid, isAdmin };
+            return { callerUserId: uid, isAdmin, userName };
           }
         }
       } catch {}
@@ -3998,15 +4302,16 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
     const headerRole = req.headers['x-user-role'] as string;
     const headerEmail = req.headers['x-user-email'] as string;
     const headerIsAdmin = req.headers['x-is-admin'] === 'true';
+    const headerUserName = (req.headers['x-user-name'] as string) || (req.headers['x-display-name'] as string);
     const isAdminFromHeader =
       headerIsAdmin ||
       headerRole === 'admin' ||
       (typeof headerEmail === 'string' && headerEmail.toLowerCase() === 'mkomwasaid53@gmail.com');
 
     if (headerUserId && typeof headerUserId === 'string' && headerUserId.trim().length > 0) {
-      return { callerUserId: headerUserId.trim(), isAdmin: Boolean(isAdminFromHeader) };
+      return { callerUserId: headerUserId.trim(), isAdmin: Boolean(isAdminFromHeader), userName: headerUserName || userName };
     }
-    return { callerUserId: null, isAdmin: Boolean(isAdminFromHeader) };
+    return { callerUserId: null, isAdmin: Boolean(isAdminFromHeader), userName: headerUserName || userName };
   }
 
   // ============================================================================

@@ -292,6 +292,8 @@ export interface MarketplaceModerationRecord {
   reviewedByDisplayName?: string | null;
   reviewedAt?: string | null;
   aiScreening?: AIScreeningResult | null;
+  relatedReportId?: string | null;
+  manualReviewOverride?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -318,6 +320,8 @@ export interface MarketplaceModerationAuditEntry {
   performedByUserId: string;
   performedByDisplayName: string;
   performedAt: string; // ISO 8601
+  relatedReportId?: string | null; // Related user report ID if action resolves/moderates a reported listing
+  manualReviewOverride?: boolean; // Set if manually overriding an AI screening error
 }
 
 /**
@@ -325,14 +329,16 @@ export interface MarketplaceModerationAuditEntry {
  */
 export type ModerationQueueFilter =
   | 'ALL'
-  | 'NOT_REVIEWED'
-  | 'UNDER_REVIEW'
+  | 'NEW_SELLER_PENDING'
+  | 'AI_SCREENING_REVIEW_REQUIRED'
+  | 'AI_SCREENING_ERROR'
   | 'REPORTED'
+  | 'UNDER_REVIEW'
+  | 'NOT_REVIEWED'
   | 'INVALID'
   | 'NEEDS_REVIEW'
   | 'AI_CLASSIFICATION_AMBIGUOUS'
   | 'CATEGORY_MISMATCH'
-  | 'AI_SCREENING_REVIEW_REQUIRED'
   | 'AI_SCREENING_BLOCKED'
   | 'SUSPENDED'
   | 'RECENTLY_UPDATED';
@@ -348,6 +354,8 @@ export interface ModerationQueueItem {
   priority: ModerationPriority;
   priorityReasons: string[];
   reportCount: number;
+  reportReasons?: string[];
+  reportReasonsList?: { reason: string; count: number }[];
   reports: MarketplaceReport[];
   publishedReviews: MarketplaceReview[];
   aiClassification?: AiClassificationResult | null;
@@ -368,6 +376,8 @@ export interface PerformModerationActionInput {
   internalNote?: string;
   publicExplanation?: string;
   correctionInstructions?: string;
+  relatedReportId?: string;
+  manualReviewOverride?: boolean;
 }
 
 /**

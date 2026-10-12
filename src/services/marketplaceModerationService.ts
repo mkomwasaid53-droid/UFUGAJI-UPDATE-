@@ -87,6 +87,13 @@ import {
   getLocalCachedProducts,
   updateMarketplaceProduct
 } from './marketplaceService';
+import {
+  getLocalReportsCache,
+  saveReportsToCache
+} from './marketplaceReportAndAppealService';
+import {
+  getSellerTrustStatus
+} from './sellerTrustService';
 
 const LOCAL_MODERATION_CACHE_KEY = 'ufugaji_marketplace_moderation_cache';
 const LOCAL_AUDIT_CACHE_KEY = 'ufugaji_marketplace_moderation_audit_cache';
@@ -306,7 +313,8 @@ export async function fetchModerationQueue(
   assertAdminAuthorized(adminUserId, isAdmin);
 
   const products = getLocalCachedProducts();
-  const allReports = getLocalCachedReports();
+  const v1Reports = getLocalCachedReports();
+  const v17Reports = getLocalReportsCache();
   const categories = getLocalCachedCategories();
   const moderationRecords = getLocalCachedModerationRecords();
 
@@ -314,6 +322,10 @@ export async function fetchModerationQueue(
 
   for (const product of products) {
     const moderationRecord = getListingModerationRecord(product.productId, product);
+
+    // Resolve authoritative Seller Trust Status
+    const sellerTrustStatus = product.sellerTrustStatus || getSellerTrustStatus(product.sellerId);
+    product.sellerTrustStatus = sellerTrustStatus;
 
     // 1. Authoritative V1.7B Validation
     const validationResult = validateMarketplaceListing({
@@ -337,10 +349,50 @@ export async function fetchModerationQueue(
     // 4. Authoritative V1.6E Location & Delivery Trust
     const locationDeliveryTrust = resolveLocationDeliveryTrust(product);
 
-    // 5. Active Reports (V1.6F)
-    const productReports = allReports.filter(
-      (rep) => rep.targetId === product.productId && rep.status !== 'DISMISSED'
-    );
+    // 5. Active Reports (V1.6F & V1.7F Aggregation)
+    const combinedProductReports: any[] = [];
+    const seenReportIds = new Set<string>();
+
+    v1Reports.forEach((rep) => {
+      if (rep.targetId === product.productId && rep.status !== 'DISMISSED') {
+        if (!seenReportIds.has(rep.reportId)) {
+          seenReportIds.add(rep.reportId);
+          combinedProductReports.push(rep);
+        }
+      }
+    });
+
+    v17Reports.forEach((rep) => {
+      const matchId = rep.productId || rep.targetId || rep.listingId;
+      if (matchId === product.productId && rep.status !== 'DISMISSED') {
+        if (!seenReportIds.has(rep.reportId)) {
+          seenReportIds.add(rep.reportId);
+          combinedProductReports.push({
+            reportId: rep.reportId,
+            reporterUserId: rep.reporterUserId,
+            targetType: rep.targetType,
+            targetId: rep.targetId,
+            reason: rep.reasonCode,
+            reasonCode: rep.reasonCode,
+            description: rep.reasonText,
+            reasonText: rep.reasonText,
+            status: rep.status,
+            createdAt: rep.createdAt,
+            updatedAt: rep.updatedAt
+          });
+        }
+      }
+    });
+
+    // Distinct report reasons summary
+    const distinctReasons = Array.from(
+      new Set(combinedProductReports.map((r) => r.reasonCode || r.reason || 'OTHER'))
+    ) as string[];
+
+    const reportReasonsList = distinctReasons.map((reason) => ({
+      reason,
+      count: combinedProductReports.filter((r) => (r.reasonCode || r.reason) === reason).length
+    }));
 
     // 6. Published Reviews (V1.6F)
     const allReviews = getLocalCachedReviews();
@@ -364,7 +416,7 @@ export async function fetchModerationQueue(
     const { priority, reasons: priorityReasons } = deriveListingModerationPriority(
       product,
       validationResult.errors.length,
-      productReports.length,
+      combinedProductReports.length,
       moderationRecord.status,
       hasMismatch
     );
@@ -372,17 +424,21 @@ export async function fetchModerationQueue(
     // Update record priority in-memory
     moderationRecord.priority = priority;
 
+    const effectiveAiScreening = product.aiScreening || moderationRecord.aiScreening || null;
+
     const item: ModerationQueueItem = {
       product,
       moderationRecord,
       validationResult,
       priority,
       priorityReasons,
-      reportCount: productReports.length,
-      reports: productReports,
+      reportCount: combinedProductReports.length,
+      reportReasons: distinctReasons,
+      reportReasonsList,
+      reports: combinedProductReports,
       publishedReviews,
       aiClassification,
-      aiScreening: product.aiScreening || moderationRecord.aiScreening || null,
+      aiScreening: effectiveAiScreening,
       ownershipValidation,
       priceStockTrust,
       locationDeliveryTrust
@@ -391,18 +447,31 @@ export async function fetchModerationQueue(
     // Filter matching
     let matchesFilter = true;
     switch (filter) {
-      case 'NOT_REVIEWED':
+      case 'NEW_SELLER_PENDING':
         matchesFilter =
-          moderationRecord.status === 'NOT_REVIEWED' ||
-          moderationRecord.status === 'PENDING_REVIEW';
+          sellerTrustStatus === 'NEW_SELLER' &&
+          (moderationRecord.status === 'PENDING_REVIEW' ||
+            moderationRecord.status === 'NOT_REVIEWED' ||
+            moderationRecord.status === 'UNDER_REVIEW');
+        break;
+      case 'AI_SCREENING_REVIEW_REQUIRED':
+        matchesFilter = effectiveAiScreening?.status === 'REVIEW_REQUIRED';
+        break;
+      case 'AI_SCREENING_ERROR':
+        matchesFilter = effectiveAiScreening?.status === 'SCREENING_ERROR';
+        break;
+      case 'REPORTED':
+        matchesFilter = combinedProductReports.length > 0;
         break;
       case 'UNDER_REVIEW':
         matchesFilter =
           moderationRecord.status === 'UNDER_REVIEW' ||
           moderationRecord.status === 'PENDING_REVIEW';
         break;
-      case 'REPORTED':
-        matchesFilter = productReports.length > 0;
+      case 'NOT_REVIEWED':
+        matchesFilter =
+          moderationRecord.status === 'NOT_REVIEWED' ||
+          moderationRecord.status === 'PENDING_REVIEW';
         break;
       case 'INVALID':
         matchesFilter = validationResult.errors.length > 0 || !validationResult.isEligibleForActive;
@@ -412,14 +481,12 @@ export async function fetchModerationQueue(
           moderationRecord.status === 'PENDING_REVIEW' ||
           moderationRecord.status === 'UNDER_REVIEW' ||
           moderationRecord.status === 'NOT_REVIEWED' ||
-          productReports.length > 0 ||
-          product.aiScreening?.status === 'REVIEW_REQUIRED';
-        break;
-      case 'AI_SCREENING_REVIEW_REQUIRED':
-        matchesFilter = product.aiScreening?.status === 'REVIEW_REQUIRED';
+          combinedProductReports.length > 0 ||
+          effectiveAiScreening?.status === 'REVIEW_REQUIRED' ||
+          effectiveAiScreening?.status === 'SCREENING_ERROR';
         break;
       case 'AI_SCREENING_BLOCKED':
-        matchesFilter = product.aiScreening?.status === 'BLOCK';
+        matchesFilter = effectiveAiScreening?.status === 'BLOCK';
         break;
       case 'AI_CLASSIFICATION_AMBIGUOUS':
         matchesFilter = aiClassification.classificationStatus === 'AMBIGUOUS';
@@ -610,6 +677,44 @@ export async function performModerationAction(
         };
       }
 
+      // SCREENING_ERROR Manual Review Override Check (Requirement 6)
+      const hasScreeningError =
+        targetProduct.aiScreening?.status === 'SCREENING_ERROR' ||
+        currentRecord.aiScreening?.status === 'SCREENING_ERROR';
+
+      if (hasScreeningError && !input.manualReviewOverride) {
+        return {
+          success: false,
+          validationBlocked: true,
+          error:
+            'Tangazo hili lina hitilafu ya uchunguzi wa AI (SCREENING_ERROR). Msimamizi hawezi kuidhinisha bila utaratibu wa manual review override na maelezo ya kina ya ukaguzi (internal note).'
+        };
+      }
+
+      if (
+        hasScreeningError &&
+        input.manualReviewOverride &&
+        (!input.internalNote || input.internalNote.trim().length < 5)
+      ) {
+        return {
+          success: false,
+          validationBlocked: true,
+          error:
+            'Tafadhali weka maelezo ya kina ya ukaguzi wa mwongozo (internal note angalau herufi 5) kuthibitisha ukaguzi kabla ya kuidhinisha tangazo lenye hitilafu ya screening.'
+        };
+      }
+
+      if (hasScreeningError && input.manualReviewOverride && targetProduct.aiScreening) {
+        targetProduct.aiScreening = {
+          ...targetProduct.aiScreening,
+          status: 'PASS',
+          explanation:
+            'Imeidhinishwa baada ya ukaguzi wa kina wa mwongozo na msimamizi (Manual Review Override by Admin).',
+          explanationSwahili:
+            'Imeidhinishwa baada ya ukaguzi wa kina wa mwongozo na msimamizi.'
+        };
+      }
+
       newStatus = 'APPROVED';
       updatedProductStatus = 'active';
       break;
@@ -703,6 +808,9 @@ export async function performModerationAction(
     reviewedByUserId: adminUserId,
     reviewedByDisplayName: adminDisplayName || 'Msimamizi wa Soko',
     reviewedAt: now,
+    relatedReportId: input.relatedReportId || currentRecord.relatedReportId || null,
+    manualReviewOverride: input.manualReviewOverride || false,
+    aiScreening: targetProduct.aiScreening || currentRecord.aiScreening || null,
     updatedAt: now
   };
 
@@ -726,14 +834,41 @@ export async function performModerationAction(
     correctionInstructions: correctionInstructions?.trim() || null,
     performedByUserId: adminUserId,
     performedByDisplayName: adminDisplayName || 'Msimamizi wa Soko',
-    performedAt: now
+    performedAt: now,
+    relatedReportId: input.relatedReportId || null,
+    manualReviewOverride: input.manualReviewOverride || false
   };
 
-async function safeFirestoreOp<T>(promise: Promise<T>, timeoutMs: number = 2000): Promise<T | null> {
+  // Sync related user report if provided
+  if (input.relatedReportId) {
+    try {
+      const allReports = getLocalReportsCache();
+      const repIdx = allReports.findIndex((r) => r.reportId === input.relatedReportId);
+      if (repIdx !== -1) {
+        allReports[repIdx] = {
+          ...allReports[repIdx],
+          status: 'ACTION_TAKEN',
+          resolutionCode: 'LISTING_MODERATED',
+          resolutionText: `Hatua ya ${action} imetekelezwa na msimamizi.`,
+          relatedModerationId: updatedRecord.moderationId,
+          reviewedBy: adminUserId,
+          reviewedByName: adminDisplayName || 'Msimamizi',
+          reviewedAt: now,
+          updatedAt: now
+        };
+        saveReportsToCache(allReports);
+      }
+    } catch (repErr) {
+      console.warn('Could not sync related report:', repErr);
+    }
+  }
+
+async function safeFirestoreOp<T>(promise: Promise<T>, timeoutMs?: number): Promise<T | null> {
+  const effectiveTimeout = timeoutMs !== undefined ? timeoutMs : (typeof window === 'undefined' ? 50 : 2000);
   try {
     return await Promise.race([
       promise,
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs))
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), effectiveTimeout))
     ]);
   } catch (err) {
     return null;

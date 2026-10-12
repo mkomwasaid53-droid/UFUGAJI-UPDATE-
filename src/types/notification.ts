@@ -18,6 +18,7 @@ export type NotificationCategory =
 export type NotificationType =
   | 'ADMIN_REVIEW_REQUIRED'
   | 'REPORT_RECEIVED'
+  | 'REPORT_CLOSED'
   | 'LISTING_UNDER_REVIEW'
   | 'LISTING_REJECTED'
   | 'LISTING_HIDDEN'
