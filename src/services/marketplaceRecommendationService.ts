@@ -411,6 +411,9 @@ export function getMarketplaceRecommendations(
   const scoredProducts: ScoredProduct[] = [];
 
   for (const product of allProducts) {
+    if (!isProductMarketplaceEligible(product)) {
+      continue;
+    }
     const scored = scoreProduct(product, query, farmerLocation);
     if (scored) {
       scoredProducts.push(scored);
@@ -502,6 +505,9 @@ export function executeStructuredMarketplaceProductQuery(
   const scoredProducts: ScoredProduct[] = [];
 
   for (const product of allProducts) {
+    if (!isProductMarketplaceEligible(product)) {
+      continue;
+    }
     // Budget filter if explicitly provided by user
     if (query.budget) {
       const maxBudget = typeof query.budget === 'number' ? query.budget : query.budget.max;

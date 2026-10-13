@@ -2,7 +2,10 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { DigitalShop, ShopCatalogue, MarketplaceProduct } from '../../types/marketplace';
 import { SellerVerification } from '../../types/sellerVerification';
 import { PublicSellerVerificationBadge, sellerVerificationService } from '../../services/sellerVerificationService';
-import { evaluateShopMarketplaceEligibility } from '../../services/marketplaceGovernanceEnforcement';
+import {
+  evaluateShopMarketplaceEligibility,
+  isProductMarketplaceEligible
+} from '../../services/marketplaceGovernanceEnforcement';
 import { ShopHeader } from './ShopHeader';
 import { ProductCard } from './ProductCard';
 import { ProductReviewsSection } from './ProductReviewsSection';
@@ -95,8 +98,8 @@ export const BuyerShopView: React.FC<BuyerShopViewProps> = ({
   // Filter products by selected catalogue and search term
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
-      // If not owner, only show active or sold out products (hide inactive/draft)
-      if (!isOwner && product.status !== 'active' && product.status !== 'sold_out') {
+      // If not owner, only show active or sold out products that pass authoritative marketplace eligibility
+      if (!isOwner && (product.status !== 'active' && product.status !== 'sold_out' || !isProductMarketplaceEligible(product))) {
         return false;
       }
 

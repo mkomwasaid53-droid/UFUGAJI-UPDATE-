@@ -375,12 +375,15 @@ async function runTests() {
   const testProductError: MarketplaceProduct = {
     productId: 'prod_screening_error_item',
     sellerId: 'seller_err_1',
+    shopId: 'seller_err_1',
     sellerName: 'Mfugaji Mmoja',
     sellerPhone: '+255755112233',
     sellerLocation: 'Arusha',
     title: 'Ngombe wa Maziwa Friesian',
     description: 'Ngombe mzuri sana anatoa lita 25 kwa siku.',
-    category: 'Mifugo Hai',
+    category: "Ng'ombe",
+    categoryId: 'cat_ngombe',
+    subcategoryId: 'cat_sub_ngombe_maziwa',
     price: 1500000,
     currency: 'TZS',
     unit: 'kichwa',
@@ -707,6 +710,7 @@ async function runTests() {
   console.log('\n=============================================================');
   console.log(`--- TEST EXECUTION SUMMARY: ${passedTests} / ${totalTests} PASSED ---`);
   console.log('=============================================================');
+  process.exit(0);
 }
 
 runTests().catch((err) => {

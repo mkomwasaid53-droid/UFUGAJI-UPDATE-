@@ -107,6 +107,13 @@ import {
   AI_SCREENING_PRIMARY_MODEL
 } from './src/services/marketplaceAiScreeningService';
 import {
+  evaluateProductMarketplaceEligibility,
+  isProductMarketplaceEligible,
+  filterMarketplaceEligibleProducts,
+  syncAuthoritativeModerationState,
+  sanitizeProductForPublic
+} from './src/services/marketplaceGovernanceEnforcement';
+import {
   marketplaceInboxService,
   initInboxStorage
 } from './src/services/marketplaceInboxService';
@@ -531,7 +538,7 @@ async function startServer() {
   // ============================================================================
 
   // Get all marketplace products stored on server
-  app.get('/api/marketplace/products', (req, res) => {
+  const handleMarketplaceProductsList = (req: any, res: any) => {
     try {
       const products = readMarketplaceProductsFromDisk();
       const realOnly = products.filter((p: any) =>
@@ -550,43 +557,62 @@ async function startServer() {
         }
       }
 
-      // V1.0 Content Moderation Foundation:
-      // Filter out REJECTED, HIDDEN, SUSPENDED, PENDING_REVIEW, UNDER_REVIEW, DRAFT, ESCALATED products
-      // Only APPROVED (or restored) and active products are eligible for public feeds!
-      const eligible = realOnly.filter((p: any) => {
-        if (!p) return false;
-        if (p.status !== 'active') return false;
-        const modStatus = p.moderationStatus || 'NOT_REVIEWED';
-        if (['REJECTED', 'HIDDEN', 'SUSPENDED', 'PENDING_REVIEW', 'UNDER_REVIEW', 'DRAFT', 'ESCALATED', 'NOT_REVIEWED'].includes(modStatus)) {
-          return false;
-        }
-        if (modStatus !== 'APPROVED' && modStatus !== 'RESTORED') {
-          return false;
-        }
-        if (p.sellerId) {
-          const monetization = sellerMonetizationService.canSellerSellOnMarketplace(p.sellerId);
-          if (!monetization.canSell) {
-            return false;
-          }
-          const restriction = checkSellerRestriction(p.sellerId, 'MARKETPLACE_SELLING');
-          if (restriction.isRestricted) {
-            return false;
-          }
-        }
-        return true;
-      });
-      res.json(eligible);
+      // Check seller query filter if requesting a specific seller's storefront
+      let listToFilter = realOnly;
+      const targetSellerId = (req.query.sellerId as string) || (req.query.seller as string);
+      if (targetSellerId) {
+        listToFilter = listToFilter.filter((p: any) => p.sellerId === targetSellerId || p.shopId === targetSellerId);
+      }
+
+      // Check category filter
+      const targetCategory = (req.query.categoryId as string) || (req.query.category as string);
+      if (targetCategory) {
+        const catClean = targetCategory.toLowerCase().trim();
+        listToFilter = listToFilter.filter((p: any) =>
+          (p.categoryId && p.categoryId.toLowerCase() === catClean) ||
+          (p.category && p.category.toLowerCase() === catClean) ||
+          (p.subcategoryId && p.subcategoryId.toLowerCase() === catClean)
+        );
+      }
+
+      // Check search keyword query
+      const searchQuery = ((req.query.search || req.query.q) as string)?.trim().toLowerCase();
+      if (searchQuery) {
+        listToFilter = listToFilter.filter((p: any) => {
+          const t = (p.title || '').toLowerCase();
+          const d = (p.description || '').toLowerCase();
+          const c = (p.category || '').toLowerCase();
+          const sub = (p.subcategory || '').toLowerCase();
+          return t.includes(searchQuery) || d.includes(searchQuery) || c.includes(searchQuery) || sub.includes(searchQuery);
+        });
+      }
+
+      // Single Authoritative Public-Visibility Policy (V1.0 Marketplace Enforcement):
+      // Must pass full authoritative eligibility (APPROVED/RESTORED, AI PASS fresh, Seller Trust, Monetization, Validation, Active)
+      const eligible = filterMarketplaceEligibleProducts(listToFilter);
+      const sanitized = eligible.map((p: any) => sanitizeProductForPublic(p));
+
+      // Support pagination if limit / offset provided
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+      const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
+      const paged = limit !== undefined ? sanitized.slice(offset, offset + limit) : sanitized;
+
+      res.json(paged);
     } catch (err: any) {
       res.status(500).json({ error: 'Hitilafu ya kusoma bidhaa za sokoni', details: err?.message });
     }
-  });
+  };
 
-  // Get single marketplace product by ID with moderation boundary enforcement
-  app.get('/api/marketplace/products/:id', (req, res) => {
+  app.get('/api/marketplace/products', handleMarketplaceProductsList);
+  app.get('/api/products', handleMarketplaceProductsList);
+  app.get('/api/marketplace/search', handleMarketplaceProductsList);
+
+  // Get single marketplace product by ID with authoritative moderation boundary enforcement
+  const handleSingleProductLookup = (req: any, res: any) => {
     try {
       const { id } = req.params;
       const products = readMarketplaceProductsFromDisk();
-      const product = products.find((p: any) => p.productId === id);
+      const product = products.find((p: any) => p && p.productId === id);
       if (!product) {
         return res.status(404).json({ error: 'Bidhaa haikupatikana.' });
       }
@@ -600,27 +626,29 @@ async function startServer() {
         return res.json(product);
       }
 
-      // Public / other buyer: enforce moderation visibility
-      const modStatus = product.moderationStatus || 'NOT_REVIEWED';
-      const blockedStatuses = ['REJECTED', 'HIDDEN', 'SUSPENDED', 'PENDING_REVIEW', 'UNDER_REVIEW', 'DRAFT', 'ESCALATED', 'NOT_REVIEWED'];
-      if (
-        blockedStatuses.includes(modStatus) ||
-        (modStatus !== 'APPROVED' && modStatus !== 'RESTORED') ||
-        product.status !== 'active'
-      ) {
+      // Public / other buyer: enforce authoritative moderation & eligibility visibility
+      const eligibility = evaluateProductMarketplaceEligibility(product);
+      if (!eligibility.isEligible) {
         return res.status(403).json({
-          error: 'Tangazo hili halipatikani kwa umma.',
+          error: 'Tangazo hili halipatikani kwa sasa sokoni.',
           code: 'LISTING_MODERATION_BLOCKED',
-          status: modStatus
+          reason: eligibility.publicUnavailableReason || 'Tangazo halikidhi vigezo vya kuonekana sokoni.'
         });
       }
 
-      const publicProduct = { ...product };
-      delete publicProduct.moderationCorrectionNote;
-      res.json(publicProduct);
+      res.json(sanitizeProductForPublic(product));
     } catch (err: any) {
       res.status(500).json({ error: 'Hitilafu ya kupata bidhaa', details: err?.message });
     }
+  };
+
+  app.get('/api/marketplace/products/:id', handleSingleProductLookup);
+  app.get('/api/products/:id', handleSingleProductLookup);
+
+  // Seller storefront products endpoint
+  app.get('/api/marketplace/sellers/:sellerId/products', (req: any, res: any) => {
+    req.query.sellerId = req.params.sellerId;
+    return handleMarketplaceProductsList(req, res);
   });
 
   // Upload a marketplace image (binary or base64 dataUrl)

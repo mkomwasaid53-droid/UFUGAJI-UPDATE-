@@ -37,6 +37,10 @@ import {
   buildStructuredMarketplaceQuery
 } from '../utils/marketplaceIntentClassifier';
 import { getMarketplaceRecommendations } from './marketplaceRecommendationService';
+import {
+  filterMarketplaceEligibleProducts,
+  isShopMarketplaceEligible
+} from './marketplaceGovernanceEnforcement';
 
 // Swahili currency formatter
 function formatTzs(amount: number): string {
@@ -102,13 +106,16 @@ export function getMarketplaceIntelligenceForAI(
     };
   }
 
-  // 2. Real Retrieval & Deterministic Ranking (Reuse existing Marketplace Engine)
+  // 2. Real Retrieval & Deterministic Ranking (Reuse existing Marketplace Engine with authoritative governance filtering)
+  const eligibleProducts = filterMarketplaceEligibleProducts(marketplaceProducts);
+  const eligibleShops = publishedShops.filter((s) => isShopMarketplaceEligible(s));
+
   let rawRecommendationResult;
   try {
     rawRecommendationResult = getMarketplaceRecommendations(
       cleanQuestion,
-      marketplaceProducts,
-      publishedShops,
+      eligibleProducts,
+      eligibleShops,
       farmerLocation
     );
   } catch (err: any) {

@@ -20,12 +20,17 @@
  */
 
 import { MarketplaceProduct, DigitalShop } from '../types/marketplace';
-import { ModerationStatus } from '../types/marketplaceModeration';
+import { ModerationStatus, AIScreeningResult } from '../types/marketplaceModeration';
 import { getLocalCachedModerationRecords } from './marketplaceModerationService';
 import { checkSellerRestriction, assertSellerNotRestricted } from './sellerGovernanceService';
 import { getLocalCachedCategories, findCategoryById } from './marketplaceCategoryService';
 import { sellerMonetizationService } from './sellerMonetizationService';
 import { SellerSellingEligibility } from '../types/sellerMonetization';
+import {
+  isScreeningResultUpToDate,
+  evaluateListingContentDeterministically
+} from './marketplaceAiScreeningService';
+import { getSellerTrustStatus } from './sellerTrustService';
 
 export interface ShopGovernanceEligibility {
   isEligible: boolean;
@@ -44,6 +49,9 @@ export interface ProductGovernanceEligibility {
   isValidationBlocked: boolean;
   isSellerMonetizationRestricted?: boolean;
   monetizationEligibility?: SellerSellingEligibility;
+  isAiScreeningPassed?: boolean;
+  isAiScreeningFresh?: boolean;
+  isSellerTrustIneligible?: boolean;
   publicUnavailableReason?: string;
   sellerNotice?: string;
 }
@@ -98,7 +106,9 @@ export function syncAuthoritativeModerationState(product: MarketplaceProduct): M
     moderationPublicReason:
       authoritativeRecord?.publicExplanation || product.moderationPublicReason,
     moderationCorrectionNote:
-      authoritativeRecord?.correctionInstructions || product.moderationCorrectionNote
+      authoritativeRecord?.correctionInstructions || product.moderationCorrectionNote,
+    aiScreening: authoritativeRecord?.aiScreening || product.aiScreening,
+    aiScreenedAt: authoritativeRecord?.aiScreening?.timestamp || product.aiScreenedAt
   };
 }
 
@@ -140,12 +150,72 @@ export function evaluateProductMarketplaceEligibility(
     blockedModerationStatuses.includes(modStatus) ||
     (modStatus !== 'APPROVED' && modStatus !== 'RESTORED');
 
-  // 2. Check Seller Restrictions (V1.7E)
+  // 2. Check AI Screening: Must be current PASS for exact listing content fingerprint
+  // (Section 3 & Section 5: AI Screening Freshness)
+  let isAiScreeningPassed = false;
+  let isAiScreeningFresh = false;
+  let screeningDiagnostics = '';
+
+  const screening = synced.aiScreening;
+  if (screening) {
+    if (screening.status === 'PASS') {
+      isAiScreeningPassed = true;
+    } else {
+      isAiScreeningPassed = false;
+      screeningDiagnostics = `Ukaguzi wa AI una hadhi ya ${screening.status}`;
+    }
+
+    if (screening.contentFingerprint) {
+      const isFresh = isScreeningResultUpToDate(synced, screening);
+      if (isFresh) {
+        isAiScreeningFresh = true;
+      } else {
+        isAiScreeningFresh = false;
+        screeningDiagnostics = 'Maudhui ya tangazo yamebadilika na yanahitaji ukaguzi mpya wa AI.';
+      }
+    } else {
+      isAiScreeningFresh = isAiScreeningPassed;
+    }
+  } else {
+    // Deterministic fallback evaluation for listings without existing screening record
+    const evalResult = evaluateListingContentDeterministically({
+      productId: synced.productId,
+      sellerId: synced.sellerId,
+      title: synced.title,
+      description: synced.description,
+      category: synced.category || synced.categoryId || '',
+      subcategory: synced.subcategory || synced.subcategoryId || '',
+      price: synced.price,
+      images: synced.images || (synced.imageUrl ? [{ url: synced.imageUrl }] : [])
+    });
+    if (evalResult.status === 'PASS') {
+      isAiScreeningPassed = true;
+      isAiScreeningFresh = true;
+    } else {
+      isAiScreeningPassed = false;
+      isAiScreeningFresh = false;
+      screeningDiagnostics = `Ukaguzi wa maudhui umehitaji ukaguzi wa kiutawala (${evalResult.status})`;
+    }
+  }
+
+  // 3. Check Seller Trust Policy (Section 6)
+  // - NEW_SELLER: AI PASS still requires administrator review and approval (modStatus === 'APPROVED').
+  // - TRUSTED_SELLER: AI PASS permits publication when all other publishing conditions satisfied.
+  // - RESTRICTED_SELLER: active restriction policy blocks publication.
+  const sellerTrust = synced.sellerId ? getSellerTrustStatus(synced.sellerId) : 'NEW_SELLER';
+  let isSellerTrustIneligible = false;
+  if (sellerTrust === 'RESTRICTED_SELLER') {
+    isSellerTrustIneligible = true;
+  } else if (sellerTrust === 'NEW_SELLER' && modStatus !== 'APPROVED' && modStatus !== 'RESTORED') {
+    isSellerTrustIneligible = true;
+  }
+
+  // 4. Check Seller Restrictions (V1.7E)
   const isSellerRestricted = synced.sellerId
     ? checkSellerRestriction(synced.sellerId, 'MARKETPLACE_SELLING').isRestricted
     : false;
 
-  // 3. Check Category Governance Status (V1.7A)
+  // 5. Check Category Governance Status (V1.7A)
   let isCategoryInactive = false;
   try {
     const categories = getLocalCachedCategories();
@@ -158,14 +228,11 @@ export function evaluateProductMarketplaceEligibility(
     }
   } catch {}
 
-  // 4. Check Listing Validation Status (V1.7B)
+  // 6. Check Listing Validation Status (V1.7B)
   const isValidationBlocked =
     synced.validationStatus === 'INVALID' || synced.validationStatus === 'BLOCKED';
 
-  // 5. Check Seller Monetization Eligibility (V1.10A - Section 8 & Corrective)
-  // Marketplace visibility = existing listing eligibility AND seller/shop/product validity
-  // AND moderation eligibility AND seller governance restrictions AND applicable seller monetization eligibility.
-  // Note: Monetization NEVER overrides moderation or trust restrictions.
+  // 7. Check Seller Monetization Eligibility (V1.10A - Section 8 & Corrective)
   let isSellerMonetizationRestricted = false;
   let monetizationEligibility: SellerSellingEligibility | undefined = undefined;
   if (synced.sellerId && options?.checkMonetization !== false) {
@@ -175,15 +242,18 @@ export function evaluateProductMarketplaceEligibility(
     }
   }
 
-  // 6. Check Active Status
+  // 8. Check Active Status
   const isActiveStatus = synced.status === 'active';
 
   // Combined Eligibility:
-  // Must be active, not blocked by moderation, not under restricted seller,
-  // in an active category, valid, and monetization-eligible.
+  // Must be active, moderation APPROVED, AI screening PASS & fresh,
+  // seller trust eligible, not restricted, category active, valid, and monetization-eligible.
   const isEligible =
     isActiveStatus &&
     !isBlockedByModeration &&
+    isAiScreeningPassed &&
+    isAiScreeningFresh &&
+    !isSellerTrustIneligible &&
     !isSellerRestricted &&
     !isCategoryInactive &&
     !isValidationBlocked &&
@@ -201,6 +271,11 @@ export function evaluateProductMarketplaceEligibility(
     publicUnavailableReason = 'Tangazo hili linasubiri idhini na ukaguzi wa wasimamizi kabla ya kuonekana sokoni.';
   } else if (modStatus === 'DRAFT') {
     publicUnavailableReason = 'Tangazo hili bado ni Rasimu (Draft) na halijachapishwa sokoni.';
+  } else if (!isAiScreeningPassed || !isAiScreeningFresh) {
+    publicUnavailableReason =
+      screeningDiagnostics || 'Tangazo hili linasubiri ukaguzi wa kiusalama wa maudhui.';
+  } else if (isSellerTrustIneligible && sellerTrust === 'RESTRICTED_SELLER') {
+    publicUnavailableReason = 'Huduma za muuzaji huyu zimesitishwa kwa muda kwa mujibu wa sera za soko.';
   } else if (isSellerRestricted) {
     publicUnavailableReason = 'Huduma za muuzaji huyu zimesitishwa kwa muda kwa mujibu wa sera za soko.';
   } else if (isCategoryInactive) {
@@ -224,6 +299,9 @@ export function evaluateProductMarketplaceEligibility(
       'Tangazo lako linasubiri ukaguzi na idhini ya msimamizi. Litaonekana sokoni mara tu litakapoidhinishwa.';
   } else if (modStatus === 'DRAFT') {
     sellerNotice = 'Tangazo hili bado ni rasimu (Draft).';
+  } else if (!isAiScreeningPassed || !isAiScreeningFresh) {
+    sellerNotice =
+      screeningDiagnostics || 'Tangazo lako linahitaji ukaguzi wa kiusalama wa maudhui kabla ya kuonekana hadharani.';
   } else if (isSellerMonetizationRestricted) {
     sellerNotice =
       monetizationEligibility?.reasonSwahili || 'Usajili wa muuzaji unahitaji kuamilishwa au kufanywa upya.';
@@ -238,9 +316,43 @@ export function evaluateProductMarketplaceEligibility(
     isValidationBlocked,
     isSellerMonetizationRestricted,
     monetizationEligibility,
+    isAiScreeningPassed,
+    isAiScreeningFresh,
+    isSellerTrustIneligible,
     publicUnavailableReason,
     sellerNotice
   };
+}
+
+/**
+ * Strips internal administrative, private moderation notes, correction instructions,
+ * reporter links, and reviewer IDs from product payloads delivered to ordinary buyers.
+ */
+export function sanitizeProductForPublic<T extends MarketplaceProduct>(product: T): T {
+  if (!product) return product;
+  const sanitized = { ...product };
+  delete (sanitized as any).internalNote;
+  delete (sanitized as any).internalNotes;
+  delete (sanitized as any).privateModerationNote;
+  delete (sanitized as any).adminNotes;
+  delete sanitized.moderationCorrectionNote;
+  delete (sanitized as any).relatedReportId;
+  delete (sanitized as any).reportIds;
+  delete (sanitized as any).reports;
+  delete (sanitized as any).reviewedByUserId;
+  delete (sanitized as any).reviewedBy;
+  delete (sanitized as any).moderationRecord;
+  delete (sanitized as any).adminReviewHistory;
+  if (sanitized.aiScreening) {
+    sanitized.aiScreening = {
+      screeningId: sanitized.aiScreening.screeningId,
+      status: sanitized.aiScreening.status,
+      confidence: sanitized.aiScreening.confidence,
+      policyVersion: sanitized.aiScreening.policyVersion,
+      timestamp: sanitized.aiScreening.timestamp || (sanitized.aiScreening as any).screenedAt
+    } as any;
+  }
+  return sanitized;
 }
 
 /**
@@ -263,12 +375,18 @@ export function isProductMarketplaceEligible(product: MarketplaceProduct): boole
  * are returned for public Marketplace discovery, search, AI, or recommendations.
  */
 export function filterMarketplaceEligibleProducts(
-  products: MarketplaceProduct[]
+  products: MarketplaceProduct[],
+  options?: { sanitize?: boolean }
 ): MarketplaceProduct[] {
   if (!Array.isArray(products)) return [];
-  return products
+  const eligible = products
     .map(syncAuthoritativeModerationState)
     .filter((p) => isProductMarketplaceEligible(p));
+
+  if (options?.sanitize) {
+    return eligible.map((p) => sanitizeProductForPublic(p));
+  }
+  return eligible;
 }
 
 /**
