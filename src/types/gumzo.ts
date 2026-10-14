@@ -70,6 +70,14 @@ export type GumzoPostStatus =
 
 export type GumzoPostVisibility = 'VISIBLE' | 'HIDDEN';
 
+export type GumzoContentModerationStatus =
+  | 'ACTIVE'
+  | 'PENDING_REVIEW'
+  | 'UNDER_REVIEW'
+  | 'HIDDEN'
+  | 'REMOVED'
+  | 'RESTORED';
+
 export interface GumzoMediaItem {
   id: string;
   type: 'image' | 'video' | 'file';
@@ -90,6 +98,10 @@ export interface GumzoPost {
   media: GumzoMediaItem[];
   status: GumzoPostStatus;
   visibility: GumzoPostVisibility;
+  moderationStatus?: GumzoContentModerationStatus;
+  moderatedAt?: string;
+  moderatedBy?: string;
+  moderationReason?: string;
   createdAt: string;
   updatedAt: string;
   publishedAt?: string;
@@ -113,6 +125,7 @@ export interface UpdateGumzoPostInput {
   media?: GumzoMediaItem[];
   status?: GumzoPostStatus;
   visibility?: GumzoPostVisibility;
+  moderationStatus?: GumzoContentModerationStatus;
   isPinned?: boolean;
 }
 
@@ -132,6 +145,10 @@ export interface GumzoComment {
   content: string;
   media?: GumzoMediaItem[];
   status: GumzoCommentStatus;
+  moderationStatus?: GumzoContentModerationStatus;
+  moderatedAt?: string;
+  moderatedBy?: string;
+  moderationReason?: string;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;
@@ -572,13 +589,23 @@ export function canUserViewPost(
   // Platform admin can view everything for audit/governance
   if (isPlatformAdmin) return true;
 
-  // Deleted posts: not visible in normal feed
-  if (post.status === 'DELETED') return false;
+  // Deleted or Removed posts: not visible in normal feed
+  if (post.status === 'DELETED' || post.moderationStatus === 'REMOVED') return false;
 
   const isAuthor = Boolean(userId && post.authorUserId === userId);
   const isLeader = Boolean(
     userId && (isGroupFounderAdmin(userId, group) || isGroupLeadershipAdmin(userId, group))
   );
+
+  // Moderated hidden posts: only group admins can view
+  if (post.moderationStatus === 'HIDDEN') {
+    return isLeader;
+  }
+
+  // Pending review / under review: only author or group admin can view
+  if (post.moderationStatus === 'PENDING_REVIEW' || post.moderationStatus === 'UNDER_REVIEW') {
+    return isAuthor || isLeader;
+  }
 
   // Drafts: only author or group admin can view
   if (post.status === 'DRAFT') {
@@ -774,12 +801,23 @@ export function canUserViewComment(
 ): boolean {
   if (!comment || !group || !post) return false;
   if (isPlatformAdmin) return true;
-  if (comment.status === 'DELETED') return false;
+  // Deleted or Removed comments: never in normal feed
+  if (comment.status === 'DELETED' || comment.moderationStatus === 'REMOVED') return false;
 
   const isAuthor = Boolean(userId && comment.authorUserId === userId);
   const isLeader = Boolean(
     userId && (isGroupFounderAdmin(userId, group) || isGroupLeadershipAdmin(userId, group))
   );
+
+  // Moderated hidden comments: only group admins can view
+  if (comment.moderationStatus === 'HIDDEN') {
+    return isLeader;
+  }
+
+  // Pending review / under review: only author or group admin can view
+  if (comment.moderationStatus === 'PENDING_REVIEW' || comment.moderationStatus === 'UNDER_REVIEW') {
+    return isAuthor || isLeader;
+  }
 
   if (comment.status === 'HIDDEN') {
     return isAuthor || isLeader;
@@ -790,7 +828,7 @@ export function canUserViewComment(
 }
 
 // ============================================================================
-// V9.4 — GUMZO TWO-ADMIN GOVERNANCE & AUDIT TRAIL MODELS
+// V9.4 & V1.0 — GUMZO GOVERNANCE, MODERATION & REPORT AUDIT TRAIL MODELS
 // ============================================================================
 
 export type GumzoGovernanceAction =
@@ -805,7 +843,112 @@ export type GumzoGovernanceAction =
   | 'ADMIN_POST_DELETED'
   | 'ADMIN_COMMENT_HIDDEN'
   | 'ADMIN_COMMENT_DELETED'
+  | 'POST_MODERATED'
+  | 'POST_RESTORED'
+  | 'COMMENT_MODERATED'
+  | 'COMMENT_RESTORED'
+  | 'REPORT_SUBMITTED'
+  | 'REPORT_RESOLVED'
+  | 'REPORT_DISMISSED'
   | 'PRIVILEGE_ESCALATION_ATTEMPT';
+
+// ============================================================================
+// V1.0 — GUMZO COMMUNITY REPORTING & ENFORCEMENT MODELS
+// ============================================================================
+
+export type GumzoReportReason =
+  | 'SPAM'
+  | 'HARASSMENT'
+  | 'MISLEADING_INFORMATION'
+  | 'INAPPROPRIATE_CONTENT'
+  | 'ANIMAL_WELFARE_CONCERNS'
+  | 'OTHER';
+
+export const GUMZO_REPORT_REASONS: { code: GumzoReportReason; labelSwahili: string; labelEnglish: string; description: string }[] = [
+  {
+    code: 'SPAM',
+    labelSwahili: 'Takataka / Matangazo Yasiyofaa (Spam)',
+    labelEnglish: 'Spam / Unsolicited Promotion',
+    description: 'Matangazo ya mara kwa mara au yasiyohusiana na maudhui ya kikundi.',
+  },
+  {
+    code: 'HARASSMENT',
+    labelSwahili: 'Unyanyasaji au Lugha Chafu (Harassment)',
+    labelEnglish: 'Harassment / Abusive Language',
+    description: 'Matusi, dharau, udhalilishaji au unyanyasaji wa wanachama wengine.',
+  },
+  {
+    code: 'MISLEADING_INFORMATION',
+    labelSwahili: 'Taarifa za Upotoshaji (Misleading Information)',
+    labelEnglish: 'Misleading or False Information',
+    description: 'Ushauri wa uongo au unaoweza kusababisha hasara au madhara kwa mifugo.',
+  },
+  {
+    code: 'INAPPROPRIATE_CONTENT',
+    labelSwahili: 'Maudhui Yasiyofaa (Inappropriate Content)',
+    labelEnglish: 'Inappropriate Content',
+    description: 'Picha, video au maneno yanayokiuka maadili ya jamii ya wafugaji.',
+  },
+  {
+    code: 'ANIMAL_WELFARE_CONCERNS',
+    labelSwahili: 'Ukatili kwa Wanyama (Animal Welfare Concerns)',
+    labelEnglish: 'Animal Welfare Concerns',
+    description: 'Vitendo vya kikatili au mateso yasiyo ya lazima kwa mifugo (sio matibabu halali ya kidaktari).',
+  },
+  {
+    code: 'OTHER',
+    labelSwahili: 'Sababu Nyingine (Other)',
+    labelEnglish: 'Other Violation',
+    description: 'Ukiukwaji mwingine wowote wa miongozo ya jamii ya Gumzo.',
+  },
+];
+
+export type GumzoReportStatus = 'OPEN' | 'UNDER_REVIEW' | 'ACTION_TAKEN' | 'DISMISSED';
+
+export type GumzoReportAction =
+  | 'NONE'
+  | 'CONTENT_HIDDEN'
+  | 'CONTENT_REMOVED'
+  | 'AUTHOR_WARNED'
+  | 'MEMBER_SUSPENDED'
+  | 'CONTENT_RESTORED';
+
+export interface GumzoReportRecord {
+  reportId: string;
+  groupId: string;
+  targetType: 'POST' | 'COMMENT';
+  targetId: string;
+  postId?: string;
+  reason: GumzoReportReason;
+  details?: string;
+  reporterUserId: string; // Protected
+  reporterDisplayName?: string; // Protected
+  targetAuthorUserId: string;
+  status: GumzoReportStatus;
+  actionTaken?: GumzoReportAction;
+  internalNotes?: string; // Protected
+  reviewedByUserId?: string;
+  reviewedByRole?: 'FOUNDER_ADMIN' | 'LEADERSHIP_ADMIN';
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubmitGumzoReportInput {
+  groupId: string;
+  targetType: 'POST' | 'COMMENT';
+  targetId: string;
+  postId?: string;
+  reason: GumzoReportReason;
+  details?: string;
+}
+
+export interface ResolveGumzoReportInput {
+  reportId: string;
+  action: GumzoReportAction;
+  internalNotes?: string;
+  publicReason?: string;
+}
 
 export type GumzoAuditOutcome = 'SUCCESS' | 'REJECTED' | 'DENIED';
 

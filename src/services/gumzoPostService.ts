@@ -525,8 +525,10 @@ export class GumzoPostService {
     post.visibility = visibility;
     if (visibility === 'HIDDEN' && post.status === 'PUBLISHED') {
       post.status = 'HIDDEN';
+      post.moderationStatus = 'HIDDEN';
     } else if (visibility === 'VISIBLE' && post.status === 'HIDDEN') {
       post.status = 'PUBLISHED';
+      post.moderationStatus = 'RESTORED';
     }
     post.updatedAt = new Date().toISOString();
     post.updatedBy = authenticatedUserId;
@@ -545,6 +547,55 @@ export class GumzoPostService {
         reason: 'Chapisho limefichwa na uongozi.',
       });
     }
+
+    return post;
+  }
+
+  /**
+   * 6b. RESTORE POST (Authorized Admins only)
+   */
+  public restorePost(params: {
+    postId: string;
+    authenticatedUserId: string;
+    isPlatformAdmin?: boolean;
+    reason?: string;
+  }): GumzoPost {
+    const { postId, authenticatedUserId, isPlatformAdmin = false, reason } = params;
+    if (isNode) loadFromDisk();
+
+    const post = postsStore.get(postId);
+    if (!post) throw new Error(`Chapisho ${postId} halikupatikana.`);
+
+    const group = gumzoGroupService.getGroupById(post.groupId, authenticatedUserId, isPlatformAdmin);
+    if (!group) throw new Error('Kikundi hakikupatikana.');
+
+    const isGroupLeader = group.founderAdminUserId === authenticatedUserId || group.leadershipAdminUserId === authenticatedUserId;
+    if (!isPlatformAdmin && !isGroupLeader) {
+      throw new Error('Mamlaka ya uongozi yanahitajika kurejesha chapisho.');
+    }
+
+    const now = new Date().toISOString();
+    post.status = 'PUBLISHED';
+    post.visibility = 'VISIBLE';
+    post.moderationStatus = 'RESTORED';
+    post.updatedAt = now;
+    post.updatedBy = authenticatedUserId;
+    post.moderatedAt = now;
+    post.moderatedBy = authenticatedUserId;
+    post.moderationReason = reason || 'Chapisho limerejeshwa na uongozi.';
+
+    postsStore.set(postId, post);
+    persistToDisk();
+
+    gumzoAuditService.logEvent({
+      actorUserId: authenticatedUserId,
+      action: 'POST_RESTORED',
+      targetType: 'POST',
+      targetResourceId: postId,
+      groupId: post.groupId,
+      outcome: 'SUCCESS',
+      reason: post.moderationReason,
+    });
 
     return post;
   }

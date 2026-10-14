@@ -1345,4 +1345,113 @@ export async function dispatchGumzoFounderTransferredNotification(params: {
   });
 }
 
+export async function dispatchGumzoReportReceivedNotification(params: {
+  reporterUserId: string;
+  reportId: string;
+  groupId: string;
+  groupName: string;
+  targetType: 'POST' | 'COMMENT';
+}): Promise<AppNotification | null> {
+  if (!params.reporterUserId) return null;
+  const targetLabel = params.targetType === 'POST' ? 'chapisho' : 'maoni';
+  return createAuthoritativeNotification({
+    recipientUserId: params.reporterUserId,
+    module: 'GUMZO',
+    category: 'GUMZO',
+    type: 'GUMZO_REPORT_RECEIVED',
+    title: 'Ripoti Yako Imepokelewa',
+    message: `Ripoti yako kuhusu ${targetLabel} katika kikundi cha "${params.groupName}" imepokelewa salama na inafanyiwa kazi na uongozi.`,
+    priority: 'NORMAL',
+    targetType: params.targetType,
+    targetId: params.reportId,
+    relatedGroupId: params.groupId,
+    actionUrl: `/community?group=${params.groupId}`,
+    deduplicationKey: `gumzo_rep_receipt_${params.reportId}`
+  });
+}
+
+export async function dispatchGumzoAdminReportAlertNotification(params: {
+  adminUserId: string;
+  reportId: string;
+  groupId: string;
+  groupName: string;
+  targetType: 'POST' | 'COMMENT';
+  targetId: string;
+  reasonLabel: string;
+}): Promise<AppNotification | null> {
+  if (!params.adminUserId) return null;
+  const targetLabel = params.targetType === 'POST' ? 'chapisho' : 'maoni';
+  return createAuthoritativeNotification({
+    recipientUserId: params.adminUserId,
+    module: 'GUMZO',
+    category: 'ADMIN',
+    type: 'GUMZO_ADMIN_REPORT_ALERT',
+    title: `Ripoti Mpya ya Maudhui: ${params.groupName}`,
+    message: `Kuna ripoti mpya kuhusu ${targetLabel} (${params.reasonLabel}) katika kikundi cha "${params.groupName}". Tafadhali kagua na chukua hatua.`,
+    priority: 'HIGH',
+    targetType: params.targetType,
+    targetId: params.targetId,
+    relatedGroupId: params.groupId,
+    actionUrl: `/community?group=${params.groupId}&report=${params.reportId}`,
+    deduplicationKey: `gumzo_rep_alert_${params.reportId}_${params.adminUserId}`
+  });
+}
+
+export async function dispatchGumzoReportResolvedNotification(params: {
+  reporterUserId: string;
+  reportId: string;
+  groupId: string;
+  groupName: string;
+  targetType: 'POST' | 'COMMENT';
+  actionTaken: string;
+}): Promise<AppNotification | null> {
+  if (!params.reporterUserId) return null;
+  const targetLabel = params.targetType === 'POST' ? 'chapisho' : 'maoni';
+  return createAuthoritativeNotification({
+    recipientUserId: params.reporterUserId,
+    module: 'GUMZO',
+    category: 'GUMZO',
+    type: 'GUMZO_REPORT_RESOLVED',
+    title: 'Ripoti Yako Imekaguliwa',
+    message: `Ripoti yako kuhusu ${targetLabel} katika kikundi cha "${params.groupName}" imekaguliwa na uongozi. Hatua stahiki zimetekelezwa kwa mujibu wa miongozo ya jamii.`,
+    priority: 'NORMAL',
+    targetType: params.targetType,
+    targetId: params.reportId,
+    relatedGroupId: params.groupId,
+    actionUrl: `/community?group=${params.groupId}`,
+    deduplicationKey: `gumzo_rep_res_${params.reportId}`
+  });
+}
+
+export async function dispatchGumzoContentModeratedNotification(params: {
+  authorUserId: string;
+  groupId: string;
+  groupName: string;
+  targetType: 'POST' | 'COMMENT';
+  targetId: string;
+  actionTaken: 'CONTENT_HIDDEN' | 'CONTENT_REMOVED';
+  publicReason?: string;
+}): Promise<AppNotification | null> {
+  if (!params.authorUserId) return null;
+  const isHidden = params.actionTaken === 'CONTENT_HIDDEN';
+  const targetLabel = params.targetType === 'POST' ? 'Chapisho lako' : 'Maoni yako';
+  const actionText = isHidden ? 'limefichwa' : 'limeondolewa';
+  const reasonText = params.publicReason ? ` Sababu: ${params.publicReason}.` : '';
+
+  return createAuthoritativeNotification({
+    recipientUserId: params.authorUserId,
+    module: 'GUMZO',
+    category: 'GUMZO',
+    type: 'GUMZO_CONTENT_MODERATED',
+    title: `Taarifa ya Usimamizi: ${params.groupName}`,
+    message: `${targetLabel} katika kikundi cha "${params.groupName}" ${actionText} na uongozi baada ya ukaguzi wa kimaadili.${reasonText}`,
+    priority: 'HIGH',
+    targetType: params.targetType,
+    targetId: params.targetId,
+    relatedGroupId: params.groupId,
+    actionUrl: `/community?group=${params.groupId}`,
+    deduplicationKey: `gumzo_mod_${params.targetId}_${params.actionTaken}`
+  });
+}
+
 export const emitAppNotification = createAuthoritativeNotification;

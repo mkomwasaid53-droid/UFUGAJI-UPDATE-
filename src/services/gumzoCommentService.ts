@@ -703,6 +703,82 @@ export class GumzoCommentService {
   }
 
   /**
+   * 6b. RESTORE COMMENT (Admin Governance Action)
+   */
+  public restoreComment(params: {
+    groupId: string;
+    postId: string;
+    commentId: string;
+    authenticatedUserId: string;
+    isPlatformAdmin?: boolean;
+    reason?: string;
+  }): GumzoComment {
+    const {
+      groupId,
+      postId,
+      commentId,
+      authenticatedUserId,
+      isPlatformAdmin = false,
+      reason
+    } = params;
+
+    if (isNode) loadFromDisk();
+
+    const comment = commentsStore.get(commentId);
+    if (!comment || comment.groupId !== groupId || comment.postId !== postId) {
+      throw new Error('Maoni hayakupatikana.');
+    }
+
+    const group = gumzoGroupService.getGroupById(groupId, authenticatedUserId, isPlatformAdmin);
+    if (!group) {
+      throw new Error('Kikundi hakikupatikana.');
+    }
+
+    const isGroupLeader = group.founderAdminUserId === authenticatedUserId || group.leadershipAdminUserId === authenticatedUserId;
+    if (!isPlatformAdmin && !isGroupLeader) {
+      const err = new Error('Mamlaka ya uongozi wa kikundi yanahitajika kurejesha maoni (403 Forbidden).');
+      (err as any).statusCode = 403;
+      throw err;
+    }
+
+    const now = new Date().toISOString();
+    comment.status = 'PUBLISHED';
+    comment.moderationStatus = 'RESTORED';
+    comment.hiddenAt = undefined;
+    comment.hiddenBy = undefined;
+    comment.moderatedAt = now;
+    comment.moderatedBy = authenticatedUserId;
+    comment.moderationReason = reason || 'Maoni yamerejeshwa na uongozi.';
+    comment.updatedAt = now;
+    comment.updatedBy = authenticatedUserId;
+
+    commentsStore.set(commentId, comment);
+    persistToDisk();
+
+    // Update active comment count on post
+    const activeCount = this.getActiveCommentCount(postId);
+    gumzoPostService.updatePostCommentCount(postId, activeCount);
+
+    emitCommentEvent('GUMZO_COMMENT_MODERATED', comment, authenticatedUserId);
+
+    gumzoAuditService.logEvent({
+      actorUserId: authenticatedUserId,
+      action: 'COMMENT_RESTORED',
+      targetType: 'COMMENT',
+      targetResourceId: commentId,
+      groupId,
+      outcome: 'SUCCESS',
+      reason: comment.moderationReason,
+      details: {
+        authorUserId: comment.authorUserId,
+        postId,
+      },
+    });
+
+    return comment;
+  }
+
+  /**
    * 7. GET ACTIVE COMMENT COUNT
    * Excludes DELETED and HIDDEN comments.
    */

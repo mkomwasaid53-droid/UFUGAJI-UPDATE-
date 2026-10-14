@@ -134,6 +134,10 @@ import {
   initGumzoAuditStorage
 } from './src/services/gumzoAuditService';
 import {
+  gumzoEnforcementService,
+  initGumzoReportsStorage
+} from './src/services/gumzoEnforcementService';
+import {
   getSellerVerificationDisplay
 } from './src/types/sellerVerification';
 import {
@@ -204,6 +208,9 @@ initGumzoCommentsStorage(fs, path);
 
 // Authoritative Gumzo governance audit persistent storage initialization (V9.4)
 initGumzoAuditStorage(fs, path);
+
+// Authoritative Gumzo reports and enforcement persistent storage initialization (V1.0)
+initGumzoReportsStorage(fs, path);
 
 // Persistent marketplace products storage helpers
 function readMarketplaceProductsFromDisk(): any[] {
@@ -369,6 +376,49 @@ async function startServer() {
   const gumzoCommentMediaUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 50 * 1024 * 1024 },
+  });
+
+  // Authoritative Media Access Enforcement for Gumzo (V1.0)
+  app.get('/uploads/gumzo_posts/:groupId/:fileName', (req, res, next) => {
+    try {
+      const { groupId, fileName } = req.params;
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+
+      const mediaPath = `gumzo/posts/${groupId}/${fileName}`;
+      const access = gumzoEnforcementService.validateMediaAccess({
+        mediaUrlOrPath: mediaPath,
+        callerUserId,
+        isPlatformAdmin: isAdmin
+      });
+
+      if (!access.allowed) {
+        return res.status(403).json({ error: access.reason || 'Picha au video hii imefichwa.' });
+      }
+    } catch {}
+    next();
+  });
+
+  app.get('/uploads/gumzo_comments/:groupId/:fileName', (req, res, next) => {
+    try {
+      const { groupId, fileName } = req.params;
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+
+      const mediaPath = `gumzo/comments/${groupId}/${fileName}`;
+      const access = gumzoEnforcementService.validateMediaAccess({
+        mediaUrlOrPath: mediaPath,
+        callerUserId,
+        isPlatformAdmin: isAdmin
+      });
+
+      if (!access.allowed) {
+        return res.status(403).json({ error: access.reason || 'Picha au video hii imefichwa.' });
+      }
+    } catch {}
+    next();
   });
 
   // Static serving for uploaded marketplace media (videos and images)
@@ -8178,6 +8228,218 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     } catch (err: any) {
       const isForbidden = (err as any).statusCode === 403 || err.message?.includes('403') || err.message?.includes('Mamlaka') || err.message?.includes('Huruhusiwi');
       const statusCode = isForbidden ? 403 : 400;
+      return res.status(statusCode).json({ error: err.message });
+    }
+  });
+
+  // 6. Restore comment (Authorized Admins only)
+  app.post('/api/gumzo/groups/:groupId/posts/:postId/comments/:commentId/restore', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const { groupId, postId, commentId } = req.params;
+      const { reason } = req.body || {};
+
+      const restored = gumzoCommentService.restoreComment({
+        groupId,
+        postId,
+        commentId,
+        authenticatedUserId: callerUserId,
+        isPlatformAdmin: isAdmin,
+        reason,
+      });
+
+      return res.json(restored);
+    } catch (err: any) {
+      const isForbidden = (err as any).statusCode === 403 || err.message?.includes('403') || err.message?.includes('Mamlaka');
+      const statusCode = isForbidden ? 403 : 400;
+      return res.status(statusCode).json({ error: err.message });
+    }
+  });
+
+  // 7. Restore post (Authorized Admins only)
+  app.post('/api/gumzo/groups/:groupId/posts/:postId/restore', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const { postId } = req.params;
+      const { reason } = req.body || {};
+
+      const restored = gumzoPostService.restorePost({
+        postId,
+        authenticatedUserId: callerUserId,
+        isPlatformAdmin: isAdmin,
+        reason,
+      });
+
+      return res.json(restored);
+    } catch (err: any) {
+      const isForbidden = (err as any).statusCode === 403 || err.message?.includes('403') || err.message?.includes('Mamlaka');
+      const statusCode = isForbidden ? 403 : 400;
+      return res.status(statusCode).json({ error: err.message });
+    }
+  });
+
+  // ========================================================================
+  // GUMZO ENFORCEMENT V1.0 — COMMUNITY REPORTS & MODERATION ROUTES
+  // ========================================================================
+
+  // 8. Submit report on Gumzo post or comment (Authenticated users only)
+  app.post('/api/gumzo/reports', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body?.reporterUserId;
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Huruhusiwi kuwasilisha ripoti bila kuingia kwenye akaunti yako (401 Unauthorized).' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const { groupId, targetType, targetId, postId, reason, details } = req.body;
+
+      const report = await gumzoEnforcementService.submitReport({
+        input: {
+          groupId,
+          targetType,
+          targetId,
+          postId,
+          reason,
+          details,
+        },
+        reporterUserId: callerUserId,
+        reporterDisplayName: (req.headers['x-user-name'] as string) || req.body?.reporterDisplayName,
+        isPlatformAdmin: isAdmin,
+      });
+
+      const sanitized = gumzoEnforcementService.sanitizeReportForUser(report, callerUserId, isAdmin);
+      return res.status(201).json(sanitized);
+    } catch (err: any) {
+      const statusCode = (err as any).statusCode || (err.message?.includes('401') ? 401 : (err.message?.includes('403') ? 403 : (err.message?.includes('404') ? 404 : 400)));
+      return res.status(statusCode).json({ error: err.message });
+    }
+  });
+
+  // 9. Get Gumzo Admin Reports Queue (Authorized Admins only)
+  app.get('/api/gumzo/admin/reports', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo (401 Unauthorized).' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const groupId = (req.query.groupId as string) || undefined;
+      const status = (req.query.status as any) || undefined;
+
+      const reports = gumzoEnforcementService.getAdminReports({
+        actingAdminUserId: callerUserId,
+        isPlatformAdmin: isAdmin,
+        groupId,
+        status,
+      });
+
+      return res.json({ reports, total: reports.length });
+    } catch (err: any) {
+      const statusCode = (err as any).statusCode || (err.message?.includes('403') ? 403 : 400);
+      return res.status(statusCode).json({ error: err.message });
+    }
+  });
+
+  // 10. Resolve Gumzo Report (Authorized Admin only: Founder Admin for group or Leadership Admin)
+  app.post('/api/gumzo/admin/reports/:reportId/resolve', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.body?.actingAdminUserId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo (401 Unauthorized).' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const { reportId } = req.params;
+      const { action, internalNotes, publicReason } = req.body;
+
+      const resolved = await gumzoEnforcementService.resolveReport({
+        input: {
+          reportId,
+          action,
+          internalNotes,
+          publicReason,
+        },
+        actingAdminUserId: callerUserId,
+        isPlatformAdmin: isAdmin,
+      });
+
+      return res.json(resolved);
+    } catch (err: any) {
+      const statusCode = (err as any).statusCode || (err.message?.includes('403') ? 403 : (err.message?.includes('404') ? 404 : 400));
+      return res.status(statusCode).json({ error: err.message });
+    }
+  });
+
+  // 11. Moderate Gumzo Post (Authorized Admin only)
+  app.post('/api/gumzo/groups/:groupId/posts/:postId/moderate', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.body?.actingAdminUserId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const { postId } = req.params;
+      const { action, reason } = req.body;
+
+      const moderated = await gumzoEnforcementService.moderatePost({
+        postId,
+        action,
+        actingAdminUserId: callerUserId,
+        isPlatformAdmin: isAdmin,
+        reason,
+      });
+
+      return res.json(moderated);
+    } catch (err: any) {
+      const statusCode = (err as any).statusCode || (err.message?.includes('403') ? 403 : (err.message?.includes('404') ? 404 : 400));
+      return res.status(statusCode).json({ error: err.message });
+    }
+  });
+
+  // 12. Moderate Gumzo Comment (Authorized Admin only)
+  app.post('/api/gumzo/groups/:groupId/posts/:postId/comments/:commentId/moderate', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.body?.actingAdminUserId as string);
+      if (!callerUserId) {
+        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
+      }
+
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
+      const { groupId, postId, commentId } = req.params;
+      const { action, reason } = req.body;
+
+      const moderated = await gumzoEnforcementService.moderateComment({
+        groupId,
+        postId,
+        commentId,
+        action,
+        actingAdminUserId: callerUserId,
+        isPlatformAdmin: isAdmin,
+        reason,
+      });
+
+      return res.json(moderated);
+    } catch (err: any) {
+      const statusCode = (err as any).statusCode || (err.message?.includes('403') ? 403 : (err.message?.includes('404') ? 404 : 400));
       return res.status(statusCode).json({ error: err.message });
     }
   });

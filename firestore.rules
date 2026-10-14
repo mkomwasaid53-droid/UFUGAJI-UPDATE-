@@ -944,6 +944,38 @@ service cloud.firestore {
       allow create: if isAdmin();
       allow update, delete: if false;
     }
+
+    // Gumzo Community Reports & Enforcement (V1.0)
+    match /gumzoReports/{reportId} {
+      // Read: Admin, reporter reading own report, or group founder/leadership admin
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        (resource != null && resource.data.reporterUserId == request.auth.uid) ||
+        (resource != null && exists(/databases/$(database)/documents/gumzoGroups/$(resource.data.groupId)) && (
+          get(/databases/$(database)/documents/gumzoGroups/$(resource.data.groupId)).data.founderAdminUserId == request.auth.uid ||
+          get(/databases/$(database)/documents/gumzoGroups/$(resource.data.groupId)).data.leadershipAdminUserId == request.auth.uid
+        ))
+      );
+
+      // Create: Authenticated users can submit reports into OPEN status
+      allow create: if isAuthenticated() &&
+        request.resource.data.reporterUserId == request.auth.uid &&
+        request.resource.data.status == 'OPEN' &&
+        !('internalNotes' in request.resource.data) &&
+        !('reviewedByUserId' in request.resource.data);
+
+      // Update: Authorized group admins or platform admins can resolve reports
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        (resource != null && exists(/databases/$(database)/documents/gumzoGroups/$(resource.data.groupId)) && (
+          get(/databases/$(database)/documents/gumzoGroups/$(resource.data.groupId)).data.founderAdminUserId == request.auth.uid ||
+          get(/databases/$(database)/documents/gumzoGroups/$(resource.data.groupId)).data.leadershipAdminUserId == request.auth.uid
+        ))
+      );
+
+      // Delete: Preserved for governance audit
+      allow delete: if false;
+    }
   }
 }
 
