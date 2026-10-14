@@ -156,7 +156,7 @@ service cloud.firestore {
     // Marketplace Products collection (Gulio la Mifugo & Pembejeo - Scalable Foundation)
     match /marketplaceProducts/{productId} {
       // V1.0 Content Moderation: Only APPROVED and active listings are readable by regular public
-      allow read: if (resource != null && resource.data.status == 'active' && resource.data.get('moderationStatus', 'APPROVED') in ['APPROVED', 'RESTORED']) ||
+      allow read: if (resource != null && resource.data.status == 'active' && resource.data.get('moderationStatus', 'NOT_REVIEWED') in ['APPROVED', 'RESTORED']) ||
         (isAuthenticated() && (isAdmin() || (resource != null && resource.data.sellerId == request.auth.uid)));
 
       allow create: if isAuthenticated() && (

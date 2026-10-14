@@ -110,7 +110,7 @@ export async function runV10AiScreeningTests(): Promise<{
     category: 'Kuku',
     subcategory: 'Kuku wa Nyama (Broilers)',
     price: 18000,
-    images: [{ url: 'https://images.example.com/sasso.jpg' }]
+    images: [{ id: 'img_sasso_1', url: 'https://images.example.com/sasso.jpg' }]
   };
 
   const screeningNewPass = evaluateListingContentDeterministically(validChickenListing);
@@ -160,8 +160,9 @@ export async function runV10AiScreeningTests(): Promise<{
     productId: 'prod_ai_chicken_trusted',
     sellerId: trustedSellerId,
     shopId: trustedSellerId,
-    title: 'Kuku Chotara wa Nyama (Sasso)',
-    description: 'Kuku bora waliopata chanjo',
+    title: validChickenListing.title,
+    description: validChickenListing.description,
+    images: validChickenListing.images,
     category: 'Kuku',
     subcategory: 'Kuku wa Nyama (Broilers)',
     categoryId: 'cat_kuku',

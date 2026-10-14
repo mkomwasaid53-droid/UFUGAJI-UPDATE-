@@ -276,5 +276,6 @@ export function stripProtectedSellerTrustFields(
   delete clean.trustGrantedAt;
   delete clean.trustGrantedBy;
   delete clean.trustReason;
+  delete clean.verificationStatus;
   return clean;
 }

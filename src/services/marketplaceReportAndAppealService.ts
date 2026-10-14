@@ -198,7 +198,7 @@ export async function submitMarketplaceReport(
     reporterDisplayName = reporterUserIdOrInput.reporterDisplayName || 'Mfugaji';
     input = reporterUserIdOrInput;
   } else {
-    reporterUserId = reporterUserIdOrInput || '';
+    reporterUserId = (reporterUserIdOrInput as string) || '';
     reporterDisplayName = reporterDisplayNameArg || 'Mfugaji';
     input = inputArg || ({} as SubmitReportInput);
   }
@@ -250,13 +250,13 @@ export async function submitMarketplaceReport(
       report: existingActive,
       auditEntry: {
         auditId: `aud_dup_${existingActive.reportId}`,
-        recordType: 'REPORT',
-        recordId: existingActive.reportId,
-        action: 'SUBMIT_REPORT',
-        performedByUserId: reporterUserId,
-        performedByDisplayName: reporterDisplayName,
+        action: 'REPORT_CREATED',
+        targetType: 'REPORT',
+        targetId: existingActive.reportId,
+        performedBy: reporterUserId,
+        performedByName: reporterDisplayName,
         performedAt: existingActive.createdAt,
-        details: { isDuplicateIgnored: true }
+        internalNote: 'Duplicate report ignored'
       }
     };
   }
@@ -438,7 +438,7 @@ export async function reviewMarketplaceReport(
     reportId = (reportIdOrInput as any).reportId || '';
     input = reportIdOrInput;
   } else {
-    reportId = reportIdOrInput;
+    reportId = (reportIdOrInput as string) || '';
     input = inputArg || ({} as ReviewReportInput);
   }
 

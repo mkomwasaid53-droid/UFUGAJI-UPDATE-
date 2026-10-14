@@ -1549,71 +1549,73 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <span>{authPromptNotice}</span>
             </div>
           )}
+            </>
+          )}
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 bg-stone-50 border-t border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-2.5 shrink-0">
-          {isOwner ? (
-            <div className="flex w-full gap-2">
-              {onEdit && (
+        {(!isOwner && !isAdmin && eligibility && !eligibility.isEligible) ? null : (
+          <div className="p-4 bg-stone-50 border-t border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-2.5 shrink-0">
+            {isOwner ? (
+              <div className="flex w-full gap-2">
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onEdit(product);
+                    }}
+                    className="flex-1 py-2.5 bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
+                  >
+                    <span>Hariri Tangazo Hili</span>
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => {
-                    onClose();
-                    onEdit(product);
-                  }}
-                  className="flex-1 py-2.5 bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
+                  onClick={onClose}
+                  className="py-2.5 px-4 bg-stone-200 hover:bg-stone-300 text-stone-800 text-xs font-semibold rounded-xl transition-colors cursor-pointer min-h-[44px]"
                 >
-                  <span>Hariri Tangazo Hili</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={onClose}
-                className="py-2.5 px-4 bg-stone-200 hover:bg-stone-300 text-stone-800 text-xs font-semibold rounded-xl transition-colors cursor-pointer min-h-[44px]"
-              >
-                Funga
-              </button>
-            </div>
-          ) : (
-            <div className="flex w-full flex-col gap-2.5">
-              {/* PRIMARY INQUIRY ACTION: Authenticated Marketplace Inbox (Requirement 1 & 14) */}
-              <button
-                type="button"
-                onClick={() => onContactSeller && onContactSeller(product)}
-                className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer min-h-[46px]"
-              >
-                <MessageSquare className="w-4 h-4 text-emerald-200" />
-                <span>💬 Wasiliana na Muuzaji</span>
-              </button>
-
-              {/* SECONDARY CONTACT OPTIONS */}
-              <div className="flex w-full flex-col sm:flex-row gap-2">
-                <button
-                  type="button"
-                  onClick={handleCall}
-                  disabled={!product.sellerPhone}
-                  className="flex-1 py-2 px-3 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-800 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
-                >
-                  <PhoneCall className="w-3.5 h-3.5 text-stone-600" />
-                  <span>Piga Simu ({product.sellerPhone || 'Imehifadhiwa'})</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleWhatsApp}
-                  disabled={!product.sellerPhone}
-                  className="flex-1 py-2 px-3 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-800 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
-                >
-                  <MessageCircle className="w-3.5 h-3.5 text-teal-700" />
-                  <span>WhatsApp (Sekondari)</span>
+                  Funga
                 </button>
               </div>
-            </div>
-          )}
-          </>
+            ) : (
+              <div className="flex w-full flex-col gap-2.5">
+                {/* PRIMARY INQUIRY ACTION: Authenticated Marketplace Inbox (Requirement 1 & 14) */}
+                <button
+                  type="button"
+                  onClick={() => onContactSeller && onContactSeller(product)}
+                  className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer min-h-[46px]"
+                >
+                  <MessageSquare className="w-4 h-4 text-emerald-200" />
+                  <span>💬 Wasiliana na Muuzaji</span>
+                </button>
+
+                {/* SECONDARY CONTACT OPTIONS */}
+                <div className="flex w-full flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCall}
+                    disabled={!product.sellerPhone}
+                    className="flex-1 py-2 px-3 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-800 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
+                  >
+                    <PhoneCall className="w-3.5 h-3.5 text-stone-600" />
+                    <span>Piga Simu ({product.sellerPhone || 'Imehifadhiwa'})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleWhatsApp}
+                    disabled={!product.sellerPhone}
+                    className="flex-1 py-2 px-3 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-800 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 text-teal-700" />
+                    <span>WhatsApp (Sekondari)</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
-        </div>
       </div>
 
       {/* User Report Modal (Requirement 3) */}

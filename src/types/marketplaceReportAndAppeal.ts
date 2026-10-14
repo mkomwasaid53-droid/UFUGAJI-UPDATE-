@@ -365,7 +365,7 @@ export interface SubmitReportInput {
 }
 
 export interface ReviewReportInput {
-  status: 'UNDER_REVIEW' | 'RESOLVED' | 'DISMISSED';
+  status: 'UNDER_REVIEW' | 'ACTION_TAKEN' | 'RESOLVED' | 'DISMISSED';
   resolutionCode?: ReportResolutionCode | null;
   resolutionText?: string | null;
   moderatorNotes?: string | null;

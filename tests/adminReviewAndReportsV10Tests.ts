@@ -318,14 +318,24 @@ async function runTests() {
     status: 'active',
     moderationStatus: 'APPROVED',
     aiScreening: {
+      screeningId: 'scr_pass_001',
+      requestId: 'req_pass_001',
       status: 'PASS',
       categories: [],
       explanation: 'Hakuna maneno yaliyozuiliwa',
       explanationSwahili: 'Maudhui yamepita',
-      confidenceScore: 0.9,
-      screenedAt: new Date().toISOString(),
-      modelVersion: 'gemini-2.5-flash',
-      policyVersion: '1.0'
+      confidence: 'HIGH',
+      model: 'gemini-2.5-flash',
+      policyVersion: '1.0',
+      contentFingerprint: 'fp_valid_pass',
+      timestamp: new Date().toISOString(),
+      evaluatedFields: {
+        hasTitle: true,
+        hasDescription: true,
+        hasCategory: true,
+        hasPrice: true,
+        imageCount: 1
+      }
     },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -354,7 +364,7 @@ async function runTests() {
     {
       targetProductId: testProductWithPass.productId,
       action: 'SUSPEND_LISTING',
-      reasonCode: 'PROHIBITED_PRODUCT',
+      reasonCode: 'POLICY_VIOLATION',
       reasonText: 'Dawa hatarishi isiyo na usajili wa TFDA/VMD.',
       internalNote: 'Uthibitisho wa daktari umethibitisha hatari kubwa.',
       relatedReportId: 'rep_flagged_1'
@@ -392,14 +402,24 @@ async function runTests() {
     status: 'draft',
     moderationStatus: 'PENDING_REVIEW',
     aiScreening: {
+      screeningId: 'scr_err_001',
+      requestId: 'req_err_001',
       status: 'SCREENING_ERROR',
       categories: ['UNCERTAIN'],
       explanation: 'Hitilafu ya mtandao wakati wa uchunguzi wa AI.',
       explanationSwahili: 'Hitilafu ya mtandao wakati wa uchunguzi wa AI.',
-      confidenceScore: 0.1,
-      screenedAt: new Date().toISOString(),
-      modelVersion: 'gemini-2.5-flash',
-      policyVersion: '1.0'
+      confidence: 'LOW',
+      model: 'gemini-2.5-flash',
+      policyVersion: '1.0',
+      contentFingerprint: 'fp_err_001',
+      timestamp: new Date().toISOString(),
+      evaluatedFields: {
+        hasTitle: true,
+        hasDescription: true,
+        hasCategory: true,
+        hasPrice: true,
+        imageCount: 0
+      }
     },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -516,13 +536,24 @@ async function runTests() {
       moderationStatus: 'PENDING_REVIEW',
       sellerTrustStatus: 'TRUSTED_SELLER',
       aiScreening: {
+        screeningId: 'scr_vet_001',
+        requestId: 'req_vet_001',
         status: 'REVIEW_REQUIRED',
         categories: ['POTENTIALLY_LEGITIMATE_VETERINARY_CONTENT'],
         explanation: 'Picha inaonyesha kidonda cha mnyama; inahitaji ukaguzi wa daktari.',
-        confidenceScore: 0.75,
-        screenedAt: new Date().toISOString(),
-        modelVersion: 'gemini-2.5-flash',
-        policyVersion: '1.0'
+        explanationSwahili: 'Picha inaonyesha kidonda cha mnyama; inahitaji ukaguzi wa daktari.',
+        confidence: 'MEDIUM',
+        model: 'gemini-2.5-flash',
+        policyVersion: '1.0',
+        contentFingerprint: 'fp_vet_001',
+        timestamp: new Date().toISOString(),
+        evaluatedFields: {
+          hasTitle: true,
+          hasDescription: true,
+          hasCategory: true,
+          hasPrice: true,
+          imageCount: 1
+        }
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -545,13 +576,24 @@ async function runTests() {
       moderationStatus: 'PENDING_REVIEW',
       sellerTrustStatus: 'TRUSTED_SELLER',
       aiScreening: {
+        screeningId: 'scr_err_002',
+        requestId: 'req_err_002',
         status: 'SCREENING_ERROR',
         categories: ['UNCERTAIN'],
         explanation: 'Hitilafu ya mfumo wa uchunguzi wa AI.',
-        confidenceScore: 0.1,
-        screenedAt: new Date().toISOString(),
-        modelVersion: 'gemini-2.5-flash',
-        policyVersion: '1.0'
+        explanationSwahili: 'Hitilafu ya mfumo wa uchunguzi wa AI.',
+        confidence: 'LOW',
+        model: 'gemini-2.5-flash',
+        policyVersion: '1.0',
+        contentFingerprint: 'fp_err_002',
+        timestamp: new Date().toISOString(),
+        evaluatedFields: {
+          hasTitle: true,
+          hasDescription: true,
+          hasCategory: true,
+          hasPrice: true,
+          imageCount: 0
+        }
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -642,11 +684,9 @@ async function runTests() {
   try {
     await dispatchReportAdminNotification({
       reportId: 'rep_notif_test',
-      reporterUserId: 'user_notif_1',
-      reporterDisplayName: 'Mwananchi',
       targetType: 'PRODUCT',
       targetId: 'prod_notif_1',
-      reasonCode: 'SUSPECTED_SCAM'
+      reasonCategory: 'SUSPECTED_SCAM'
     });
     adminNotified = true;
   } catch {}
@@ -657,9 +697,7 @@ async function runTests() {
   try {
     await dispatchReportReceivedReporterNotification({
       reporterUserId: 'user_notif_1',
-      reportId: 'rep_notif_test',
-      targetType: 'PRODUCT',
-      reasonCode: 'SUSPECTED_SCAM'
+      reportId: 'rep_notif_test'
     });
     reporterReceiptNotified = true;
   } catch {}
@@ -670,10 +708,7 @@ async function runTests() {
   try {
     await dispatchReportClosedReporterNotification({
       reporterUserId: 'user_notif_1',
-      reportId: 'rep_notif_test',
-      targetType: 'PRODUCT',
-      resolutionCode: 'LISTING_MODERATED',
-      resolutionSummarySwahili: 'Hatua stahiki zimechukuliwa na wasimamizi wa soko.'
+      reportId: 'rep_notif_test'
     });
     reporterClosureNotified = true;
   } catch {}
@@ -686,10 +721,10 @@ async function runTests() {
       sellerId: 'seller_notif_target',
       productId: 'prod_notif_target',
       productTitle: 'Bidhaa Yenye Hitilafu',
-      action: 'SUSPEND_LISTING',
-      status: 'SUSPENDED',
-      publicExplanation: 'Tangazo limesimamishwa kwa sababu za kiusalama.',
-      correctionInstructions: 'Tafadhali wasiliana na wasimamizi au rekebisha maelezo.'
+      action: 'SUSPEND',
+      moderationId: 'mod_notif_01',
+      publicReason: 'Tangazo limesimamishwa kwa sababu za kiusalama.',
+      correctionNote: 'Tafadhali wasiliana na wasimamizi au rekebisha maelezo.'
     });
     sellerActionNotified = true;
   } catch {}
