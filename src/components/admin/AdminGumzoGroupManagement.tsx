@@ -37,13 +37,14 @@ import {
   GumzoGovernanceAuditEvent
 } from '../../types/gumzo';
 import { gumzoGroupService } from '../../services/gumzoGroupService';
+import { GumzoReportsQueue } from '../gumzo/GumzoReportsQueue';
 
 export const AdminGumzoGroupManagement: React.FC = () => {
   const { user, role, isAdmin } = useAuth();
   const currentAdminUserId = user?.uid || 'admin';
 
-  // Navigation tab: GROUPS or AUDIT
-  const [activeTab, setActiveTab] = useState<'GROUPS' | 'AUDIT'>('GROUPS');
+  // Navigation tab: GROUPS, AUDIT, or REPORTS
+  const [activeTab, setActiveTab] = useState<'GROUPS' | 'AUDIT' | 'REPORTS'>('GROUPS');
 
   // State
   const [groups, setGroups] = useState<GumzoGroup[]>([]);
@@ -537,9 +538,24 @@ export const AdminGumzoGroupManagement: React.FC = () => {
             </span>
           )}
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('REPORTS')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2 transition-colors cursor-pointer ${
+            activeTab === 'REPORTS'
+              ? 'bg-stone-900 text-white shadow-xs'
+              : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+          }`}
+        >
+          <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+          <span>Foleni ya Ripoti (Community Reports Queue V1.0)</span>
+        </button>
       </div>
 
-      {activeTab === 'GROUPS' ? (
+      {activeTab === 'REPORTS' ? (
+        <GumzoReportsQueue />
+      ) : activeTab === 'GROUPS' ? (
         <>
           {/* Search & Filter Controls */}
       <div className="bg-white border border-stone-200/90 rounded-2xl p-4 shadow-xs space-y-3">

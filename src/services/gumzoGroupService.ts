@@ -101,15 +101,12 @@ export function initGumzoStorage(fsModule?: any, pathModule?: any, customDir?: s
 // Auto-initialize if running in Node.js
 if (isNode) {
   try {
-    import('fs').then((f) => {
-      if (!diskFs) {
-        diskFs = f.default || f;
-        import('path').then((p) => {
-          diskPath = p.default || p;
-          initGumzoStorage(diskFs, diskPath);
-        }).catch(() => {});
-      }
-    }).catch(() => {});
+    const nodeReq = (globalThis as any).require;
+    if (!diskFs && typeof nodeReq === 'function') {
+      diskFs = nodeReq('fs');
+      diskPath = nodeReq('path');
+      initGumzoStorage(diskFs, diskPath);
+    }
   } catch {}
 }
 

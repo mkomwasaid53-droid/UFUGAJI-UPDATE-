@@ -9,10 +9,13 @@ import {
   Check,
   X,
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  Flag,
+  RotateCcw
 } from 'lucide-react';
 import { GumzoComment } from '../../types/gumzo';
 import { gumzoCommentService } from '../../services/gumzoCommentService';
+import { GumzoReportModal } from './GumzoReportModal';
 
 interface GumzoCommentCardProps {
   comment: GumzoComment;
@@ -41,11 +44,38 @@ export const GumzoCommentCard: React.FC<GumzoCommentCardProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   const isAuthor = currentUserId === comment.authorUserId;
   const canEdit = isAuthor;
   const canDelete = isAuthor || isGroupAdmin || isAdmin;
   const canHide = isGroupAdmin || isAdmin;
+
+  const handleRestore = async () => {
+    try {
+      setIsSaving(true);
+      setActionError(null);
+      const res = await fetch(`/api/gumzo/groups/${groupId}/posts/${postId}/comments/${comment.commentId}/restore`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUserId,
+          'x-is-admin': isAdmin ? 'true' : 'false'
+        }
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Imeshindwa kurejesha maoni.');
+      }
+      const restored = await res.json();
+      setShowMenu(false);
+      onCommentUpdated(restored);
+    } catch (err: any) {
+      setActionError(err.message || 'Imeshindwa kurejesha maoni.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleSaveEdit = async () => {
     const trimmed = editContent.trim();
@@ -183,8 +213,8 @@ export const GumzoCommentCard: React.FC<GumzoCommentCardProps> = ({
           )}
         </div>
 
-        {/* Action Menu button (for author or admin) */}
-        {(canEdit || canDelete || canHide) && (
+        {/* Action Menu button (for author, admin, or reporting member) */}
+        {(canEdit || canDelete || canHide || (Boolean(currentUserId) && !isAuthor)) && (
           <div className="relative">
             <button
               type="button"
@@ -197,7 +227,7 @@ export const GumzoCommentCard: React.FC<GumzoCommentCardProps> = ({
 
             {showMenu && (
               <div
-                className="absolute right-0 top-6 w-36 bg-white rounded-xl shadow-lg border border-stone-200 py-1 z-20 text-xs"
+                className="absolute right-0 top-6 w-40 bg-white rounded-xl shadow-lg border border-stone-200 py-1 z-20 text-xs"
                 onMouseLeave={() => setShowMenu(false)}
               >
                 {canEdit && (
@@ -213,6 +243,7 @@ export const GumzoCommentCard: React.FC<GumzoCommentCardProps> = ({
                     <span>Hariri Maoni</span>
                   </button>
                 )}
+
                 {canHide && comment.status === 'PUBLISHED' && (
                   <button
                     type="button"
@@ -224,12 +255,40 @@ export const GumzoCommentCard: React.FC<GumzoCommentCardProps> = ({
                     <span>Ficha Maoni</span>
                   </button>
                 )}
+
+                {canHide && comment.status === 'HIDDEN' && (
+                  <button
+                    type="button"
+                    onClick={handleRestore}
+                    disabled={isSaving}
+                    className="w-full text-left px-3 py-1.5 text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3 text-emerald-600" />
+                    <span>Rejesha Maoni</span>
+                  </button>
+                )}
+
+                {/* Reporting action for eligible users */}
+                {Boolean(currentUserId && !isAuthor) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsReportModalOpen(true);
+                      setShowMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-rose-700 hover:bg-rose-50 flex items-center gap-2 cursor-pointer border-t border-stone-100 font-medium"
+                  >
+                    <Flag className="w-3 h-3 text-rose-600" />
+                    <span>Ripoti Maoni</span>
+                  </button>
+                )}
+
                 {canDelete && (
                   <button
                     type="button"
                     onClick={handleDelete}
                     disabled={isDeleting}
-                    className="w-full text-left px-3 py-1.5 text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer"
+                    className="w-full text-left px-3 py-1.5 text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer border-t border-stone-100"
                   >
                     <Trash2 className="w-3 h-3 text-rose-500" />
                     <span>Futa Maoni</span>
@@ -317,6 +376,19 @@ export const GumzoCommentCard: React.FC<GumzoCommentCardProps> = ({
             </div>
           ))}
         </div>
+      )}
+
+      {/* Gumzo Enforcement V1.0 Comment Report Modal */}
+      {isReportModalOpen && (
+        <GumzoReportModal
+          isOpen={isReportModalOpen}
+          onClose={() => setIsReportModalOpen(false)}
+          groupId={groupId}
+          targetType="COMMENT"
+          targetId={comment.commentId}
+          postId={postId}
+          targetAuthorDisplayName={comment.authorDisplayName || 'Mwanachama'}
+        />
       )}
     </div>
   );

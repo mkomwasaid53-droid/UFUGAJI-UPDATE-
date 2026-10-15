@@ -92,15 +92,12 @@ let hasLoadedFromDisk = false;
 // Auto-initialize if running in Node.js
 if (isNode) {
   try {
-    import('fs').then((f) => {
-      if (!diskFs) {
-        diskFs = f.default || f;
-        import('path').then((p) => {
-          diskPath = p.default || p;
-          initGumzoCommentsStorage(diskFs, diskPath);
-        }).catch(() => {});
-      }
-    }).catch(() => {});
+    const nodeReq = (globalThis as any).require;
+    if (!diskFs && typeof nodeReq === 'function') {
+      diskFs = nodeReq('fs');
+      diskPath = nodeReq('path');
+      initGumzoCommentsStorage(diskFs, diskPath);
+    }
   } catch {}
 }
 
@@ -466,6 +463,14 @@ export class GumzoCommentService {
     }
 
     return comment;
+  }
+
+  /**
+   * Raw all comments lookup (for enforcement & media access validation)
+   */
+  public getAllRawComments(): GumzoComment[] {
+    if (isNode) loadFromDisk();
+    return Array.from(commentsStore.values());
   }
 
   /**

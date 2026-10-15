@@ -68,15 +68,12 @@ export function initGumzoAuditStorage(fsModule?: any, pathModule?: any, customDi
 // Auto-initialize if running in Node.js
 if (isNode) {
   try {
-    import('fs').then((f) => {
-      if (!diskFs) {
-        diskFs = f.default || f;
-        import('path').then((p) => {
-          diskPath = p.default || p;
-          initGumzoAuditStorage(diskFs, diskPath);
-        }).catch(() => {});
-      }
-    }).catch(() => {});
+    const nodeReq = (globalThis as any).require;
+    if (!diskFs && typeof nodeReq === 'function') {
+      diskFs = nodeReq('fs');
+      diskPath = nodeReq('path');
+      initGumzoAuditStorage(diskFs, diskPath);
+    }
   } catch {}
 }
 

@@ -104,15 +104,12 @@ export function initGumzoReportsStorage(fsModule?: any, pathModule?: any, custom
 // Auto-initialize if running in Node.js
 if (isNode) {
   try {
-    import('fs').then((f) => {
-      if (!diskFs) {
-        diskFs = f.default || f;
-        import('path').then((p) => {
-          diskPath = p.default || p;
-          initGumzoReportsStorage(diskFs, diskPath);
-        }).catch(() => {});
-      }
-    }).catch(() => {});
+    const nodeReq = (globalThis as any).require;
+    if (!diskFs && typeof nodeReq === 'function') {
+      diskFs = nodeReq('fs');
+      diskPath = nodeReq('path');
+      initGumzoReportsStorage(diskFs, diskPath);
+    }
   } catch {}
 }
 
@@ -918,7 +915,7 @@ export class GumzoEnforcementService {
     if (isPlatformAdmin) return { allowed: true };
 
     // Search matching post
-    const allPosts = gumzoPostService.getGroupPosts({ groupId: '', includeDrafts: true, limit: 1000 }).posts;
+    const allPosts = gumzoPostService.getAllRawPosts();
     for (const post of allPosts) {
       const hasMedia = (post.media || []).some(
         (m) => m.url === mediaUrlOrPath || (m.storagePath && mediaUrlOrPath.includes(m.storagePath))
@@ -937,6 +934,30 @@ export class GumzoEnforcementService {
           const auth = this.canAdminModerateInGroup(callerUserId || '', group, isPlatformAdmin);
           if (!auth.allowed && (!callerUserId || callerUserId !== post.authorUserId)) {
             return { allowed: false, reason: 'Picha au video hii imefichwa kufuatia hatua ya kimaadili.' };
+          }
+        }
+      }
+    }
+
+    // Search matching comment
+    const allComments = gumzoCommentService.getAllRawComments();
+    for (const comment of allComments) {
+      const hasMedia = (comment.media || []).some(
+        (m) => m.url === mediaUrlOrPath || (m.storagePath && mediaUrlOrPath.includes(m.storagePath))
+      );
+      if (hasMedia) {
+        const isHiddenOrRemoved =
+          comment.status === 'HIDDEN' ||
+          comment.status === 'DELETED' ||
+          comment.moderationStatus === 'HIDDEN' ||
+          comment.moderationStatus === 'REMOVED';
+
+        if (isHiddenOrRemoved) {
+          const group = gumzoGroupService.getGroupById(comment.groupId, callerUserId, isPlatformAdmin);
+          if (!group) return { allowed: false, reason: 'Maoni yamefichwa.' };
+          const auth = this.canAdminModerateInGroup(callerUserId || '', group, isPlatformAdmin);
+          if (!auth.allowed && (!callerUserId || callerUserId !== comment.authorUserId)) {
+            return { allowed: false, reason: 'Picha au video hii ya maoni imefichwa.' };
           }
         }
       }

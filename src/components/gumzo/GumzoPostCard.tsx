@@ -12,7 +12,9 @@ import {
   X,
   AlertTriangle,
   Loader2,
-  MessageSquare
+  MessageSquare,
+  Flag,
+  RotateCcw
 } from 'lucide-react';
 import {
   GumzoPost,
@@ -23,6 +25,7 @@ import {
 } from '../../types/gumzo';
 import { gumzoPostService } from '../../services/gumzoPostService';
 import { GumzoCommentSection } from './GumzoCommentSection';
+import { GumzoReportModal } from './GumzoReportModal';
 
 interface GumzoPostCardProps {
   post: GumzoPost;
@@ -49,6 +52,7 @@ export const GumzoPostCard: React.FC<GumzoPostCardProps> = ({
   const [editContent, setEditContent] = useState(post.content);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   const canEdit = canUserEditPost(currentUserId, post, group, isPlatformAdmin);
   const canDelete = canUserDeletePost(currentUserId, post, group, isPlatformAdmin);
@@ -201,13 +205,13 @@ export const GumzoPostCard: React.FC<GumzoPostCardProps> = ({
           </div>
         </div>
 
-        {/* Action Menu (Only for authorized editors/admins) */}
-        {(canEdit || canDelete) && (
+        {/* Action Menu (Authorized editors/admins OR reporting members) */}
+        {(canEdit || canDelete || Boolean(currentUserId && post.authorUserId !== currentUserId)) && (
           <div className="relative">
             <button
               type="button"
               onClick={() => setShowMenu(!showMenu)}
-              className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition-colors"
+              className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition-colors cursor-pointer"
             >
               <MoreVertical className="w-4 h-4" />
             </button>
@@ -256,6 +260,21 @@ export const GumzoPostCard: React.FC<GumzoPostCardProps> = ({
                         <span>Onyesha Chapisho</span>
                       </>
                     )}
+                  </button>
+                )}
+
+                {/* Reporting action for eligible users */}
+                {Boolean(currentUserId && post.authorUserId !== currentUserId) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsReportModalOpen(true);
+                      setShowMenu(false);
+                    }}
+                    className="w-full text-left px-3.5 py-2 hover:bg-rose-50 text-rose-700 flex items-center gap-2 cursor-pointer font-medium border-t border-stone-100"
+                  >
+                    <Flag className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Ripoti Chapisho</span>
                   </button>
                 )}
 
@@ -389,6 +408,18 @@ export const GumzoPostCard: React.FC<GumzoPostCardProps> = ({
             }}
           />
         </div>
+      )}
+
+      {/* Gumzo Enforcement V1.0 Report Modal */}
+      {isReportModalOpen && (
+        <GumzoReportModal
+          isOpen={isReportModalOpen}
+          onClose={() => setIsReportModalOpen(false)}
+          groupId={group.groupId}
+          targetType="POST"
+          targetId={post.postId}
+          targetAuthorDisplayName={post.authorRole === 'FOUNDER_ADMIN' ? 'Msimamizi Mwanzilishi' : 'Uongozi'}
+        />
       )}
     </article>
   );

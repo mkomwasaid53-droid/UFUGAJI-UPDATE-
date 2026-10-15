@@ -57,13 +57,12 @@ export function initVerificationStorage(customFs?: any, customPath?: any) {
 
 if (isNode) {
   try {
-    import('fs').then((fs) => {
-      fsModule = fs.default || fs;
-      import('path').then((p) => {
-        pathModule = p.default || p;
-        loadFromDisk();
-      }).catch(() => {});
-    }).catch(() => {});
+    const nodeReq = (globalThis as any).require;
+    if (typeof nodeReq === 'function') {
+      fsModule = nodeReq('fs');
+      pathModule = nodeReq('path');
+      loadFromDisk();
+    }
   } catch {}
 }
 

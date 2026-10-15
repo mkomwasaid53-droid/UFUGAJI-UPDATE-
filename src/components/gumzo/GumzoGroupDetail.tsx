@@ -15,6 +15,7 @@ import {
   Loader2,
   Info,
   ShieldCheck,
+  ShieldAlert,
   ExternalLink,
   PlusCircle,
   RefreshCw,
@@ -34,6 +35,7 @@ import { gumzoPostService } from '../../services/gumzoPostService';
 import { useAuth } from '../../context/AuthContext';
 import { CreateGumzoPostModal } from './CreateGumzoPostModal';
 import { GumzoPostCard } from './GumzoPostCard';
+import { GumzoReportsQueue } from './GumzoReportsQueue';
 
 interface GumzoGroupDetailProps {
   group: GumzoGroup;
@@ -62,6 +64,7 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
   const [isAdminActing, setIsAdminActing] = useState(false);
   const [adminSuccessMsg, setAdminSuccessMsg] = useState<string | null>(null);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [viewMode, setViewMode] = useState<'POSTS' | 'REPORTS'>('POSTS');
 
   // Authoritative admin posting check
   const postAuth = canUserCreatePost(currentUserId, group, membership, isAdmin);
@@ -546,7 +549,46 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
           ) : (
             /* V9.2 — GUMZO ADMIN POSTS FEED & CONTROLS */
             <div className="pt-6 border-t border-stone-100 space-y-4">
-              {/* Feed Header */}
+              {/* Tab Navigation for Group Admins (Founder Admin & Leadership Admin) */}
+              {(isFounder || isLeadership || isAdmin) && (
+                <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('POSTS')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      viewMode === 'POSTS'
+                        ? 'bg-stone-900 text-white shadow-xs'
+                        : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                    }`}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>Mada na Machapisho</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('REPORTS')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      viewMode === 'REPORTS'
+                        ? 'bg-stone-900 text-white shadow-xs'
+                        : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                    }`}
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Ripoti za Kikundi (Reports Queue)</span>
+                  </button>
+                </div>
+              )}
+
+              {viewMode === 'REPORTS' && (isFounder || isLeadership || isAdmin) ? (
+                <GumzoReportsQueue
+                  groupId={group.groupId}
+                  groupName={group.name}
+                  isFounderAdmin={isFounder}
+                />
+              ) : (
+                <>
+                  {/* Feed Header */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
@@ -644,6 +686,8 @@ export const GumzoGroupDetail: React.FC<GumzoGroupDetailProps> = ({
                     />
                   ))}
                 </div>
+              )}
+                </>
               )}
             </div>
           )}

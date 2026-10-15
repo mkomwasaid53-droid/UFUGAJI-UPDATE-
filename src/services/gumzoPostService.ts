@@ -87,15 +87,12 @@ let hasLoadedFromDisk = false;
 // Auto-initialize if running in Node.js
 if (isNode) {
   try {
-    import('fs').then((f) => {
-      if (!diskFs) {
-        diskFs = f.default || f;
-        import('path').then((p) => {
-          diskPath = p.default || p;
-          initGumzoPostsStorage(diskFs, diskPath);
-        }).catch(() => {});
-      }
-    }).catch(() => {});
+    const nodeReq = (globalThis as any).require;
+    if (!diskFs && typeof nodeReq === 'function') {
+      diskFs = nodeReq('fs');
+      diskPath = nodeReq('path');
+      initGumzoPostsStorage(diskFs, diskPath);
+    }
   } catch {}
 }
 
@@ -280,6 +277,14 @@ export class GumzoPostService {
   public getRawPost(postId: string): GumzoPost | null {
     if (isNode) loadFromDisk();
     return postsStore.get(postId) || null;
+  }
+
+  /**
+   * Raw all posts lookup (for enforcement & media access validation)
+   */
+  public getAllRawPosts(): GumzoPost[] {
+    if (isNode) loadFromDisk();
+    return Array.from(postsStore.values());
   }
 
   /**
