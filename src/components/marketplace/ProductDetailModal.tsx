@@ -1530,7 +1530,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           )}
         </div>
 
-        {/* Footer Actions */}
+        {/* Footer Actions (FIXED JSX LOGIC HAPA) */}
         {(!isOwner && !isAdmin && eligibility && !eligibility.isEligible) ? null : (
           <div className="p-4 bg-stone-50 border-t border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-2.5 shrink-0">
             {isOwner ? (
@@ -1557,7 +1557,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               </div>
             ) : (
               <div className="flex w-full flex-col gap-2.5">
-                {/* PRIMARY INQUIRY ACTION: Authenticated Marketplace Inbox (Requirement 1 & 14) */}
+                {/* PRIMARY INQUIRY ACTION: Authenticated Marketplace Inbox */}
                 <button
                   type="button"
                   onClick={() => onContactSeller && onContactSeller(product)}
