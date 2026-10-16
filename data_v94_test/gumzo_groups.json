@@ -1,6 +1,6 @@
 [
   {
-    "groupId": "grp_1792050286672_hl105z",
+    "groupId": "grp_1792152195404_c2pefn",
     "name": "Wafugaji Kuku Morogoro",
     "description": "Kikundi cha mfano cha kuku Morogoro kwa usimamizi.",
     "categoryId": "kuku",
@@ -10,12 +10,12 @@
     "founderAdminUserId": "user_future_founder",
     "leadershipAdminUserId": "user_leadership_charlie",
     "memberCount": 4,
-    "createdAt": "2026-10-15T07:44:46.672Z",
-    "updatedAt": "2026-10-15T07:44:46.693Z",
+    "createdAt": "2026-10-16T12:03:15.404Z",
+    "updatedAt": "2026-10-16T12:03:15.428Z",
     "createdBy": "user_founder_alpha"
   },
   {
-    "groupId": "grp_1792050286675_u1gtys",
+    "groupId": "grp_1792152195406_w7jrk7",
     "name": "Wafugaji Ngombe Arusha",
     "description": "Kikundi cha mfano cha ngombe Arusha kwa usimamizi.",
     "categoryId": "ngombe",
@@ -24,8 +24,8 @@
     "visibility": "PUBLIC",
     "founderAdminUserId": "user_founder_bravo",
     "memberCount": 1,
-    "createdAt": "2026-10-15T07:44:46.675Z",
-    "updatedAt": "2026-10-15T07:44:46.675Z",
+    "createdAt": "2026-10-16T12:03:15.406Z",
+    "updatedAt": "2026-10-16T12:03:15.406Z",
     "createdBy": "user_founder_bravo"
   }
 ]

@@ -394,8 +394,7 @@ async function runTestSuite() {
     id: 'med_test_001',
     type: 'image',
     url: '/uploads/gumzo_posts/groupA/med_test_001.jpg',
-    storagePath: 'gumzo/posts/groupA/med_test_001.jpg',
-    uploadedAt: new Date().toISOString()
+    storagePath: 'gumzo/posts/groupA/med_test_001.jpg'
   }];
   await gumzoPostService.updatePost({
     postId: post1.postId,

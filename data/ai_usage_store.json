@@ -1,6 +1,6 @@
 {
   "version": "V1.8E",
-  "updatedAt": "2026-10-01T11:01:37.175Z",
+  "updatedAt": "2026-10-16T12:04:10.392Z",
   "userSummaries": [
     [
       "m2gGJH0ZLsRczys8dtlq0PmE85I3",
@@ -2598,6 +2598,24 @@
       "v19e_user_1790852497142",
       {
         "userId": "v19e_user_1790852497142",
+        "lifetimeTextQueries": 15,
+        "lifetimeMediaQueries": 0,
+        "lifetimeFreeAllowanceUsed": 10,
+        "lifetimeAdRewardsGranted": 5,
+        "lifetimeAdRewardsUsed": 0,
+        "lifetimePremiumQueries": 0,
+        "lifetimeCacheHits": 0,
+        "currentFreeAllowanceRemaining": 0,
+        "currentAdRewardRemaining": 5,
+        "activeEntitlement": "FREE_TIER",
+        "premiumPackage": null,
+        "premiumExpiresAt": null
+      }
+    ],
+    [
+      "v19e_user_1792152250354",
+      {
+        "userId": "v19e_user_1792152250354",
         "lifetimeTextQueries": 15,
         "lifetimeMediaQueries": 0,
         "lifetimeFreeAllowanceUsed": 10,
@@ -5294,6 +5312,25 @@
         "dailyLimit": 0,
         "createdAt": "2026-10-01T11:01:37.174Z",
         "updatedAt": "2026-10-01T11:01:37.174Z",
+        "metadata": {
+          "initialFreeLimit": 10
+        }
+      }
+    ],
+    [
+      "v19e_user_1792152250354",
+      {
+        "entitlementId": "ent_v19e_user_1792152250354_free",
+        "userId": "v19e_user_1792152250354",
+        "tier": "FREE",
+        "status": "ACTIVE",
+        "packageType": "NONE",
+        "source": "DEFAULT_FREE",
+        "startedAt": "2026-10-16T12:04:10.391Z",
+        "expiresAt": null,
+        "dailyLimit": 0,
+        "createdAt": "2026-10-16T12:04:10.391Z",
+        "updatedAt": "2026-10-16T12:04:10.391Z",
         "metadata": {
           "initialFreeLimit": 10
         }
@@ -8575,6 +8612,39 @@
           "req_rew_drain_12_1790852497168",
           "req_rew_drain_13_1790852497170",
           "req_rew_drain_14_1790852497172"
+        ]
+      }
+    ],
+    [
+      "v19e_user_1792152250354_2026-10-16",
+      {
+        "userId": "v19e_user_1792152250354",
+        "dateKey": "2026-10-16",
+        "totalQueriesCount": 15,
+        "textQueriesCount": 15,
+        "mediaQueriesCount": 0,
+        "freeAllowanceUsed": 10,
+        "adRewardsGranted": 5,
+        "adRewardsUsed": 0,
+        "premiumQueriesUsed": 0,
+        "cacheHitsCount": 0,
+        "lastUpdated": "2026-10-16T12:04:10.392Z",
+        "processedRequestIds": [
+          "req_rew_drain_0_1792152250354",
+          "req_rew_drain_1_1792152250357",
+          "req_rew_drain_2_1792152250359",
+          "req_rew_drain_3_1792152250362",
+          "req_rew_drain_4_1792152250364",
+          "req_rew_drain_5_1792152250367",
+          "req_rew_drain_6_1792152250369",
+          "req_rew_drain_7_1792152250371",
+          "req_rew_drain_8_1792152250374",
+          "req_rew_drain_9_1792152250376",
+          "req_rew_drain_10_1792152250379",
+          "req_rew_drain_11_1792152250382",
+          "req_rew_drain_12_1792152250384",
+          "req_rew_drain_13_1792152250386",
+          "req_rew_drain_14_1792152250389"
         ]
       }
     ]

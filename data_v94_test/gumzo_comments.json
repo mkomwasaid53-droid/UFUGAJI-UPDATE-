@@ -1,34 +1,34 @@
 [
   {
-    "commentId": "cmt_1792050286680_bk938e",
-    "groupId": "grp_1792050286672_hl105z",
-    "postId": "pst_1792050286678_uhbf7a",
+    "commentId": "cmt_1792152195412_lbbhg9",
+    "groupId": "grp_1792152195404_c2pefn",
+    "postId": "pst_1792152195410_crw5oj",
     "authorUserId": "user_member_alice",
     "authorRole": "MEMBER",
     "content": "Hongera sana kwa chapisho zuri! Tunaomba maelezo zaidi.",
     "status": "PUBLISHED",
-    "createdAt": "2026-10-15T07:44:46.680Z",
-    "updatedAt": "2026-10-15T07:44:46.680Z",
+    "createdAt": "2026-10-16T12:03:15.412Z",
+    "updatedAt": "2026-10-16T12:03:15.412Z",
     "createdBy": "user_member_alice",
     "updatedBy": "user_member_alice"
   },
   {
-    "commentId": "cmt_1792050286686_g3shjw",
-    "groupId": "grp_1792050286672_hl105z",
-    "postId": "pst_1792050286678_uhbf7a",
+    "commentId": "cmt_1792152195418_p845e0",
+    "groupId": "grp_1792152195404_c2pefn",
+    "postId": "pst_1792152195410_crw5oj",
     "authorUserId": "user_member_alice",
     "authorRole": "MEMBER",
     "content": "Najaribu kughushi cheo changu cha kuwa Founder Admin.",
     "status": "PUBLISHED",
-    "createdAt": "2026-10-15T07:44:46.686Z",
-    "updatedAt": "2026-10-15T07:44:46.686Z",
+    "createdAt": "2026-10-16T12:03:15.418Z",
+    "updatedAt": "2026-10-16T12:03:15.418Z",
     "createdBy": "user_member_alice",
     "updatedBy": "user_member_alice"
   },
   {
-    "commentId": "cmt_1792050286722_npny1p",
-    "groupId": "grp_1792050286672_hl105z",
-    "postId": "pst_1792050286722_ydveve",
+    "commentId": "cmt_1792152195459_60a17f",
+    "groupId": "grp_1792152195404_c2pefn",
+    "postId": "pst_1792152195459_1ny3y5",
     "authorUserId": "user_member_alice",
     "authorRole": "MEMBER",
     "content": "Picha ya vifaa vya ulishaji.",
@@ -41,8 +41,8 @@
       }
     ],
     "status": "PUBLISHED",
-    "createdAt": "2026-10-15T07:44:46.722Z",
-    "updatedAt": "2026-10-15T07:44:46.722Z",
+    "createdAt": "2026-10-16T12:03:15.459Z",
+    "updatedAt": "2026-10-16T12:03:15.459Z",
     "createdBy": "user_member_alice",
     "updatedBy": "user_member_alice"
   }
