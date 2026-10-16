@@ -420,29 +420,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
         {/* Modal Scrollable Content */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
-          {!isOwner && !isAdmin && eligibility && !eligibility.isEligible ? (
-            <div className="py-12 px-4 text-center space-y-4">
-              <div className="w-16 h-16 mx-auto rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
-                <AlertTriangle className="w-8 h-8" />
-              </div>
-              <div className="space-y-1.5">
-                <h3 className="text-lg font-bold text-stone-100">Tangazo Halipatikani</h3>
-                <p className="text-sm text-stone-400 max-w-md mx-auto">
-                  {eligibility.publicUnavailableReason || 'Tangazo hili halipatikani kwa sasa sokoni kwa sababu za kiutawala au ukaguzi wa kimfumo.'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-5 py-2.5 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
-              >
-                Funga Dirisha
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* Owner Governance Notice Banner */}
-              {isOwner && eligibility && !eligibility.isEligible && (
+          {/* Owner Governance Notice Banner */}
+          {isOwner && eligibility && !eligibility.isEligible && (
             <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 mb-2">
               <div className="flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
@@ -1548,8 +1527,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
               <span>{authPromptNotice}</span>
             </div>
-          )}
-            </>
           )}
         </div>
 
