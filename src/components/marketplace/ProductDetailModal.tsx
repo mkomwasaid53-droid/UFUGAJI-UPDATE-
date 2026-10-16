@@ -1549,9 +1549,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <span>{authPromptNotice}</span>
             </div>
           )}
-            </>
-          )}
-        </div>
+        </>
+      )}
+    </div>
 
         {/* Footer Actions */}
         {(!isOwner && !isAdmin && eligibility && !eligibility.isEligible) ? null : (
