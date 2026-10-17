@@ -575,7 +575,7 @@ export const Admin: React.FC = () => {
               }`}
             >
               <ShieldAlert className="w-3.5 h-3.5 text-amber-700" />
-              <span>Maonyo na Vizuizi (Seller Governance V1.7E)</span>
+              <span>Maonyo, Vizuizi & Uaminifu (Seller Governance & Trust V1.7E)</span>
             </button>
             <button
               onClick={() => setMarketSubTab('reports_appeals')}

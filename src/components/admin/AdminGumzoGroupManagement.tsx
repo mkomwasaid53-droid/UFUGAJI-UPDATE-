@@ -38,6 +38,7 @@ import {
 } from '../../types/gumzo';
 import { gumzoGroupService } from '../../services/gumzoGroupService';
 import { GumzoReportsQueue } from '../gumzo/GumzoReportsQueue';
+import { getSafeIdToken } from '../../utils/authUtils';
 
 export const AdminGumzoGroupManagement: React.FC = () => {
   const { user, role, isAdmin } = useAuth();
@@ -91,7 +92,7 @@ export const AdminGumzoGroupManagement: React.FC = () => {
     try {
       setIsLoading(true);
       setErrorMsg(null);
-      const token = user ? await user.getIdToken().catch(() => null) : null;
+      const token = await getSafeIdToken(user);
       const res = await gumzoGroupService.fetchBrowserAdminGroups({
         statusFilter: statusFilter === 'ALL' ? undefined : statusFilter,
         categoryFilter: categoryFilter === 'all' ? undefined : categoryFilter,
@@ -133,7 +134,7 @@ export const AdminGumzoGroupManagement: React.FC = () => {
       setErrorMsg(null);
       setSuccessMsg(null);
 
-      const token = user ? await user.getIdToken().catch(() => null) : null;
+      const token = await getSafeIdToken(user);
       const updated = await gumzoGroupService.postBrowserUpdateGroupStatus({
         groupId: group.groupId,
         newStatus: nextStatus,
@@ -189,7 +190,7 @@ export const AdminGumzoGroupManagement: React.FC = () => {
       setErrorMsg(null);
       setSuccessMsg(null);
 
-      const token = user ? await user.getIdToken().catch(() => null) : null;
+      const token = await getSafeIdToken(user);
       const updated = await gumzoGroupService.postBrowserAssignLeadershipAdmin({
         groupId: group.groupId,
         leadershipAdminUserId: targetUserId,
@@ -239,7 +240,7 @@ export const AdminGumzoGroupManagement: React.FC = () => {
       setErrorMsg(null);
       setSuccessMsg(null);
 
-      const token = user ? await user.getIdToken().catch(() => null) : null;
+      const token = await getSafeIdToken(user);
       const res = await gumzoGroupService.postBrowserTransferFounderAdmin({
         groupId: group.groupId,
         newFounderUserId: targetUserId,
@@ -273,7 +274,7 @@ export const AdminGumzoGroupManagement: React.FC = () => {
     try {
       setIsLoadingAudit(true);
       setErrorMsg(null);
-      const token = user ? await user.getIdToken().catch(() => null) : null;
+      const token = await getSafeIdToken(user);
       const events = await gumzoGroupService.fetchBrowserAuditEvents({
         limit: 100,
         callerUserId: currentAdminUserId,

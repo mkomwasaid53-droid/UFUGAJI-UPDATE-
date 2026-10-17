@@ -25,6 +25,7 @@ import {
 } from '../../types/sellerMonetization';
 import { sellerMonetizationService } from '../../services/sellerMonetizationService';
 import { useAuth } from '../../context/AuthContext';
+import { getSafeIdToken } from '../../utils/authUtils';
 
 export const AdminSellerMonetization: React.FC = () => {
   const { user, profile } = useAuth();
@@ -55,7 +56,7 @@ export const AdminSellerMonetization: React.FC = () => {
   const [testPaymentRef, setTestPaymentRef] = useState<string>('');
 
   const getHeaders = async () => {
-    const token = user ? await user.getIdToken() : null;
+    const token = await getSafeIdToken(user);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'
     };

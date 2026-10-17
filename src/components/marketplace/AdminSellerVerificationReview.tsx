@@ -6,6 +6,7 @@ import {
   VERIFICATION_TYPES_CONFIG
 } from '../../types/sellerVerification';
 import { sellerVerificationService } from '../../services/sellerVerificationService';
+import { getSellerTrustStatus } from '../../services/sellerTrustService';
 import { useAuth } from '../../context/AuthContext';
 import {
   ShieldCheck,
@@ -463,6 +464,32 @@ export const AdminSellerVerificationReview: React.FC = () => {
                   </span>
                 </div>
               </div>
+
+              {/* Authoritative Trust Status Decoupled Notice */}
+              {(() => {
+                const currentTrust = getSellerTrustStatus(selectedSeller.sellerId);
+                return (
+                  <div className="p-3 bg-stone-100/90 rounded-2xl border border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-stone-500 block">Hadhi ya Uaminifu (Seller Trust Status)</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded-lg border ${
+                          currentTrust === 'TRUSTED_SELLER'
+                            ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                            : currentTrust === 'RESTRICTED_SELLER'
+                            ? 'bg-rose-100 text-rose-900 border-rose-300'
+                            : 'bg-stone-200 text-stone-800 border-stone-300'
+                        }`}>
+                          {currentTrust}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-stone-600 sm:text-right max-w-sm leading-snug">
+                      Uhakiki huu wa nyaraka (Verification) <strong>hautoi hadhi ya TRUSTED_SELLER</strong> kiotomatiki. Uaminifu unasimamiwa na kubadilishwa kwa uamuzi rasmi katika sehemu ya <strong>Usimamizi wa Wauzaji (Seller Governance)</strong>.
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Full Details */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

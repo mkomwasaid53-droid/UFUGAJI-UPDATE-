@@ -53,6 +53,7 @@ import {
   AdOperationsAdminOverview,
   AdRewardFunnelMetrics
 } from '../../types/adOperationsTypes';
+import { getSafeIdToken } from '../../utils/authUtils';
 
 interface AdminWebRewardedAdsDashboardProps {
   currentUser: any;
@@ -90,7 +91,7 @@ export const AdminWebRewardedAdsDashboard: React.FC<AdminWebRewardedAdsDashboard
   const [actionFeedback, setActionFeedback] = useState<{ success: boolean; message: string } | null>(null);
 
   const getHeaders = async () => {
-    const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+    const idToken = await getSafeIdToken(currentUser);
     return {
       'Content-Type': 'application/json',
       Authorization: idToken ? `Bearer ${idToken}` : '',

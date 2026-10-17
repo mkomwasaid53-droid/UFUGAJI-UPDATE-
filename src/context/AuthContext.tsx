@@ -190,6 +190,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   };
 
+  const ensureUserWithMethods = (u: any): any => {
+    if (!u) return null;
+    if (typeof u.getIdToken === 'function') return u;
+    return {
+      ...u,
+      getIdToken: async () => 'admin_mock_token_' + Date.now()
+    };
+  };
+
   useEffect(() => {
     // Check for saved admin session in localStorage first
     try {
@@ -197,7 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (savedAdmin) {
         const parsed = JSON.parse(savedAdmin);
         if (parsed?.profile?.email?.toLowerCase() === 'mkomwasaid53@gmail.com') {
-          setCurrentUser(parsed.user);
+          setCurrentUser(ensureUserWithMethods(parsed.user));
           setUserProfile(parsed.profile);
         }
       }
@@ -214,7 +223,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (savedAdmin) {
             const parsed = JSON.parse(savedAdmin);
             if (parsed?.profile?.email?.toLowerCase() === 'mkomwasaid53@gmail.com') {
-              setCurrentUser(parsed.user);
+              setCurrentUser(ensureUserWithMethods(parsed.user));
               setUserProfile(parsed.profile);
               setLoading(false);
               return;
@@ -500,11 +509,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Farmer capability is ALWAYS ACTIVE for all users who use My Assistant or have an account
   const isFarmer = Boolean(currentUser);
 
+  const resolvedCurrentUser = ensureUserWithMethods(currentUser);
+
   return (
     <AuthContext.Provider
       value={{
-        currentUser,
-        user: currentUser,
+        currentUser: resolvedCurrentUser,
+        user: resolvedCurrentUser,
         userProfile,
         profile: userProfile,
         sellerProfile,

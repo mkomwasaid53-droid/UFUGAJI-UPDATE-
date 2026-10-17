@@ -29,6 +29,7 @@ import {
 } from '../../types/gumzo';
 import { useAuth } from '../../context/AuthContext';
 import { gumzoEnforcementService } from '../../services/gumzoEnforcementService';
+import { getSafeIdToken } from '../../utils/authUtils';
 
 interface GumzoReportsQueueProps {
   groupId?: string; // Optional: when provided, strictly locks to this group (e.g. for Founder Admin)
@@ -71,7 +72,7 @@ export const GumzoReportsQueue: React.FC<GumzoReportsQueueProps> = ({
       if (groupId) params.append('groupId', groupId);
       if (statusFilter !== 'ALL') params.append('status', statusFilter);
 
-      const token = user ? await user.getIdToken().catch(() => null) : null;
+      const token = await getSafeIdToken(user);
       const headers: Record<string, string> = {
         'x-user-id': currentUserId,
         'x-is-admin': isAdmin ? 'true' : 'false'
@@ -166,7 +167,7 @@ export const GumzoReportsQueue: React.FC<GumzoReportsQueueProps> = ({
       setIsResolving(true);
       setResolveError(null);
 
-      const token = user ? await user.getIdToken().catch(() => null) : null;
+      const token = await getSafeIdToken(user);
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'x-user-id': currentUserId,

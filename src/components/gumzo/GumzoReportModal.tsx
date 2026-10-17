@@ -15,6 +15,7 @@ import {
 } from '../../types/gumzo';
 import { gumzoEnforcementService } from '../../services/gumzoEnforcementService';
 import { useAuth } from '../../context/AuthContext';
+import { getSafeIdToken } from '../../utils/authUtils';
 
 interface GumzoReportModalProps {
   isOpen: boolean;
@@ -70,7 +71,7 @@ export const GumzoReportModal: React.FC<GumzoReportModalProps> = ({
       // Browser API call with fallback to direct service
       let report: GumzoReportRecord;
       try {
-        const token = user ? await user.getIdToken().catch(() => null) : null;
+        const token = await getSafeIdToken(user);
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           'x-user-id': currentUserId,

@@ -38,6 +38,7 @@ import {
   ProductionAuditEvent,
   ProductionRolloutMode
 } from '../../types/adOperationsTypes';
+import { getSafeIdToken } from '../../utils/authUtils';
 
 interface AdminProductionLaunchSectionProps {
   currentUser: any;
@@ -66,7 +67,7 @@ export const AdminProductionLaunchSection: React.FC<AdminProductionLaunchSection
   const [pauseSubmitting, setPauseSubmitting] = useState(false);
 
   const getHeaders = async () => {
-    const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+    const idToken = await getSafeIdToken(currentUser);
     return {
       'Content-Type': 'application/json',
       Authorization: idToken ? `Bearer ${idToken}` : '',

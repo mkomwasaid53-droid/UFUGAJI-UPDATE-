@@ -18,6 +18,7 @@ import { gumzoGroupService } from '../services/gumzoGroupService';
 import { GumzoGroupCard } from '../components/gumzo/GumzoGroupCard';
 import { GumzoGroupDetail } from '../components/gumzo/GumzoGroupDetail';
 import { CreateGumzoGroupModal } from '../components/gumzo/CreateGumzoGroupModal';
+import { getSafeIdToken } from '../utils/authUtils';
 
 export const Community: React.FC = () => {
   const { user, isAdmin } = useAuth();
@@ -56,7 +57,7 @@ export const Community: React.FC = () => {
 
       // 2. If logged in, load user's memberships and my groups from server
       if (currentUserId) {
-        const token = user ? await user.getIdToken().catch(() => null) : null;
+        const token = await getSafeIdToken(user);
         const { memberships, groups: userGroups } = await gumzoGroupService.fetchBrowserUserMemberships(
           currentUserId,
           token

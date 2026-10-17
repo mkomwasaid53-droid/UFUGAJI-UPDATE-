@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   ShieldAlert,
+  ShieldCheck,
+  Shield,
   AlertTriangle,
   Ban,
   Clock,
@@ -15,7 +17,9 @@ import {
   User,
   Store,
   ChevronRight,
-  Info
+  Info,
+  Award,
+  Sparkles
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -40,6 +44,12 @@ import {
   fetchSellerGovernanceAuditLogs
 } from '../../services/sellerGovernanceService';
 import { getLocalCachedProducts } from '../../services/marketplaceService';
+import {
+  getSellerTrustStatus,
+  updateSellerTrustStatus,
+  getLocalCachedSellerProfiles
+} from '../../services/sellerTrustService';
+import { SellerTrustStatus, SellerProfile } from '../../types/marketplace';
 
 export const AdminSellerGovernance: React.FC = () => {
   const { user, profile } = useAuth();
@@ -51,6 +61,19 @@ export const AdminSellerGovernance: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Seller Trust state
+  const [trustStatus, setTrustStatus] = useState<SellerTrustStatus>('NEW_SELLER');
+  const [trustProfile, setTrustProfile] = useState<SellerProfile | null>(null);
+  const [showTrustModal, setShowTrustModal] = useState(false);
+  const [trustForm, setTrustForm] = useState<{
+    targetStatus: SellerTrustStatus;
+    reason: string;
+  }>({
+    targetStatus: 'TRUSTED_SELLER',
+    reason: ''
+  });
+  const [isUpdatingTrust, setIsUpdatingTrust] = useState(false);
 
   // Available sellers from local marketplace data
   const [sellersList, setSellersList] = useState<{ sellerId: string; name: string; shopName?: string; productCount: number }[]>([]);
@@ -153,6 +176,13 @@ export const AdminSellerGovernance: React.FC = () => {
       setSellerSummary(summary);
       const logs = await fetchSellerGovernanceAuditLogs(user?.uid || 'admin', true, sellerId);
       setAuditLogs(logs);
+
+      // Load Authoritative Seller Trust Profile
+      const profiles = getLocalCachedSellerProfiles();
+      const prof = profiles.find((p) => p.uid === sellerId) || null;
+      setTrustProfile(prof);
+      const status = getSellerTrustStatus(sellerId, prof);
+      setTrustStatus(status);
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Haikuweza kupakia taarifa za usimamizi.' });
     } finally {
@@ -177,6 +207,44 @@ export const AdminSellerGovernance: React.FC = () => {
       </div>
     );
   }
+
+  // Handle Authoritative Seller Trust Update
+  const handleUpdateTrustStatus = async () => {
+    if (!selectedSellerId || !user) return;
+    if (!trustForm.reason.trim()) {
+      setMessage({
+        type: 'error',
+        text: 'Tafadhali toa sababu ya kisheria na kiutawala ya kubadili hadhi ya uaminifu wa muuzaji (Mandatory Audit Reason).'
+      });
+      return;
+    }
+
+    try {
+      setIsUpdatingTrust(true);
+      const res = await updateSellerTrustStatus({
+        adminUserId: user.uid,
+        adminUserName: profile?.displayName || user.displayName || 'Msimamizi Mkuu',
+        isAdmin: true,
+        sellerId: selectedSellerId,
+        newTrustStatus: trustForm.targetStatus,
+        reason: trustForm.reason.trim()
+      });
+
+      setTrustProfile(res.profile);
+      setTrustStatus(res.profile.trustStatus || trustForm.targetStatus);
+      setMessage({
+        type: 'success',
+        text: `Hadhi ya uaminifu wa muuzaji ${selectedSellerId} imesasishwa kuwa '${trustForm.targetStatus}' na kurekodiwa rasmi kwenye kumbukumbu ya kiutawala.`
+      });
+      setShowTrustModal(false);
+      setTrustForm({ targetStatus: 'TRUSTED_SELLER', reason: '' });
+      await loadSellerData(selectedSellerId);
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Hitilafu ya kubadilisha hadhi ya uaminifu wa muuzaji.' });
+    } finally {
+      setIsUpdatingTrust(false);
+    }
+  };
 
   // Action Handlers
   const handleIssueWarning = async () => {
@@ -346,6 +414,7 @@ export const AdminSellerGovernance: React.FC = () => {
             ) : (
               filteredSellers.map((seller) => {
                 const isSelected = seller.sellerId === selectedSellerId;
+                const sTrust = getSellerTrustStatus(seller.sellerId);
                 return (
                   <button
                     key={seller.sellerId}
@@ -368,6 +437,17 @@ export const AdminSellerGovernance: React.FC = () => {
                         </p>
                       )}
                       <p className="text-[9px] text-stone-600 font-mono">ID: {seller.sellerId.substring(0, 14)}...</p>
+                      <div className="pt-0.5">
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold border ${
+                          sTrust === 'TRUSTED_SELLER'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : sTrust === 'RESTRICTED_SELLER'
+                            ? 'bg-rose-100 text-rose-800 border-rose-300'
+                            : 'bg-stone-100 text-stone-700 border-stone-200'
+                        }`}>
+                          {sTrust === 'TRUSTED_SELLER' ? 'TRUSTED' : sTrust === 'RESTRICTED_SELLER' ? 'RESTRICTED' : 'NEW'}
+                        </span>
+                      </div>
                     </div>
                     <div className="text-right">
                       <span className="text-[10px] px-2 py-0.5 rounded-md font-bold bg-white text-stone-700 border border-stone-200">
@@ -384,6 +464,115 @@ export const AdminSellerGovernance: React.FC = () => {
 
         {/* Right Column (2 spans): Active Governance Status, Warnings & Restrictions */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Authoritative Seller Trust Status Management Card */}
+          {selectedSellerId && (
+            <div className="bg-white border border-stone-200/80 rounded-2xl p-5 shadow-xs space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-stone-100">
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-2 rounded-xl ${
+                    trustStatus === 'TRUSTED_SELLER'
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      : trustStatus === 'RESTRICTED_SELLER'
+                      ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                      : 'bg-amber-50 text-amber-900 border border-amber-300'
+                  }`}>
+                    {trustStatus === 'TRUSTED_SELLER' ? (
+                      <ShieldCheck className="w-5 h-5 text-emerald-700" />
+                    ) : trustStatus === 'RESTRICTED_SELLER' ? (
+                      <ShieldAlert className="w-5 h-5 text-rose-700" />
+                    ) : (
+                      <Shield className="w-5 h-5 text-amber-700" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-stone-900 flex items-center gap-2">
+                      <span>Hadhi ya Uaminifu (Seller Trust):</span>
+                      <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold ${
+                        trustStatus === 'TRUSTED_SELLER'
+                          ? 'bg-emerald-700 text-white shadow-2xs'
+                          : trustStatus === 'RESTRICTED_SELLER'
+                          ? 'bg-rose-700 text-white shadow-2xs'
+                          : 'bg-stone-200 text-stone-800'
+                      }`}>
+                        {trustStatus === 'TRUSTED_SELLER'
+                          ? 'TRUSTED_SELLER (Muuzaji Anayeaminika)'
+                          : trustStatus === 'RESTRICTED_SELLER'
+                          ? 'RESTRICTED_SELLER (Vizuizi Vinavyotumika)'
+                          : 'NEW_SELLER (Muuzaji Mpya / Kawaida)'}
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-stone-500 mt-0.5">
+                      Seller ID: <span className="font-mono text-stone-700 font-semibold">{selectedSellerId}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  id="admin-manage-seller-trust-btn"
+                  onClick={() => {
+                    setTrustForm({
+                      targetStatus: trustStatus === 'TRUSTED_SELLER' ? 'NEW_SELLER' : 'TRUSTED_SELLER',
+                      reason: ''
+                    });
+                    setShowTrustModal(true);
+                  }}
+                  className="px-3.5 py-2 text-xs font-bold text-white bg-amber-700 hover:bg-amber-800 active:bg-amber-900 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                >
+                  <Award className="w-3.5 h-3.5" />
+                  <span>Badili Hadhi ya Uaminifu</span>
+                </button>
+              </div>
+
+              {/* Status Explanation and Audit Metadata */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/70 space-y-1">
+                  <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">Athari ya Hadhi Sokoni</span>
+                  <p className="text-stone-800 leading-relaxed text-[11px]">
+                    {trustStatus === 'TRUSTED_SELLER' ? (
+                      'Matangazo ya muuzaji huyu yanapewa alama ya kuaminika. Kwa sasa (V1.0/V1.7), matangazo bado yanathibitishwa na wasimamizi au AI screening kabla ya kuchapishwa hadharani.'
+                    ) : trustStatus === 'RESTRICTED_SELLER' ? (
+                      'Muuzaji amewekewa vizuizi amilifu vya kiutawala. Vizuizi vinatangulia na kuondoa uwezo wa kuweka au kuuza matangazo sokoni.'
+                    ) : (
+                      'Hali ya kawaida ya mwanzo. Matangazo yote ya muuzaji mpya yanahitaji idhini rasmi ya msimamizi kabla ya kuonekana sokoni (PENDING_REVIEW).'
+                    )}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/70 space-y-1">
+                  <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">Kumbukumbu ya Idhini</span>
+                  {trustProfile?.trustGrantedAt ? (
+                    <div className="text-[11px] text-stone-700 space-y-0.5">
+                      <p>Tarehe: <span className="font-semibold">{new Date(trustProfile.trustGrantedAt).toLocaleString('sw-TZ')}</span></p>
+                      <p>Msimamizi: <span className="font-semibold">{trustProfile.trustGrantedBy || 'Admin'}</span></p>
+                      {trustProfile.trustReason && (
+                        <p className="text-stone-600 italic">Sababu: "{trustProfile.trustReason}"</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-stone-500 italic">
+                      Hali chaguomsingi ya kiotomatiki (Default NEW_SELLER). Hakuna uamuzi wa kipekee uliofanywa bado.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Strict Governance Invariants Disclaimer Banner */}
+              <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-[11px] text-amber-900 space-y-1">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <Info className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                  <span>Kanuni Zisizobadilika za Uaminifu (Non-Negotiable Trust Rules):</span>
+                </div>
+                <ul className="list-disc list-inside space-y-0.5 text-amber-800 text-[10.5px] pl-1">
+                  <li>Kulipia ada au matangazo (Monetization) <strong>kamwe hakumpi</strong> muuzaji hadhi ya TRUSTED_SELLER.</li>
+                  <li>Uhakiki wa nyaraka za utambulisho (NIDA/TIN) <strong>hauhusiani</strong> na TRUSTED_SELLER (Zimetenganishwa).</li>
+                  <li>TRUSTED_SELLER inatolewa <strong>tu na msimamizi wa kibinadamu</strong> kwa sababu iliyoandikwa kwenye Audit Log.</li>
+                  <li>Vizuizi amilifu vya kiutawala <strong>vinabatilisha</strong> hadhi yoyote ya uaminifu mara moja.</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
           {/* Active Status Overview Card */}
           {sellerSummary && (
             <div className="bg-white border border-stone-200/80 rounded-2xl p-5 shadow-xs space-y-4">
@@ -951,6 +1140,155 @@ export const AdminSellerGovernance: React.FC = () => {
                 className="px-4 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-colors cursor-pointer"
               >
                 Weka Kama Limetatuliwa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Change Seller Trust Status */}
+      {showTrustModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl p-5 max-w-lg w-full space-y-4 shadow-xl border border-stone-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <h3 className="text-sm font-bold text-stone-900 flex items-center gap-2">
+                <Award className="w-4 h-4 text-amber-600" />
+                Badili Hadhi ya Uaminifu wa Muuzaji (Seller Trust Status)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowTrustModal(false)}
+                className="text-stone-400 hover:text-stone-700 font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/70 text-xs">
+              <p className="text-stone-600">
+                Muuzaji: <strong className="text-stone-900 font-mono">{selectedSellerId}</strong>
+              </p>
+              <p className="text-stone-600 mt-0.5">
+                Hadhi ya Sasa: <strong className="text-amber-800">{trustStatus}</strong>
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-bold text-stone-700 block mb-1">
+                  Chagua Hadhi Mpya ya Uaminifu (Target Trust Status) *
+                </label>
+                <div className="grid grid-cols-1 gap-2">
+                  <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                    trustForm.targetStatus === 'TRUSTED_SELLER'
+                      ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400'
+                      : 'bg-white border-stone-200 hover:bg-stone-50'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="trustStatusOption"
+                      value="TRUSTED_SELLER"
+                      checked={trustForm.targetStatus === 'TRUSTED_SELLER'}
+                      onChange={() => setTrustForm({ ...trustForm, targetStatus: 'TRUSTED_SELLER' })}
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-emerald-900 block">TRUSTED_SELLER (Muuzaji Anayeaminika)</span>
+                      <span className="text-[11px] text-emerald-700 block mt-0.5">
+                        Hutolewa kwa uamuzi wa kiutawala baada ya muuzaji kudhihirisha uadilifu na kufuata miongozo ya soko.
+                      </span>
+                    </div>
+                  </label>
+
+                  <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                    trustForm.targetStatus === 'NEW_SELLER'
+                      ? 'bg-stone-100 border-stone-400 ring-1 ring-stone-400'
+                      : 'bg-white border-stone-200 hover:bg-stone-50'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="trustStatusOption"
+                      value="NEW_SELLER"
+                      checked={trustForm.targetStatus === 'NEW_SELLER'}
+                      onChange={() => setTrustForm({ ...trustForm, targetStatus: 'NEW_SELLER' })}
+                      className="mt-0.5 text-stone-600 focus:ring-stone-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-stone-900 block">NEW_SELLER (Muuzaji Mpya / Kawaida)</span>
+                      <span className="text-[11px] text-stone-600 block mt-0.5">
+                        Hali chaguomsingi. Matangazo yote yanahitaji ukaguzi na idhini kabla ya kuonekana sokoni.
+                      </span>
+                    </div>
+                  </label>
+
+                  <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                    trustForm.targetStatus === 'RESTRICTED_SELLER'
+                      ? 'bg-rose-50 border-rose-400 ring-1 ring-rose-400'
+                      : 'bg-white border-stone-200 hover:bg-stone-50'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="trustStatusOption"
+                      value="RESTRICTED_SELLER"
+                      checked={trustForm.targetStatus === 'RESTRICTED_SELLER'}
+                      onChange={() => setTrustForm({ ...trustForm, targetStatus: 'RESTRICTED_SELLER' })}
+                      className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-rose-900 block">RESTRICTED_SELLER (Vizuizi vya Kiutawala)</span>
+                      <span className="text-[11px] text-rose-700 block mt-0.5">
+                        Uwezo wa kuweka au kuuza matangazo umesitishwa kwa mujibu wa sera za usimamizi wa soko.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-stone-700 block mb-1">
+                  Sababu ya Kiutawala (Administrative Reason - Lazima kwa Kumbukumbu ya Audit) *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={trustForm.reason}
+                  onChange={(e) => setTrustForm({ ...trustForm, reason: e.target.value })}
+                  placeholder="Eleza kwanini hadhi hii inatolewa au kubadilishwa (e.g. Uamuzi wa kiutawala baada ya ukaguzi kamili wa historia)..."
+                  className="w-full text-xs p-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-600"
+                />
+                <span className="text-[10px] text-stone-500 mt-0.5 block">
+                  Uamuzi huu utarekodiwa moja kwa moja kwenye Audit Trail (aud_trust_...) ukiwa na kitambulisho chako cha msimamizi.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setShowTrustModal(false)}
+                disabled={isUpdatingTrust}
+                className="px-4 py-2 text-xs font-bold text-stone-600 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Ghairi
+              </button>
+              <button
+                type="button"
+                id="admin-confirm-seller-trust-btn"
+                disabled={isUpdatingTrust || !trustForm.reason.trim()}
+                onClick={handleUpdateTrustStatus}
+                className="px-4 py-2 text-xs font-bold text-white bg-amber-700 hover:bg-amber-800 disabled:opacity-50 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                {isUpdatingTrust ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Inasasisha...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Thibitisha Hadhi Mpya</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

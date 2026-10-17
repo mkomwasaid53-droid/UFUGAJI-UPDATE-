@@ -3,6 +3,7 @@ import { Sparkles, Check, Loader2, X, ShieldCheck } from 'lucide-react';
 import { SellerMonetizationRecord } from '../../types/sellerMonetization';
 import { activateSellerFreeTrialAPI } from '../../services/sellerMonetizationService';
 import { useAuth } from '../../context/AuthContext';
+import { getSafeIdToken } from '../../utils/authUtils';
 
 export interface FreeTrialActivationModalProps {
   isOpen: boolean;
@@ -50,7 +51,7 @@ export const FreeTrialActivationModal: React.FC<FreeTrialActivationModalProps> =
     setError(null);
 
     try {
-      const token = user ? await user.getIdToken().catch(() => null) : null;
+      const token = await getSafeIdToken(user);
       const resolvedEntryPoint = resolveEntryPoint();
       const commandId = `cmd_act_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Sprout, Mail, Lock, LogIn, AlertCircle, Loader2, Shield, ShieldCheck, Eye, EyeOff } from 'lucide-react';
+import { Sprout, Mail, Lock, LogIn, AlertCircle, Loader2, Eye, EyeOff } from 'lucide-react';
 
 export const Login: React.FC = () => {
-  const { login, loginAsAdmin, currentUser } = useAuth();
+  const { login, currentUser } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState(() => {
@@ -32,19 +32,6 @@ export const Login: React.FC = () => {
       navigate('/', { replace: true });
     }
   }, [currentUser, navigate]);
-
-  const handleQuickAdminLogin = async () => {
-    setIsSubmitting(true);
-    setError(null);
-    try {
-      await loginAsAdmin();
-      navigate('/admin?tab=readiness', { replace: true });
-    } catch (err: any) {
-      setError(err?.message || 'Hitilafu wakati wa kuingia kama msimamizi.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -199,27 +186,6 @@ export const Login: React.FC = () => {
           )}
         </button>
       </form>
-
-      {/* Quick Admin Access for mkomwasaid53@gmail.com */}
-      <div className="mt-5 p-4 bg-amber-50/80 border border-amber-300 rounded-2xl space-y-2.5 text-center">
-        <div className="flex items-center justify-center gap-1.5 text-amber-900 font-bold text-xs">
-          <Shield className="w-4 h-4 text-amber-700" />
-          <span>Mlango wa Haraka wa Msimamizi Mkuu</span>
-        </div>
-        <p className="text-[11px] text-amber-800 leading-normal">
-          Je, wewe ni Said Mkomwa? Bofya hapa kuingia moja kwa moja kwenye <strong>Paneli ya Utayari (Readiness Dashboard V1.9B)</strong>:
-        </p>
-        <button
-          id="login-quick-admin-btn"
-          type="button"
-          onClick={handleQuickAdminLogin}
-          disabled={isSubmitting}
-          className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Ingia kama Said Mkomwa (mkomwasaid53@gmail.com)</span>
-        </button>
-      </div>
 
       {/* Switch to Signup */}
       <div className="mt-6 text-center text-xs text-stone-600 space-y-2">

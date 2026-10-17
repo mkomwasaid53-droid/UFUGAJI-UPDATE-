@@ -62,6 +62,7 @@ import {
 import { AdminAdvertisingOperationsSection } from './AdminAdvertisingOperationsSection';
 import { AdminProductionLaunchSection } from './AdminProductionLaunchSection';
 import { AdminWebRewardedAdsDashboard } from './AdminWebRewardedAdsDashboard';
+import { getSafeIdToken } from '../../utils/authUtils';
 
 interface EntitlementRecord {
   entitlementId: string;
@@ -197,7 +198,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     setTestingConnection(true);
     setTestConnResult(null);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch('/api/ai/admin/payments/test-connection', {
         method: 'POST',
         headers: {
@@ -237,7 +238,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     setConfigSaving(true);
     setConfigSaveFeedback(null);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const payload: any = {
         environment: configEnvironment,
         baseUrl: configBaseUrl.trim() || 'https://app.pluspesa.com/api/v1'
@@ -314,7 +315,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
   const loadEntitlements = async () => {
     setListLoading(true);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch('/api/ai/admin/entitlements', {
         headers: {
           'Authorization': idToken ? `Bearer ${idToken}` : '',
@@ -340,7 +341,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
   const loadPayments = async () => {
     setPaymentsLoading(true);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch('/api/ai/admin/payments', {
         headers: {
           'Authorization': idToken ? `Bearer ${idToken}` : '',
@@ -371,7 +372,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     setAdsLoading(true);
     setAdActionFeedback(null);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const headers = {
         'Authorization': idToken ? `Bearer ${idToken}` : '',
         'x-user-id': currentUser?.uid || 'admin_user',
@@ -433,7 +434,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     setSavingAdSettings(true);
     setAdSettingsFeedback(null);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch('/api/ai/admin/ads/settings', {
         method: 'POST',
         headers: {
@@ -475,7 +476,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     setVerifyingAppAdsTxt(true);
     setAppAdsTxtResult(null);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch('/api/ai/admin/ads/verify-app-ads-txt', {
         method: 'POST',
         headers: {
@@ -509,7 +510,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     setTestingAdConnection(true);
     setTestAdConnResult(null);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch('/api/ai/admin/ads/test-connection', {
         method: 'POST',
         headers: {
@@ -541,7 +542,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     e.preventDefault();
     setSavingComplianceUrls(true);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch('/api/ai/admin/ads/compliance', {
         method: 'POST',
         headers: {
@@ -591,7 +592,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     setAdsLoading(true);
     setAdActionFeedback(null);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch('/api/ai/admin/ads/mock-behavior', {
         method: 'POST',
         headers: {
@@ -629,7 +630,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     setPollingPaymentId(paymentId);
     setPollFeedback(null);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch(`/api/ai/payment/poll/${encodeURIComponent(paymentId)}`, {
         method: 'POST',
         headers: {
@@ -673,7 +674,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     setGrantResult(null);
 
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch('/api/ai/admin/grant-premium', {
         method: 'POST',
         headers: {
@@ -720,7 +721,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     setInspectLoading(true);
     setInspectError(null);
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch(`/api/ai/premium-status/${encodeURIComponent(uid.trim())}`, {
         headers: {
           'Authorization': idToken ? `Bearer ${idToken}` : '',
@@ -751,7 +752,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
     setStatusUpdateMsg(null);
 
     try {
-      const idToken = currentUser ? await currentUser.getIdToken().catch(() => '') : '';
+      const idToken = await getSafeIdToken(currentUser);
       const res = await fetch('/api/ai/admin/entitlement/status-update', {
         method: 'POST',
         headers: {

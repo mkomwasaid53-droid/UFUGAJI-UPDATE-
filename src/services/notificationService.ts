@@ -272,7 +272,7 @@ export async function fetchUserNotifications(
 
     try {
       // Ensure token is current
-      await activeAuthUser.getIdToken();
+      if (typeof activeAuthUser.getIdToken === 'function') await activeAuthUser.getIdToken();
       const colRef = collection(db, NOTIFICATIONS_COLLECTION);
     
       // Query for user's direct notifications (recipient-based isolation)
@@ -468,7 +468,7 @@ export async function deleteNotification(
     const activeAuthUser = auth.currentUser;
     if (activeAuthUser) {
       try {
-        await activeAuthUser.getIdToken();
+        if (typeof activeAuthUser.getIdToken === 'function') await activeAuthUser.getIdToken();
         const notifRef = doc(db, NOTIFICATIONS_COLLECTION, notificationId);
         await updateDoc(notifRef, {
           deleted: true,
@@ -655,7 +655,7 @@ export async function markNotificationAsRead(
     const activeAuthUser = auth.currentUser;
     if (activeAuthUser) {
       try {
-        await activeAuthUser.getIdToken();
+        if (typeof activeAuthUser.getIdToken === 'function') await activeAuthUser.getIdToken();
         const notifRef = doc(db, NOTIFICATIONS_COLLECTION, notificationId);
         await updateDoc(notifRef, {
           read: true,

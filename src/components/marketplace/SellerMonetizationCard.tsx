@@ -28,6 +28,7 @@ import { useSellerMonetization } from '../../hooks/useSellerMonetization';
 import { normalizeTanzanianPhoneNumber } from '../../services/payment/paymentUtils';
 import { useAuth } from '../../context/AuthContext';
 import { FreeTrialActivationModal } from './FreeTrialActivationModal';
+import { getSafeIdToken } from '../../utils/authUtils';
 
 interface SellerMonetizationCardProps {
   sellerUserId: string;
@@ -116,7 +117,7 @@ export const SellerMonetizationCard: React.FC<SellerMonetizationCardProps> = ({
     setPollingStatus('Inatuma ombi la malipo kwenye simu yako...');
 
     try {
-      const token = user ? await user.getIdToken() : null;
+      const token = await getSafeIdToken(user);
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
       };
@@ -183,7 +184,7 @@ export const SellerMonetizationCard: React.FC<SellerMonetizationCardProps> = ({
     pollIntervalRef.current = setInterval(async () => {
       attempts++;
       try {
-        const token = user ? await user.getIdToken() : null;
+        const token = await getSafeIdToken(user);
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
         else if (sellerUserId) headers['x-user-id'] = sellerUserId;
