@@ -24,7 +24,8 @@ import {
   Bell,
   Crown,
   CreditCard,
-  Settings
+  Settings,
+  Award
 } from 'lucide-react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import { UserProfile, UserRole } from '../types';
@@ -327,6 +328,21 @@ export const Admin: React.FC = () => {
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>Uhakiki wa Wauzaji (Verification)</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleTabSelect('market');
+                  setMarketSubTab('governance');
+                }}
+                className={`py-1.5 px-3 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'market' && marketSubTab === 'governance'
+                    ? 'bg-amber-700 text-white shadow-xs'
+                    : 'text-stone-600 hover:bg-stone-200/70 hover:text-stone-900'
+                }`}
+              >
+                <Award className="w-3.5 h-3.5" />
+                <span>Uaminifu wa Wauzaji (Seller Trust Management)</span>
               </button>
             </>
           )}

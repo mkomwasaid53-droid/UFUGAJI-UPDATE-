@@ -50,6 +50,7 @@ import {
   getLocalCachedSellerProfiles
 } from '../../services/sellerTrustService';
 import { SellerTrustStatus, SellerProfile } from '../../types/marketplace';
+import { getSafeIdToken } from '../../utils/authUtils';
 
 export const AdminSellerGovernance: React.FC = () => {
   const { user, profile } = useAuth();
@@ -229,6 +230,28 @@ export const AdminSellerGovernance: React.FC = () => {
         newTrustStatus: trustForm.targetStatus,
         reason: trustForm.reason.trim()
       });
+
+      // Synchronize with server-side authoritative store
+      try {
+        const idToken = await getSafeIdToken(user);
+        await fetch(`/api/marketplace/sellers/${selectedSellerId}/trust-status`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': idToken ? `Bearer ${idToken}` : '',
+            'x-user-id': user.uid,
+            'x-is-admin': 'true',
+            'x-user-role': 'admin'
+          },
+          body: JSON.stringify({
+            trustStatus: trustForm.targetStatus,
+            reason: trustForm.reason.trim(),
+            adminUserName: profile?.displayName || user.displayName || 'Msimamizi Mkuu'
+          })
+        });
+      } catch (srvErr) {
+        console.warn('Server trust update notice:', srvErr);
+      }
 
       setTrustProfile(res.profile);
       setTrustStatus(res.profile.trustStatus || trustForm.targetStatus);

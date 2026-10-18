@@ -68,7 +68,7 @@ export const ListingModerationDetailModal: React.FC<ListingModerationDetailModal
     locationDeliveryTrust
   } = item;
 
-  const isApproved = moderationRecord.status === 'APPROVED';
+  const isApproved = moderationRecord.status === 'APPROVED' || item.product.moderationStatus === 'APPROVED';
   const isSuspendedOrHidden = moderationRecord.status === 'SUSPENDED' || moderationRecord.status === 'HIDDEN';
 
   return (
@@ -552,6 +552,24 @@ export const ListingModerationDetailModal: React.FC<ListingModerationDetailModal
               >
                 <CheckCircle2 className="w-4 h-4" /> Rejesha Tangazo (Restore)
               </button>
+            ) : isApproved ? (
+              <>
+                <span className="px-3.5 py-2 text-xs font-bold rounded-xl bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Tangazo Limeidhinishwa (Approved)
+                </span>
+                <button
+                  onClick={() => onActionClick('HIDE')}
+                  className="px-3 py-2 text-xs font-semibold rounded-xl bg-stone-200 text-stone-700 hover:bg-stone-300 transition-colors cursor-pointer"
+                >
+                  Ficha (Hide)
+                </button>
+                <button
+                  onClick={() => onActionClick('SUSPEND')}
+                  className="px-3 py-2 text-xs font-semibold rounded-xl bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200 transition-colors cursor-pointer"
+                >
+                  Sitisha (Suspend)
+                </button>
+              </>
             ) : (
               <>
                 <button

@@ -1010,6 +1010,29 @@ export async function createMarketplaceProduct(
       if (serverSaved && serverSaved.moderationStatus) {
         newProduct.moderationStatus = serverSaved.moderationStatus;
         newProduct.status = serverSaved.status;
+        registerListingModerationRecord({
+          moderationId: `mod_${productId}`,
+          targetType: 'LISTING',
+          targetId: productId,
+          productId,
+          listingId: productId,
+          sellerId: cleanSellerId,
+          shopId: cleanSellerId,
+          status: newProduct.moderationStatus,
+          priority: 'NORMAL',
+          reasonCode: null,
+          reasonText: null,
+          internalNote: null,
+          publicExplanation: newProduct.moderationStatus === 'APPROVED'
+            ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).'
+            : 'Tangazo limewasilishwa kwa ukaguzi wa wasimamizi (PENDING_REVIEW).',
+          correctionInstructions: null,
+          reviewedByUserId: newProduct.moderationStatus === 'APPROVED' ? 'system_ai_trusted_seller' : null,
+          reviewedByDisplayName: newProduct.moderationStatus === 'APPROVED' ? 'AI Screening + Trusted Seller' : null,
+          reviewedAt: newProduct.moderationStatus === 'APPROVED' ? now : null,
+          createdAt: now,
+          updatedAt: now
+        });
       }
     }
   } catch (serverErr) {
@@ -1295,6 +1318,29 @@ export async function updateMarketplaceProduct(
       if (serverSaved && serverSaved.moderationStatus) {
         updatedProduct.moderationStatus = serverSaved.moderationStatus;
         updatedProduct.status = serverSaved.status;
+        registerListingModerationRecord({
+          moderationId: `mod_${productId}`,
+          targetType: 'LISTING',
+          targetId: productId,
+          productId,
+          listingId: productId,
+          sellerId: cleanSellerId,
+          shopId: cleanSellerId,
+          status: updatedProduct.moderationStatus,
+          priority: 'NORMAL',
+          reasonCode: null,
+          reasonText: null,
+          internalNote: null,
+          publicExplanation: updatedProduct.moderationStatus === 'APPROVED'
+            ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).'
+            : 'Tangazo limewasilishwa kwa ukaguzi wa wasimamizi (PENDING_REVIEW).',
+          correctionInstructions: null,
+          reviewedByUserId: updatedProduct.moderationStatus === 'APPROVED' ? 'system_ai_trusted_seller' : null,
+          reviewedByDisplayName: updatedProduct.moderationStatus === 'APPROVED' ? 'AI Screening + Trusted Seller' : null,
+          reviewedAt: updatedProduct.moderationStatus === 'APPROVED' ? now : null,
+          createdAt: targetProduct.createdAt || now,
+          updatedAt: now
+        });
       }
     }
   } catch (serverErr) {

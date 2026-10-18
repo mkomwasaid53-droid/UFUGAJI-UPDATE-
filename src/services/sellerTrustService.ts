@@ -27,11 +27,64 @@ import {
 } from './sellerGovernanceService';
 
 const LOCAL_SELLER_PROFILES_KEY = 'ufugaji_seller_profiles_cache';
+const SELLER_PROFILES_FILE = 'data/seller_profiles.json';
 
 // In-memory cache for fast lookups and Node.js testing
 const inMemoryProfilesMap = new Map<string, SellerProfile>();
 
+const isNode = typeof window === 'undefined';
+let fsModule: any = null;
+let pathModule: any = null;
+
+if (isNode) {
+  try {
+    const nodeReq = (globalThis as any).require;
+    if (typeof nodeReq === 'function') {
+      fsModule = nodeReq('fs');
+      pathModule = nodeReq('path');
+      loadProfilesFromDisk();
+    }
+  } catch {}
+}
+
+function loadProfilesFromDisk(): void {
+  if (!fsModule || !pathModule) return;
+  try {
+    const fullPath = pathModule.resolve(process.cwd(), SELLER_PROFILES_FILE);
+    if (fsModule.existsSync(fullPath)) {
+      const data = JSON.parse(fsModule.readFileSync(fullPath, 'utf8'));
+      if (Array.isArray(data)) {
+        data.forEach((p: SellerProfile) => {
+          if (p && p.uid) {
+            inMemoryProfilesMap.set(p.uid, p);
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Hitilafu ya kusoma seller_profiles kutoka disk:', err);
+  }
+}
+
+function saveProfilesToDisk(): void {
+  if (!fsModule || !pathModule) return;
+  try {
+    const fullPath = pathModule.resolve(process.cwd(), SELLER_PROFILES_FILE);
+    const dir = pathModule.dirname(fullPath);
+    if (!fsModule.existsSync(dir)) {
+      fsModule.mkdirSync(dir, { recursive: true });
+    }
+    const profiles = Array.from(inMemoryProfilesMap.values());
+    fsModule.writeFileSync(fullPath, JSON.stringify(profiles, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Hitilafu ya kuandika seller_profiles kwenye disk:', err);
+  }
+}
+
 export function getLocalCachedSellerProfiles(): SellerProfile[] {
+  if (isNode && inMemoryProfilesMap.size === 0) {
+    loadProfilesFromDisk();
+  }
   try {
     if (typeof localStorage === 'undefined') {
       return Array.from(inMemoryProfilesMap.values());
@@ -53,6 +106,9 @@ export function getLocalCachedSellerProfiles(): SellerProfile[] {
 export function saveSellerProfileToCache(profile: SellerProfile): void {
   if (!profile || !profile.uid) return;
   inMemoryProfilesMap.set(profile.uid, profile);
+  if (isNode) {
+    saveProfilesToDisk();
+  }
   try {
     if (typeof localStorage !== 'undefined') {
       const all = getLocalCachedSellerProfiles();

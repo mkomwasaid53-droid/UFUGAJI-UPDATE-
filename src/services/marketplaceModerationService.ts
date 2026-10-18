@@ -258,6 +258,14 @@ export function getListingModerationRecord(
   const existing = cachedRecords.find((r) => r.productId === productId || r.targetId === productId);
 
   if (existing) {
+    if (product && product.moderationStatus === 'APPROVED' && existing.status === 'PENDING_REVIEW') {
+      existing.status = 'APPROVED';
+      existing.reviewedByUserId = product.moderatedBy || 'system_ai_trusted_seller';
+      existing.reviewedByDisplayName = 'AI Screening + Trusted Seller';
+      existing.reviewedAt = product.moderatedAt || new Date().toISOString();
+      existing.publicExplanation = product.moderationPublicReason || 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).';
+      saveModerationRecordsToCache(cachedRecords);
+    }
     return existing;
   }
 

@@ -560,6 +560,19 @@ export const AdminListingModeration: React.FC = () => {
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" /> Rejesha
                       </button>
+                    ) : item.moderationRecord.status === 'APPROVED' || item.product.moderationStatus === 'APPROVED' ? (
+                      <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                        <span className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Imeidhinishwa
+                        </span>
+                        <button
+                          onClick={() => handleTriggerAction(item, 'HIDE')}
+                          className="px-2 py-1 text-[11px] font-semibold rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
+                          title="Ficha/Sitisha Tangazo"
+                        >
+                          Sitisha
+                        </button>
+                      </div>
                     ) : (
                       <div className="flex items-center gap-1 w-full">
                         <button
