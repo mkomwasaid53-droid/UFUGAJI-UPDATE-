@@ -68,7 +68,8 @@ export const ListingModerationDetailModal: React.FC<ListingModerationDetailModal
     locationDeliveryTrust
   } = item;
 
-  const isApproved = moderationRecord.status === 'APPROVED' || item.product.moderationStatus === 'APPROVED';
+  const isBlockedOrRejected = moderationRecord.status === 'REJECTED' || item.aiScreening?.status === 'BLOCK' || item.product.moderationStatus === 'REJECTED';
+  const isApproved = !isBlockedOrRejected && (moderationRecord.status === 'APPROVED' || item.product.moderationStatus === 'APPROVED');
   const isSuspendedOrHidden = moderationRecord.status === 'SUSPENDED' || moderationRecord.status === 'HIDDEN';
 
   return (
@@ -110,10 +111,10 @@ export const ListingModerationDetailModal: React.FC<ListingModerationDetailModal
               <span className="text-xs font-semibold text-stone-600">Hali ya Ukaguzi:</span>
               <span
                 className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                  moderationRecord.status === 'APPROVED'
-                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                    : moderationRecord.status === 'REJECTED'
+                  isBlockedOrRejected
                     ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                    : isApproved
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                     : moderationRecord.status === 'SUSPENDED' || moderationRecord.status === 'HIDDEN'
                     ? 'bg-stone-200 text-stone-800 border border-stone-400'
                     : moderationRecord.status === 'UNDER_REVIEW'
@@ -121,7 +122,7 @@ export const ListingModerationDetailModal: React.FC<ListingModerationDetailModal
                     : 'bg-blue-100 text-blue-800 border border-blue-300'
                 }`}
               >
-                {moderationRecord.status}
+                {isBlockedOrRejected ? 'REJECTED / BLOCKED' : isApproved ? 'APPROVED' : moderationRecord.status}
               </span>
 
               <span className="text-xs font-semibold text-stone-600 ml-2">Kipaumbele (Priority):</span>

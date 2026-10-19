@@ -422,14 +422,36 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
           {/* Owner Governance Notice Banner */}
           {isOwner && eligibility && !eligibility.isEligible && (
-            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 mb-2">
+            <div className={`p-4 rounded-2xl border mb-2 ${
+              (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
+                ? 'bg-rose-50 border-rose-300 text-rose-950'
+                : 'bg-amber-50 border-amber-300 text-amber-950'
+            }`}>
               <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                <AlertTriangle className={`w-5 h-5 shrink-0 mt-0.5 ${
+                  (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
+                    ? 'text-rose-700'
+                    : 'text-amber-700'
+                }`} />
                 <div className="text-xs space-y-1.5 flex-1">
-                  <div className="font-bold uppercase tracking-wider text-[11px] text-amber-900 flex items-center gap-2">
+                  <div className={`font-bold uppercase tracking-wider text-[11px] flex items-center gap-2 ${
+                    (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
+                      ? 'text-rose-900'
+                      : 'text-amber-900'
+                  }`}>
                     <span>Hali ya Kiutawala:</span>
-                    <span className="px-2 py-0.5 rounded-md bg-amber-200/90 text-amber-950 font-black">
-                      {eligibility.moderationStatus}
+                    <span className={`px-2 py-0.5 rounded-md font-black ${
+                      (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
+                        ? 'bg-rose-200 text-rose-950'
+                        : 'bg-amber-200/90 text-amber-950'
+                    }`}>
+                      {(eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
+                        ? 'Imekataliwa / Imezuiwa (BLOCKED)'
+                        : !eligibility.isAiScreeningFresh
+                        ? 'Inahitaji Ukaguzi Mpya wa AI (Screening Required)'
+                        : (eligibility.moderationStatus === 'APPROVED' && !eligibility.isEligible)
+                        ? 'Haionekani Sokoni'
+                        : eligibility.moderationStatus}
                     </span>
                   </div>
                   <p className="font-medium text-stone-800">
@@ -624,7 +646,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     : 'bg-rose-100 text-rose-800 border-rose-300'
                 }`}>
                   {product.validationStatus === 'VALID'
-                    ? 'Imeidhinishwa (VALID)'
+                    ? 'Fomu Imekamilika (VALID)'
                     : product.validationStatus === 'INCOMPLETE'
                     ? 'Haijakamilika (INCOMPLETE)'
                     : product.validationStatus === 'BLOCKED'

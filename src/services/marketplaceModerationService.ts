@@ -96,6 +96,7 @@ import {
 } from './sellerTrustService';
 import {
   computeListingContentFingerprint,
+  isScreeningResultUpToDate,
   AI_SCREENING_POLICY_VERSION,
   AI_SCREENING_PRIMARY_MODEL
 } from './marketplaceAiScreeningService';
@@ -258,13 +259,21 @@ export function getListingModerationRecord(
   const existing = cachedRecords.find((r) => r.productId === productId || r.targetId === productId);
 
   if (existing) {
-    if (product && product.moderationStatus === 'APPROVED' && existing.status === 'PENDING_REVIEW') {
-      existing.status = 'APPROVED';
-      existing.reviewedByUserId = product.moderatedBy || 'system_ai_trusted_seller';
-      existing.reviewedByDisplayName = 'AI Screening + Trusted Seller';
-      existing.reviewedAt = product.moderatedAt || new Date().toISOString();
-      existing.publicExplanation = product.moderationPublicReason || 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).';
+    const screening = product?.aiScreening || existing.aiScreening;
+    if (screening?.status === 'BLOCK') {
+      existing.status = 'REJECTED';
+      existing.priority = 'CRITICAL';
+      existing.reasonCode = 'AI_CONTENT_BLOCK';
       saveModerationRecordsToCache(cachedRecords);
+    } else if (product && product.moderationStatus === 'APPROVED' && existing.status === 'PENDING_REVIEW') {
+      if (screening?.status === 'PASS' && isScreeningResultUpToDate(product, screening)) {
+        existing.status = 'APPROVED';
+        existing.reviewedByUserId = product.moderatedBy || 'system_ai_trusted_seller';
+        existing.reviewedByDisplayName = 'AI Screening + Trusted Seller';
+        existing.reviewedAt = product.moderatedAt || new Date().toISOString();
+        existing.publicExplanation = product.moderationPublicReason || 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).';
+        saveModerationRecordsToCache(cachedRecords);
+      }
     }
     return existing;
   }

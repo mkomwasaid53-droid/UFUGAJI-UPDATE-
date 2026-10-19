@@ -177,6 +177,8 @@ export const AdminListingModeration: React.FC = () => {
     let approved = 0;
     let suspended = 0;
 
+    let blocked = 0;
+
     for (const item of queue) {
       if (item.moderationRecord.status === 'NOT_REVIEWED' || item.moderationRecord.status === 'PENDING_REVIEW') notReviewed++;
       if (
@@ -186,11 +188,12 @@ export const AdminListingModeration: React.FC = () => {
         newSellerPending++;
       }
       if (item.aiScreening?.status === 'REVIEW_REQUIRED') aiReviewRequired++;
+      if (item.aiScreening?.status === 'BLOCK' || item.moderationRecord.status === 'REJECTED') blocked++;
       if (item.aiScreening?.status === 'SCREENING_ERROR') aiScreeningError++;
       if (item.reportCount > 0) reported++;
       if (item.moderationRecord.status === 'UNDER_REVIEW') underReview++;
       if (!item.validationResult.isEligibleForActive) invalid++;
-      if (item.moderationRecord.status === 'APPROVED') approved++;
+      if (item.moderationRecord.status === 'APPROVED' && item.aiScreening?.status !== 'BLOCK') approved++;
       if (item.moderationRecord.status === 'SUSPENDED' || item.moderationRecord.status === 'HIDDEN') suspended++;
     }
 
@@ -199,6 +202,7 @@ export const AdminListingModeration: React.FC = () => {
       notReviewed,
       newSellerPending,
       aiReviewRequired,
+      blocked,
       aiScreeningError,
       reported,
       underReview,
@@ -322,6 +326,7 @@ export const AdminListingModeration: React.FC = () => {
             { id: 'ALL', label: `Zote (${stats.total})` },
             { id: 'NEW_SELLER_PENDING', label: `Wauzaji Wapya (${stats.newSellerPending})` },
             { id: 'AI_SCREENING_REVIEW_REQUIRED', label: `AI Review (${stats.aiReviewRequired})` },
+            { id: 'AI_SCREENING_BLOCKED', label: `Zilizozuiwa (${stats.blocked})` },
             { id: 'AI_SCREENING_ERROR', label: `AI Hitilafu (${stats.aiScreeningError})` },
             { id: 'REPORTED', label: `Ripoti (${stats.reported})` },
             { id: 'UNDER_REVIEW', label: `Under Review (${stats.underReview})` }
@@ -402,7 +407,8 @@ export const AdminListingModeration: React.FC = () => {
         <div className="space-y-3">
           {queue.map((item) => {
             const { product, moderationRecord, validationResult, priority, reportCount, aiClassification } = item;
-            const isApproved = moderationRecord.status === 'APPROVED';
+            const isBlockedOrRejected = moderationRecord.status === 'REJECTED' || item.aiScreening?.status === 'BLOCK' || product.moderationStatus === 'REJECTED';
+            const isAuthoritativelyApproved = !isBlockedOrRejected && (moderationRecord.status === 'APPROVED' || product.moderationStatus === 'APPROVED');
             const isSuspendedOrHidden = moderationRecord.status === 'SUSPENDED' || moderationRecord.status === 'HIDDEN';
 
             return (
@@ -437,10 +443,10 @@ export const AdminListingModeration: React.FC = () => {
                     {/* Status Badge */}
                     <span
                       className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                        moderationRecord.status === 'APPROVED'
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                          : moderationRecord.status === 'REJECTED'
+                        isBlockedOrRejected
                           ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                          : isAuthoritativelyApproved
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                           : moderationRecord.status === 'SUSPENDED' || moderationRecord.status === 'HIDDEN'
                           ? 'bg-stone-200 text-stone-800 border border-stone-400'
                           : moderationRecord.status === 'UNDER_REVIEW'
@@ -448,7 +454,7 @@ export const AdminListingModeration: React.FC = () => {
                           : 'bg-blue-100 text-blue-800 border border-blue-300'
                       }`}
                     >
-                      {moderationRecord.status}
+                      {isBlockedOrRejected ? 'REJECTED / BLOCKED' : isAuthoritativelyApproved ? 'APPROVED' : moderationRecord.status}
                     </span>
 
                     {/* Product ID */}
@@ -560,7 +566,7 @@ export const AdminListingModeration: React.FC = () => {
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" /> Rejesha
                       </button>
-                    ) : item.moderationRecord.status === 'APPROVED' || item.product.moderationStatus === 'APPROVED' ? (
+                    ) : isAuthoritativelyApproved ? (
                       <div className="flex items-center gap-1.5 w-full sm:w-auto">
                         <span className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Imeidhinishwa
@@ -572,6 +578,12 @@ export const AdminListingModeration: React.FC = () => {
                         >
                           Sitisha
                         </button>
+                      </div>
+                    ) : isBlockedOrRejected ? (
+                      <div className="flex items-center gap-1 w-full sm:w-auto">
+                        <span className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-600" /> Imezuiwa (Blocked)
+                        </span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1 w-full">

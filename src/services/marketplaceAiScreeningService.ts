@@ -50,7 +50,8 @@ export interface ListingScreeningInput {
   subcategory?: string;
   price?: number;
   currency?: string;
-  images?: Array<{ url?: string; id?: string }>;
+  images?: Array<{ url?: string; id?: string; dataUrl?: string; base64?: string; mimeType?: string; storagePath?: string; name?: string }>;
+  imageUrl?: string;
   requestId?: string;
 }
 
@@ -69,8 +70,108 @@ export interface ScreeningResolution {
 }
 
 /**
+ * Synchronous Pure-JavaScript SHA-256 (FIPS 180-4 compliant).
+ * Guarantees 100% identical 64-char hex outputs in Node.js, Browser, and Web Workers.
+ * Prevents client-server fingerprint mismatches.
+ */
+export function sha256Sync(str: string): string {
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  ];
+
+  const utf8 = unescape(encodeURIComponent(str || ''));
+  const b: number[] = [];
+  for (let i = 0; i < utf8.length; i++) {
+    b.push(utf8.charCodeAt(i));
+  }
+
+  const bitLen = b.length * 8;
+  b.push(0x80);
+
+  while ((b.length % 64) !== 56) {
+    b.push(0);
+  }
+
+  const highBits = Math.floor(bitLen / 0x100000000);
+  const lowBits = bitLen >>> 0;
+  for (let i = 3; i >= 0; i--) b.push((highBits >>> (i * 8)) & 0xff);
+  for (let i = 3; i >= 0; i--) b.push((lowBits >>> (i * 8)) & 0xff);
+
+  let H0 = 0x6a09e667;
+  let H1 = 0xbb67ae85;
+  let H2 = 0x3c6ef372;
+  let H3 = 0xa54ff53a;
+  let H4 = 0x510e527f;
+  let H5 = 0x9b05688c;
+  let H6 = 0x1f83d9ab;
+  let H7 = 0x5be0cd19;
+
+  const W = new Int32Array(64);
+  for (let chunk = 0; chunk < b.length; chunk += 64) {
+    for (let t = 0; t < 16; t++) {
+      const idx = chunk + t * 4;
+      W[t] = ((b[idx] << 24) | (b[idx + 1] << 16) | (b[idx + 2] << 8) | b[idx + 3]);
+    }
+
+    for (let t = 16; t < 64; t++) {
+      const w15 = W[t - 15];
+      const s0 = ((w15 >>> 7) | (w15 << 25)) ^ ((w15 >>> 18) | (w15 << 14)) ^ (w15 >>> 3);
+      const w2 = W[t - 2];
+      const s1 = ((w2 >>> 17) | (w2 << 15)) ^ ((w2 >>> 19) | (w2 << 13)) ^ (w2 >>> 10);
+      W[t] = (W[t - 16] + s0 + W[t - 7] + s1) | 0;
+    }
+
+    let a = H0, e = H4, c = H2, d = H3, f = H5, g = H6, h = H7;
+    let bReg = H1;
+
+    for (let t = 0; t < 64; t++) {
+      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const ch = (e & f) ^ ((~e) & g);
+      const temp1 = (h + S1 + ch + K[t] + W[t]) | 0;
+      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const maj = (a & bReg) ^ (a & c) ^ (bReg & c);
+      const temp2 = (S0 + maj) | 0;
+
+      h = g;
+      g = f;
+      f = e;
+      e = (d + temp1) | 0;
+      d = c;
+      c = bReg;
+      bReg = a;
+      a = (temp1 + temp2) | 0;
+    }
+
+    H0 = (H0 + a) | 0;
+    H1 = (H1 + bReg) | 0;
+    H2 = (H2 + c) | 0;
+    H3 = (H3 + d) | 0;
+    H4 = (H4 + e) | 0;
+    H5 = (H5 + f) | 0;
+    H6 = (H6 + g) | 0;
+    H7 = (H7 + h) | 0;
+  }
+
+  function toHex(n: number): string {
+    let s = (n >>> 0).toString(16);
+    while (s.length < 8) s = '0' + s;
+    return s;
+  }
+
+  return toHex(H0) + toHex(H1) + toHex(H2) + toHex(H3) + toHex(H4) + toHex(H5) + toHex(H6) + toHex(H7);
+}
+
+/**
  * Computes deterministic SHA-256 fingerprint of the listing's moderatable contents.
  * Changes to title, description, category, subcategory, price, or images invalidate previous screening.
+ * Guaranteed to evaluate to the exact same value in Node.js server and Browser client environments.
  */
 export function computeListingContentFingerprint(input: {
   title: string;
@@ -78,37 +179,35 @@ export function computeListingContentFingerprint(input: {
   category: string;
   subcategory?: string;
   price?: number;
-  images?: Array<{ url?: string }>;
+  images?: Array<{ url?: string; dataUrl?: string }>;
+  imageUrl?: string;
 }): string {
   const normTitle = (input.title || '').trim().toLowerCase();
   const normDesc = (input.description || '').trim().toLowerCase();
   const normCat = (input.category || '').trim().toLowerCase();
   const normSubcat = (input.subcategory || '').trim().toLowerCase();
-  const normPrice = input.price !== undefined ? String(input.price) : '0';
+  const normPrice = input.price !== undefined && input.price !== null ? String(input.price).trim() : '0';
   
-  // Extract and sort image signatures (URLs or hash prefixes)
-  const normImages = Array.isArray(input.images)
-    ? input.images
-        .map((img) => (img?.url || '').trim())
-        .filter(Boolean)
-        .sort()
-        .join('|')
-    : '';
+  // Extract and sort image signatures (URLs, paths, or dataUrl prefixes)
+  const imageList: string[] = [];
+  if (Array.isArray(input.images)) {
+    for (const img of input.images) {
+      const u = (img?.url || (img as any)?.dataUrl || '').trim();
+      if (u) imageList.push(u);
+    }
+  }
+  if (input.imageUrl && typeof input.imageUrl === 'string' && input.imageUrl.trim()) {
+    const u = input.imageUrl.trim();
+    if (!imageList.includes(u)) {
+      imageList.push(u);
+    }
+  }
 
+  const normImages = imageList.sort().join('|');
   const rawPayload = `TITLE:${normTitle}#DESC:${normDesc}#CAT:${normCat}#SUBCAT:${normSubcat}#PRICE:${normPrice}#IMAGES:${normImages}`;
   
-  try {
-    return crypto.createHash('sha256').update(rawPayload).digest('hex');
-  } catch {
-    // Basic fallback hash for browser/test environments without node crypto
-    let hash = 0;
-    for (let i = 0; i < rawPayload.length; i++) {
-      const char = rawPayload.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash |= 0;
-    }
-    return `fp_${Math.abs(hash).toString(16)}`;
-  }
+  // Use universal synchronous SHA-256
+  return sha256Sync(rawPayload);
 }
 
 /**
@@ -128,7 +227,8 @@ export function isScreeningResultUpToDate(
     category: product.category,
     subcategory: product.subcategory,
     price: product.price,
-    images: product.images || (product.imageUrl ? [{ url: product.imageUrl }] : [])
+    images: product.images || (product.imageUrl ? [{ url: product.imageUrl }] : []),
+    imageUrl: product.imageUrl
   });
 
   return currentFingerprint === existingScreening.contentFingerprint;
@@ -168,9 +268,9 @@ export function evaluateListingContentDeterministically(
   // Severe Violation patterns: Explicit/Nudity, Weapons, Scams, Hate
   const explicitPatterns = [
     'pono', 'ngono', 'video za ngono', 'x-rated', 'porn', 'xxx', 'escort',
-    'nude', 'nudity', 'naked', 'nsfw', 'sex', 'explicit', 'erotic', 'uchi',
-    'matiti', 'tits', 'boobs', 'penis', 'vagina', 'bikini', 'topless',
-    'kuma', 'mboo', 'malaya', 'kahaba'
+    'nude', 'nudity', 'naked', 'nsfw', 'sex', 'sexual', 'explicit', 'erotic', 'uchi', 'utupu',
+    'matiti', 'tits', 'boobs', 'penis', 'vagina', 'genital', 'bikini', 'topless',
+    'kuma', 'mboo', 'malaya', 'kahaba', 'pussy', 'dick', 'dildo', 'orgasm'
   ];
   const weaponPatterns = ['bastola', 'bunduki', 'risasi', 'ak47', 'smg', 'baruti', 'silaha ya moto', 'gun for sale', 'firearm'];
   const scamPatterns = ['fanya million', 'pesa mara mbili', 'tuma pesa kabla', 'utajiri wa haraka', 'crypto doubler', 'wekeza upate'];
@@ -190,6 +290,9 @@ export function evaluateListingContentDeterministically(
         if (img.dataUrl && img.dataUrl.length < 500) imageTexts.push(img.dataUrl);
       }
     });
+  }
+  if (input.imageUrl && typeof input.imageUrl === 'string') {
+    imageTexts.push(input.imageUrl);
   }
   const allImagesScan = imageTexts.join(' ').toLowerCase();
   const fullScan = `${textToScan} ${allImagesScan}`;
@@ -279,7 +382,8 @@ export function evaluateListingContentDeterministically(
     category: input.category,
     subcategory: input.subcategory,
     price: input.price,
-    images: input.images
+    images: input.images,
+    imageUrl: input.imageUrl
   });
 
   return {
@@ -409,6 +513,16 @@ export function resolveListingPublishingState(params: {
   }
 }
 
+let aiScreeningFs: any = null;
+let aiScreeningPath: any = null;
+
+export function initAiScreeningStorage(customFs?: any, customPath?: any): void {
+  if (customFs && customPath) {
+    aiScreeningFs = customFs;
+    aiScreeningPath = customPath;
+  }
+}
+
 /**
  * Extracts multimodal image parts (base64 inlineData) from listing images.
  * Supports dataUrl, base64 payloads, and local /uploads/ disk files on Node.js runtime.
@@ -457,10 +571,20 @@ export function extractMultimodalImageParts(
       }
     } else if (item.startsWith('/uploads/') || item.startsWith('uploads/')) {
       try {
-        const reqFn = (globalThis as any).require;
-        if (typeof reqFn === 'function') {
-          const fs = reqFn('fs');
-          const path = reqFn('path');
+        let fs = aiScreeningFs;
+        let path = aiScreeningPath;
+
+        if (!fs || !path) {
+          try {
+            const reqFn = Function("return typeof require !== 'undefined' ? require : null")();
+            if (typeof reqFn === 'function') {
+              fs = reqFn('fs');
+              path = reqFn('path');
+            }
+          } catch {}
+        }
+
+        if (fs && path) {
           const cleanRel = item.startsWith('/') ? item.slice(1) : item;
           const fullPath = path.resolve(process.cwd(), cleanRel);
           if (fs.existsSync(fullPath)) {
@@ -495,18 +619,38 @@ export function extractMultimodalImageParts(
  */
 export async function evaluateMarketplaceListingContent(
   input: ListingScreeningInput,
-  options?: { apiKey?: string; genAiClient?: any }
+  options?: { apiKey?: string; genAiClient?: any; mockResult?: AIScreeningResult; mockMultimodalPass?: boolean }
 ): Promise<AIScreeningResult> {
   const startMs = Date.now();
   const now = new Date().toISOString();
   const requestId = input.requestId || `req_scr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const screeningId = `scr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
+  // If explicit test mock result is supplied (Section 4 testing requirement)
+  if (options?.mockResult) {
+    const fingerprint = computeListingContentFingerprint({
+      title: input.title,
+      description: input.description,
+      category: input.category,
+      subcategory: input.subcategory,
+      price: input.price,
+      images: input.images,
+      imageUrl: input.imageUrl
+    });
+    return {
+      ...options.mockResult,
+      screeningId: options.mockResult.screeningId || screeningId,
+      requestId: options.mockResult.requestId || requestId,
+      contentFingerprint: options.mockResult.contentFingerprint || fingerprint,
+      timestamp: options.mockResult.timestamp || now
+    };
+  }
+
   // 1. First run deterministic scan (catches prompt injections, keyword scams, explicit terms in text/image names)
   const deterministicResult = evaluateListingContentDeterministically(input);
 
   // If severe violation is already detected deterministically (e.g. explicit content, weapons, scams),
-  // fail immediately to BLOCK without unnecessary model call
+  // fail immediately to BLOCK without model call
   if (
     deterministicResult.status === 'BLOCK' &&
     deterministicResult.categories.includes('SEXUAL_OR_EXPLICIT_CONTENT')
@@ -515,7 +659,8 @@ export async function evaluateMarketplaceListingContent(
   }
 
   // 2. Extract image parts for multimodal inspection
-  const imageParts = extractMultimodalImageParts(input.images);
+  const imageParts = extractMultimodalImageParts(input.images, input.imageUrl);
+  const hasImages = imageParts.length > 0 || (Array.isArray(input.images) && input.images.length > 0) || Boolean(input.imageUrl);
 
   const apiKey = options?.apiKey || (typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : undefined);
   let genAiClient = options?.genAiClient;
@@ -587,8 +732,55 @@ Jibu KWA JSON PEKEE kwa muundo huu:
         },
       });
 
+      const candidate = response?.candidates?.[0];
+      const promptFeedback = response?.promptFeedback;
+
+      if (
+        candidate?.finishReason === 'SAFETY' ||
+        promptFeedback?.blockReason === 'SAFETY' ||
+        promptFeedback?.blockReason === 'PROHIBITED_CONTENT'
+      ) {
+        console.warn('[AI Screening Engine] Model candidate flagged safety block on image/text:', candidate?.finishReason || promptFeedback?.blockReason);
+        const fingerprint = computeListingContentFingerprint({
+          title: input.title,
+          description: input.description,
+          category: input.category,
+          subcategory: input.subcategory,
+          price: input.price,
+          images: input.images,
+          imageUrl: input.imageUrl
+        });
+
+        return {
+          screeningId,
+          requestId,
+          status: 'BLOCK',
+          categories: ['SEXUAL_OR_EXPLICIT_CONTENT'],
+          explanation: 'Maudhui ya picha au maelezo yamezuiwa moja kwa moja na kichujio cha usalama (Safety Filter: Explicit/Prohibited Content).',
+          explanationSwahili: 'Tangazo limezuiwa kwa sababu picha au maudhui yaliyowekwa yanakiuka maadili na usalama (utupu/ngono).',
+          confidence: 'HIGH',
+          model: AI_SCREENING_PRIMARY_MODEL,
+          policyVersion: AI_SCREENING_POLICY_VERSION,
+          contentFingerprint: fingerprint,
+          timestamp: now,
+          latencyMs: Date.now() - startMs,
+          evaluatedFields: {
+            hasTitle: Boolean(input.title && input.title.trim()),
+            hasDescription: Boolean(input.description && input.description.trim()),
+            hasCategory: Boolean(input.category && input.category.trim()),
+            hasPrice: input.price !== undefined,
+            imageCount: imageParts.length
+          }
+        };
+      }
+
       const rawText = response.text ? response.text.trim() : '';
-      const parsed = JSON.parse(rawText);
+      let parsed: any = null;
+      try {
+        parsed = rawText ? JSON.parse(rawText) : null;
+      } catch (jsonErr) {
+        console.warn('[AI Screening Engine] Failed to parse model JSON output:', rawText);
+      }
 
       if (parsed && ['PASS', 'BLOCK', 'REVIEW_REQUIRED'].includes(parsed.status)) {
         const fingerprint = computeListingContentFingerprint({
@@ -597,7 +789,8 @@ Jibu KWA JSON PEKEE kwa muundo huu:
           category: input.category,
           subcategory: input.subcategory,
           price: input.price,
-          images: input.images
+          images: input.images,
+          imageUrl: input.imageUrl
         });
 
         return {
@@ -624,6 +817,7 @@ Jibu KWA JSON PEKEE kwa muundo huu:
       }
     } catch (geminiErr: any) {
       const errMsg = (geminiErr?.message || '').toLowerCase();
+      const errStr = String(geminiErr || '').toLowerCase();
       const isSafetyBlock =
         errMsg.includes('safety') ||
         errMsg.includes('harm') ||
@@ -631,7 +825,9 @@ Jibu KWA JSON PEKEE kwa muundo huu:
         errMsg.includes('explicit') ||
         errMsg.includes('sex') ||
         errMsg.includes('sexual') ||
-        errMsg.includes('nude');
+        errMsg.includes('nude') ||
+        errStr.includes('safety') ||
+        errStr.includes('blocked');
 
       if (isSafetyBlock) {
         console.warn('[AI Screening Engine] Model flagged safety block on image/text:', geminiErr?.message);
@@ -641,7 +837,8 @@ Jibu KWA JSON PEKEE kwa muundo huu:
           category: input.category,
           subcategory: input.subcategory,
           price: input.price,
-          images: input.images
+          images: input.images,
+          imageUrl: input.imageUrl
         });
 
         return {
@@ -671,13 +868,32 @@ Jibu KWA JSON PEKEE kwa muundo huu:
     }
   }
 
-  // 4. Fallback: Return deterministic result.
-  // CRITICAL FAIL-SAFE RULE: If images were supplied but could not be verified by multimodal model,
-  // and deterministic scan had no explicit text, do NOT silently grant PASS to unverified images!
-  // If the listing has images and Gemini was not able to verify them, route to REVIEW_REQUIRED for human safety check.
-  if (deterministicResult.status === 'PASS' && imageParts.length > 0 && !apiKey) {
-    // In local unit test without API key: keep deterministic result
-    return deterministicResult;
+  // 4. Fallback: Fail-Closed Safeguard.
+  // CRITICAL FAIL-SAFE RULE (Section 4):
+  // Missing image data, image-fetch failure, model errors, malformed output and timeouts must never fall back to PASS.
+  // If images were supplied but multimodal inspection did not verify them, route to REVIEW_REQUIRED for human safety check.
+  if (deterministicResult.status === 'PASS' && hasImages && !options?.mockMultimodalPass) {
+    return {
+      screeningId,
+      requestId,
+      status: 'REVIEW_REQUIRED',
+      categories: ['UNCERTAIN'],
+      explanation: 'Picha za tangazo zinahitaji uhakiki wa kiusalama wa wasimamizi kabla ya kuchapishwa.',
+      explanationSwahili: 'Tangazo lako linasubiri uhakiki wa picha na wasimamizi wa soko (Fail-Closed Image Policy).',
+      confidence: 'MEDIUM',
+      model: AI_SCREENING_PRIMARY_MODEL,
+      policyVersion: AI_SCREENING_POLICY_VERSION,
+      contentFingerprint: deterministicResult.contentFingerprint,
+      timestamp: now,
+      latencyMs: Date.now() - startMs,
+      evaluatedFields: {
+        hasTitle: Boolean(input.title && input.title.trim()),
+        hasDescription: Boolean(input.description && input.description.trim()),
+        hasCategory: Boolean(input.category && input.category.trim()),
+        hasPrice: input.price !== undefined,
+        imageCount: imageParts.length
+      }
+    };
   }
 
   return deterministicResult;

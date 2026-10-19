@@ -68,8 +68,30 @@ export function syncAuthoritativeModerationState(product: MarketplaceProduct): M
     (r) => r.productId === product.productId || r.targetId === product.productId
   );
 
+  const screening = authoritativeRecord?.aiScreening || product.aiScreening;
+
   let authoritativeStatus: ModerationStatus =
     authoritativeRecord?.status || (product.moderationStatus as ModerationStatus) || 'NOT_REVIEWED';
+
+  // RULE 1: An AI BLOCK must NEVER be overridden by previous approval or seller trust.
+  // If the listing received an AI BLOCK, its authoritative status MUST be REJECTED.
+  if (screening?.status === 'BLOCK') {
+    authoritativeStatus = 'REJECTED';
+  }
+
+  // RULE 2: Content edit invalidation and screening freshness enforcement.
+  // If content changed (isScreeningResultUpToDate is false) or screening is missing, an old APPROVED status is INVALID.
+  // It cannot authorize public visibility; effective status falls back to PENDING_REVIEW.
+  if (authoritativeStatus === 'APPROVED') {
+    if (!screening || !screening.contentFingerprint) {
+      authoritativeStatus = 'PENDING_REVIEW';
+    } else {
+      const isFresh = isScreeningResultUpToDate(product, screening);
+      if (!isFresh) {
+        authoritativeStatus = 'PENDING_REVIEW';
+      }
+    }
+  }
 
   // Check seller-level selling restriction (V1.7E)
   const sellerId = product.sellerId;
@@ -107,8 +129,8 @@ export function syncAuthoritativeModerationState(product: MarketplaceProduct): M
       authoritativeRecord?.publicExplanation || product.moderationPublicReason,
     moderationCorrectionNote:
       authoritativeRecord?.correctionInstructions || product.moderationCorrectionNote,
-    aiScreening: authoritativeRecord?.aiScreening || product.aiScreening,
-    aiScreenedAt: authoritativeRecord?.aiScreening?.timestamp || product.aiScreenedAt
+    aiScreening: screening,
+    aiScreenedAt: screening?.timestamp || product.aiScreenedAt
   };
 }
 
@@ -146,7 +168,7 @@ export function evaluateProductMarketplaceEligibility(
     'NOT_REVIEWED',
     'ESCALATED'
   ];
-  const isBlockedByModeration =
+  let isBlockedByModeration =
     blockedModerationStatuses.includes(modStatus) ||
     (modStatus !== 'APPROVED' && modStatus !== 'RESTORED');
 
@@ -160,6 +182,10 @@ export function evaluateProductMarketplaceEligibility(
   if (screening) {
     if (screening.status === 'PASS') {
       isAiScreeningPassed = true;
+    } else if (screening.status === 'BLOCK') {
+      isAiScreeningPassed = false;
+      isBlockedByModeration = true;
+      screeningDiagnostics = 'Tangazo limezuiwa na mfumo wa AI kwa kukiuka sera za usalama na maudhui.';
     } else {
       isAiScreeningPassed = false;
       screeningDiagnostics = `Ukaguzi wa AI una hadhi ya ${screening.status}`;
@@ -171,6 +197,7 @@ export function evaluateProductMarketplaceEligibility(
         isAiScreeningFresh = true;
       } else {
         isAiScreeningFresh = false;
+        isBlockedByModeration = true;
         screeningDiagnostics = 'Maudhui ya tangazo yamebadilika na yanahitaji ukaguzi mpya wa AI.';
       }
     } else {

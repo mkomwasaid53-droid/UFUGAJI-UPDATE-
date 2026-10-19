@@ -115,28 +115,42 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
         {/* Owner Governance Notice if not eligible */}
         {isOwner && !governance.isEligible && (
-          <div className="p-2 bg-amber-50 border border-amber-200 text-amber-950 text-[11px] rounded-xl space-y-1">
+          <div className={`p-2 rounded-xl space-y-1 text-[11px] border ${
+            (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
+              ? 'bg-rose-50 border-rose-200 text-rose-950'
+              : 'bg-amber-50 border-amber-200 text-amber-950'
+          }`}>
             <div className="flex items-center justify-between font-bold">
               <span className="flex items-center gap-1">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${
+                  (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK') ? 'text-rose-700' : 'text-amber-700'
+                }`} />
                 <span>
                   {governance.moderationStatus === 'PENDING_REVIEW'
                     ? 'Inasubiri Idhini (PENDING)'
-                    : governance.moderationStatus === 'REJECTED'
-                    ? 'Imekataliwa (REJECTED)'
+                    : (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
+                    ? 'Imekataliwa / Imezuiwa (BLOCKED)'
                     : governance.moderationStatus === 'HIDDEN'
                     ? 'Imefichwa (HIDDEN)'
                     : governance.moderationStatus === 'SUSPENDED'
                     ? 'Imesimamishwa (SUSPENDED)'
                     : governance.moderationStatus === 'DRAFT'
                     ? 'Rasimu (DRAFT)'
+                    : (governance.moderationStatus === 'APPROVED' && !governance.isEligible)
+                    ? (governance.isAiScreeningFresh === false
+                        ? 'Inahitaji Ukaguzi Mpya wa AI'
+                        : 'Haionekani Sokoni')
                     : governance.moderationStatus || 'Haionekani Sokoni'}
                 </span>
               </span>
-              <span className="text-[9.5px] uppercase font-bold tracking-wider text-amber-800">Haionekani Sokoni</span>
+              <span className={`text-[9.5px] uppercase font-bold tracking-wider ${
+                (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK') ? 'text-rose-800' : 'text-amber-800'
+              }`}>Haionekani Sokoni</span>
             </div>
             {(product.moderationPublicReason || governance.sellerNotice || governance.publicUnavailableReason) && (
-              <p className="text-[10px] text-amber-900/90 leading-tight">
+              <p className={`text-[10px] leading-tight ${
+                (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK') ? 'text-rose-900/90' : 'text-amber-900/90'
+              }`}>
                 {product.moderationPublicReason || governance.sellerNotice || governance.publicUnavailableReason}
               </p>
             )}
@@ -240,26 +254,34 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               </span>
             )}
 
-            {isOwner && product.validationStatus && (
+            {isOwner && (
               <span
                 className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-md border inline-flex items-center gap-0.5 ${
-                  product.validationStatus === 'VALID'
+                  (governance.moderationStatus === 'REJECTED' || product.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
+                    ? 'bg-rose-50 text-rose-800 border-rose-300'
+                    : !governance.isAiScreeningFresh
+                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                    : governance.isEligible
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                    : (governance.moderationStatus === 'PENDING_REVIEW' || product.moderationStatus === 'PENDING_REVIEW')
+                    ? 'bg-amber-50 text-amber-800 border-amber-300'
                     : product.validationStatus === 'INCOMPLETE'
                     ? 'bg-amber-50 text-amber-800 border-amber-300'
-                    : product.validationStatus === 'BLOCKED'
-                    ? 'bg-red-50 text-red-800 border-red-300'
-                    : 'bg-rose-50 text-rose-800 border-rose-300'
+                    : 'bg-stone-100 text-stone-700 border-stone-300'
                 }`}
-                title={product.validationErrors?.map((e) => e.message).join(', ') || `Hali ya ukaguzi: ${product.validationStatus}`}
+                title={product.validationErrors?.map((e) => e.message).join(', ') || `Hali ya kiutawala: ${governance.moderationStatus}`}
               >
-                {product.validationStatus === 'VALID'
+                {(governance.moderationStatus === 'REJECTED' || product.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
+                  ? 'Imekataliwa / Imezuiwa (BLOCKED)'
+                  : !governance.isAiScreeningFresh
+                  ? 'Inahitaji Ukaguzi Mpya'
+                  : governance.isEligible
                   ? 'Imeidhinishwa'
+                  : (governance.moderationStatus === 'PENDING_REVIEW' || product.moderationStatus === 'PENDING_REVIEW')
+                  ? 'Inasubiri Idhini'
                   : product.validationStatus === 'INCOMPLETE'
                   ? 'Haijakamilika'
-                  : product.validationStatus === 'BLOCKED'
-                  ? 'Imezuiliwa'
-                  : 'Si Sahihi'}
+                  : 'Rasimu / Imezimwa'}
               </span>
             )}
 

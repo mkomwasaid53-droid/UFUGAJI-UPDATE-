@@ -1019,17 +1019,20 @@ export async function createMarketplaceProduct(
           sellerId: cleanSellerId,
           shopId: cleanSellerId,
           status: newProduct.moderationStatus,
-          priority: 'NORMAL',
-          reasonCode: null,
-          reasonText: null,
+          priority: newProduct.moderationStatus === 'REJECTED' ? 'CRITICAL' : 'NORMAL',
+          reasonCode: newProduct.moderationStatus === 'REJECTED' ? 'AI_CONTENT_BLOCK' : null,
+          reasonText: newProduct.moderationStatus === 'REJECTED' ? 'AI safety violation' : null,
           internalNote: null,
           publicExplanation: newProduct.moderationStatus === 'APPROVED'
             ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).'
+            : newProduct.moderationStatus === 'REJECTED'
+            ? (serverSaved.moderationPublicReason || 'Tangazo limezuiwa sokoni kwa sababu linakiuka sera za maudhui na usalama.')
             : 'Tangazo limewasilishwa kwa ukaguzi wa wasimamizi (PENDING_REVIEW).',
           correctionInstructions: null,
-          reviewedByUserId: newProduct.moderationStatus === 'APPROVED' ? 'system_ai_trusted_seller' : null,
-          reviewedByDisplayName: newProduct.moderationStatus === 'APPROVED' ? 'AI Screening + Trusted Seller' : null,
-          reviewedAt: newProduct.moderationStatus === 'APPROVED' ? now : null,
+          reviewedByUserId: newProduct.moderationStatus === 'APPROVED' ? 'system_ai_trusted_seller' : (newProduct.moderationStatus === 'REJECTED' ? 'system_ai_screening_block' : null),
+          reviewedByDisplayName: newProduct.moderationStatus === 'APPROVED' ? 'AI Screening + Trusted Seller' : (newProduct.moderationStatus === 'REJECTED' ? 'AI Safety Filter' : null),
+          reviewedAt: (newProduct.moderationStatus === 'APPROVED' || newProduct.moderationStatus === 'REJECTED') ? now : null,
+          aiScreening: serverSaved.aiScreening,
           createdAt: now,
           updatedAt: now
         });
@@ -1327,17 +1330,20 @@ export async function updateMarketplaceProduct(
           sellerId: cleanSellerId,
           shopId: cleanSellerId,
           status: updatedProduct.moderationStatus,
-          priority: 'NORMAL',
-          reasonCode: null,
-          reasonText: null,
+          priority: updatedProduct.moderationStatus === 'REJECTED' ? 'CRITICAL' : 'NORMAL',
+          reasonCode: updatedProduct.moderationStatus === 'REJECTED' ? 'AI_CONTENT_BLOCK' : null,
+          reasonText: updatedProduct.moderationStatus === 'REJECTED' ? 'AI safety violation' : null,
           internalNote: null,
           publicExplanation: updatedProduct.moderationStatus === 'APPROVED'
             ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).'
+            : updatedProduct.moderationStatus === 'REJECTED'
+            ? (serverSaved.moderationPublicReason || 'Tangazo limezuiwa sokoni kwa sababu linakiuka sera za maudhui na usalama.')
             : 'Tangazo limewasilishwa kwa ukaguzi wa wasimamizi (PENDING_REVIEW).',
           correctionInstructions: null,
-          reviewedByUserId: updatedProduct.moderationStatus === 'APPROVED' ? 'system_ai_trusted_seller' : null,
-          reviewedByDisplayName: updatedProduct.moderationStatus === 'APPROVED' ? 'AI Screening + Trusted Seller' : null,
-          reviewedAt: updatedProduct.moderationStatus === 'APPROVED' ? now : null,
+          reviewedByUserId: updatedProduct.moderationStatus === 'APPROVED' ? 'system_ai_trusted_seller' : (updatedProduct.moderationStatus === 'REJECTED' ? 'system_ai_screening_block' : null),
+          reviewedByDisplayName: updatedProduct.moderationStatus === 'APPROVED' ? 'AI Screening + Trusted Seller' : (updatedProduct.moderationStatus === 'REJECTED' ? 'AI Safety Filter' : null),
+          reviewedAt: (updatedProduct.moderationStatus === 'APPROVED' || updatedProduct.moderationStatus === 'REJECTED') ? now : null,
+          aiScreening: serverSaved.aiScreening,
           createdAt: targetProduct.createdAt || now,
           updatedAt: now
         });

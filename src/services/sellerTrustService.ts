@@ -36,6 +36,14 @@ const isNode = typeof window === 'undefined';
 let fsModule: any = null;
 let pathModule: any = null;
 
+export function initSellerTrustStorage(customFs?: any, customPath?: any): void {
+  if (customFs && customPath) {
+    fsModule = customFs;
+    pathModule = customPath;
+    loadProfilesFromDisk();
+  }
+}
+
 if (isNode) {
   try {
     const nodeReq = (globalThis as any).require;

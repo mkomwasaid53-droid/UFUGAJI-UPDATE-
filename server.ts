@@ -90,7 +90,8 @@ import {
   updateSellerTrustStatus,
   getSellerTrustStatus,
   stripProtectedSellerTrustFields,
-  getLocalCachedSellerProfiles
+  getLocalCachedSellerProfiles,
+  initSellerTrustStorage
 } from './src/services/sellerTrustService';
 import {
   performModerationAction,
@@ -110,6 +111,7 @@ import {
   resolveListingPublishingState,
   computeListingContentFingerprint,
   isScreeningResultUpToDate,
+  initAiScreeningStorage,
   AI_SCREENING_POLICY_VERSION,
   AI_SCREENING_PRIMARY_MODEL
 } from './src/services/marketplaceAiScreeningService';
@@ -218,6 +220,12 @@ initGumzoAuditStorage(fs, path);
 
 // Authoritative Gumzo reports and enforcement persistent storage initialization (V1.0)
 initGumzoReportsStorage(fs, path);
+
+// Authoritative seller trust persistent storage initialization
+initSellerTrustStorage(fs, path);
+
+// Authoritative multimodal AI screening storage initialization
+initAiScreeningStorage(fs, path);
 
 // Persistent marketplace products storage helpers
 function readMarketplaceProductsFromDisk(): any[] {
@@ -883,6 +891,26 @@ async function startServer() {
       const existing = readMarketplaceProductsFromDisk();
       const index = existing.findIndex((p: any) => p.productId === product.productId);
 
+      // Pre-normalize product.imageUrl and product.images BEFORE any screening
+      // so the screened fingerprint matches the final stored product!
+      if (!product.imageUrl && Array.isArray(product.images) && product.images.length > 0) {
+        const primary = product.images.find((img: any) => img.isPrimary) || product.images[0];
+        if (primary && primary.url) {
+          product.imageUrl = primary.url;
+        }
+      }
+
+      if (product.imageUrl && (!product.images || product.images.length === 0)) {
+        product.images = [{
+          id: `img_${product.productId}`,
+          url: product.imageUrl,
+          thumbnailUrl: product.imageUrl,
+          storagePath: `marketplace/products/${product.sellerId || 'seller'}/${product.productId}/img_${product.productId}.jpg`,
+          isPrimary: true,
+          uploadedAt: new Date().toISOString()
+        }];
+      }
+
       const authInfo = extractUserAuthFromRequest(req);
       const callerUserId = authInfo?.callerUserId || req.body.callerUserId || (req.headers['x-user-id'] as string);
       const isAdmin = authInfo?.isAdmin || req.body.isAdmin || req.headers['x-is-admin'] === 'true';
@@ -936,17 +964,16 @@ async function startServer() {
         }
 
         // AI Screening: Calculate content fingerprint and run server screening
-        const contentChanged =
-          currentProd.title !== product.title ||
-          currentProd.description !== product.description ||
-          currentProd.category !== product.category ||
-          currentProd.subcategory !== product.subcategory ||
-          currentProd.price !== product.price ||
-          (product.images && product.images.length > 0);
+        const isUpToDate = isScreeningResultUpToDate(product, currentProd.aiScreening);
+        const contentChanged = !isUpToDate;
 
         if (contentChanged && !isAdmin) {
           const authoritativeSellerId = currentProd.sellerId || product.sellerId || callerUserId || '';
           const sellerTrust = getSellerTrustStatus(authoritativeSellerId);
+          const normalizedImages = (Array.isArray(product.images) && product.images.length > 0)
+            ? product.images
+            : (product.imageUrl ? [{ id: 'img_primary', url: product.imageUrl, isPrimary: true }] : (currentProd.images || []));
+
           const screeningResult = await evaluateMarketplaceListingContent({
             productId: currentProd.productId,
             sellerId: authoritativeSellerId,
@@ -955,7 +982,8 @@ async function startServer() {
             category: product.category || currentProd.category,
             subcategory: product.subcategory || currentProd.subcategory,
             price: product.price !== undefined ? product.price : currentProd.price,
-            images: product.images || currentProd.images
+            images: normalizedImages,
+            imageUrl: product.imageUrl || currentProd.imageUrl
           });
 
           const resolution = resolveListingPublishingState({
@@ -967,36 +995,48 @@ async function startServer() {
           product.aiScreening = screeningResult;
           product.aiScreenedAt = new Date().toISOString();
           product.sellerTrustStatus = sellerTrust;
-          product.moderationStatus = resolution.recommendedModerationStatus;
-          if (!resolution.canPublishActiveImmediately && product.status === 'active') {
+
+          if (screeningResult.status === 'BLOCK') {
+            product.moderationStatus = 'REJECTED';
             product.status = 'inactive';
-          } else if (resolution.canPublishActiveImmediately && product.status !== 'draft') {
-            product.status = 'active';
             product.moderatedAt = new Date().toISOString();
-            product.moderatedBy = 'system_ai_trusted_seller';
-            product.moderationPublicReason = 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).';
-            registerListingModerationRecord({
-              moderationId: `mod_${currentProd.productId}`,
-              targetType: 'LISTING',
-              targetId: currentProd.productId,
-              productId: currentProd.productId,
-              listingId: currentProd.productId,
-              sellerId: authoritativeSellerId,
-              shopId: currentProd.shopId || authoritativeSellerId,
-              status: 'APPROVED',
-              priority: 'NORMAL',
-              reasonCode: null,
-              reasonText: null,
-              internalNote: null,
-              publicExplanation: 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).',
-              correctionInstructions: null,
-              reviewedByUserId: 'system_ai_trusted_seller',
-              reviewedByDisplayName: 'AI Screening + Trusted Seller',
-              reviewedAt: new Date().toISOString(),
-              createdAt: currentProd.createdAt || new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            });
+            product.moderatedBy = 'system_ai_screening_block';
+            product.moderationPublicReason = 'Tangazo limezuiwa sokoni kwa kukiuka sera za maudhui na maadili.';
+          } else {
+            product.moderationStatus = resolution.recommendedModerationStatus;
+
+            if (!resolution.canPublishActiveImmediately) {
+              product.status = 'inactive';
+            } else if (product.status !== 'draft') {
+              product.status = 'active';
+              product.moderatedAt = new Date().toISOString();
+              product.moderatedBy = 'system_ai_trusted_seller';
+              product.moderationPublicReason = 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).';
+            }
           }
+
+          // Register authoritative server-side moderation record for all states
+          registerListingModerationRecord({
+            moderationId: `mod_${currentProd.productId}`,
+            targetType: 'LISTING',
+            targetId: currentProd.productId,
+            productId: currentProd.productId,
+            listingId: currentProd.productId,
+            sellerId: authoritativeSellerId,
+            shopId: currentProd.shopId || authoritativeSellerId,
+            status: product.moderationStatus,
+            priority: screeningResult.status === 'BLOCK' ? 'CRITICAL' : screeningResult.status === 'REVIEW_REQUIRED' ? 'HIGH' : 'NORMAL',
+            reasonCode: screeningResult.status === 'BLOCK' ? 'AI_CONTENT_BLOCK' : (screeningResult.status === 'REVIEW_REQUIRED' ? 'AI_REVIEW_REQUIRED' : null),
+            reasonText: screeningResult.categories.length > 0 ? screeningResult.categories.join(', ') : null,
+            internalNote: `Authoritative update screening: ${screeningResult.status}`,
+            publicExplanation: resolution.publicUnavailableReason || (resolution.canPublishActiveImmediately ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).' : 'Tangazo linasubiri idhini ya msimamizi.'),
+            correctionInstructions: null,
+            reviewedByUserId: resolution.canPublishActiveImmediately ? 'system_ai_trusted_seller' : (screeningResult.status === 'BLOCK' ? 'system_ai_screening_block' : null),
+            reviewedByDisplayName: resolution.canPublishActiveImmediately ? 'AI Screening + Trusted Seller' : (screeningResult.status === 'BLOCK' ? 'AI Safety Filter' : null),
+            reviewedAt: (resolution.canPublishActiveImmediately || screeningResult.status === 'BLOCK') ? new Date().toISOString() : null,
+            createdAt: currentProd.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
         }
 
         existing[index] = { ...existing[index], ...product };
@@ -1004,6 +1044,10 @@ async function startServer() {
         // Creating new product
         const authoritativeSellerId = product.sellerId || product.sellerUserId || callerUserId || '';
         const sellerTrust = getSellerTrustStatus(authoritativeSellerId);
+        const normalizedImages = (Array.isArray(product.images) && product.images.length > 0)
+          ? product.images
+          : (product.imageUrl ? [{ id: `img_${product.productId}`, url: product.imageUrl, isPrimary: true }] : []);
+
         const screeningResult = await evaluateMarketplaceListingContent({
           productId: product.productId,
           sellerId: authoritativeSellerId,
@@ -1012,7 +1056,8 @@ async function startServer() {
           category: product.category || '',
           subcategory: product.subcategory || '',
           price: product.price,
-          images: product.images
+          images: normalizedImages,
+          imageUrl: product.imageUrl
         });
 
         const resolution = resolveListingPublishingState({
@@ -1026,9 +1071,14 @@ async function startServer() {
         product.sellerTrustStatus = sellerTrust;
 
         if (!isAdmin) {
-          // If seller submitted as draft, keep draft; otherwise follow resolution
           if (product.status === 'draft') {
             product.moderationStatus = 'DRAFT';
+          } else if (screeningResult.status === 'BLOCK') {
+            product.moderationStatus = 'REJECTED';
+            product.status = 'inactive';
+            product.moderatedAt = new Date().toISOString();
+            product.moderatedBy = 'system_ai_screening_block';
+            product.moderationPublicReason = 'Tangazo limezuiwa sokoni kwa kukiuka sera za maudhui na maadili.';
           } else {
             product.moderationStatus = resolution.recommendedModerationStatus;
             if (!resolution.canPublishActiveImmediately) {
@@ -1038,29 +1088,31 @@ async function startServer() {
               product.moderatedAt = new Date().toISOString();
               product.moderatedBy = 'system_ai_trusted_seller';
               product.moderationPublicReason = 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).';
-              registerListingModerationRecord({
-                moderationId: `mod_${product.productId}`,
-                targetType: 'LISTING',
-                targetId: product.productId,
-                productId: product.productId,
-                listingId: product.productId,
-                sellerId: authoritativeSellerId,
-                shopId: product.shopId || authoritativeSellerId,
-                status: 'APPROVED',
-                priority: 'NORMAL',
-                reasonCode: null,
-                reasonText: null,
-                internalNote: null,
-                publicExplanation: 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).',
-                correctionInstructions: null,
-                reviewedByUserId: 'system_ai_trusted_seller',
-                reviewedByDisplayName: 'AI Screening + Trusted Seller',
-                reviewedAt: new Date().toISOString(),
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-              });
             }
           }
+
+          // Register authoritative moderation record on creation for all outcomes
+          registerListingModerationRecord({
+            moderationId: `mod_${product.productId}`,
+            targetType: 'LISTING',
+            targetId: product.productId,
+            productId: product.productId,
+            listingId: product.productId,
+            sellerId: authoritativeSellerId,
+            shopId: product.shopId || authoritativeSellerId,
+            status: product.moderationStatus,
+            priority: screeningResult.status === 'BLOCK' ? 'CRITICAL' : screeningResult.status === 'REVIEW_REQUIRED' ? 'HIGH' : 'NORMAL',
+            reasonCode: screeningResult.status === 'BLOCK' ? 'AI_CONTENT_BLOCK' : (screeningResult.status === 'REVIEW_REQUIRED' ? 'AI_REVIEW_REQUIRED' : null),
+            reasonText: screeningResult.categories.length > 0 ? screeningResult.categories.join(', ') : null,
+            internalNote: `Authoritative creation screening: ${screeningResult.status}`,
+            publicExplanation: resolution.publicUnavailableReason || (resolution.canPublishActiveImmediately ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).' : 'Tangazo limewasilishwa kwa ukaguzi wa wasimamizi (PENDING_REVIEW).'),
+            correctionInstructions: null,
+            reviewedByUserId: resolution.canPublishActiveImmediately ? 'system_ai_trusted_seller' : (screeningResult.status === 'BLOCK' ? 'system_ai_screening_block' : null),
+            reviewedByDisplayName: resolution.canPublishActiveImmediately ? 'AI Screening + Trusted Seller' : (screeningResult.status === 'BLOCK' ? 'AI Safety Filter' : null),
+            reviewedAt: (resolution.canPublishActiveImmediately || screeningResult.status === 'BLOCK') ? new Date().toISOString() : null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
         } else {
           product.moderationStatus = product.moderationStatus || 'APPROVED';
           if (product.status !== 'draft') {
@@ -1068,26 +1120,6 @@ async function startServer() {
           }
         }
         existing.unshift(product);
-      }
-
-      // Recover product.imageUrl from primary image if still empty
-      if (!product.imageUrl && Array.isArray(product.images) && product.images.length > 0) {
-        const primary = product.images.find((img: any) => img.isPrimary) || product.images[0];
-        if (primary && primary.url) {
-          product.imageUrl = primary.url;
-        }
-      }
-
-      // Ensure at least one image record exists in images array if imageUrl is present
-      if (product.imageUrl && (!product.images || product.images.length === 0)) {
-        product.images = [{
-          id: `img_${product.productId}`,
-          url: product.imageUrl,
-          thumbnailUrl: product.imageUrl,
-          storagePath: `marketplace/products/${product.sellerId}/${product.productId}/img_${product.productId}.jpg`,
-          isPrimary: true,
-          uploadedAt: new Date().toISOString()
-        }];
       }
 
       writeMarketplaceProductsToDisk(existing);
