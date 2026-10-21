@@ -34,16 +34,21 @@ import {
   AIScreeningResult,
   AIScreeningStatus,
   AIScreeningCategory,
-  SellerTrustStatus
+  SellerTrustStatus,
+  AIScreeningEvaluationSource,
+  AIScreeningFailureReason,
+  ScreeningJobStatus,
+  MarketplaceScreeningJob
 } from '../types/marketplaceModeration';
 import { MarketplaceProduct, ProductImage } from '../types/marketplace';
 
 export const AI_SCREENING_POLICY_VERSION = 'v1.0.0-ufugaji-content-governance';
 export const AI_SCREENING_PRIMARY_MODEL = 'gemini-3.8-flash';
+export const AI_SCREENING_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 
 export interface ListingScreeningInput {
-  productId: string;
-  sellerId: string;
+  productId?: string;
+  sellerId?: string;
   title: string;
   description: string;
   category: string;
@@ -405,7 +410,8 @@ export function evaluateListingContentDeterministically(
       hasCategory: Boolean(input.category && input.category.trim()),
       hasPrice: input.price !== undefined,
       imageCount: Array.isArray(input.images) ? input.images.length : 0
-    }
+    },
+    evaluationSource: 'DETERMINISTIC_RULES'
   };
 }
 
@@ -490,12 +496,26 @@ export function resolveListingPublishingState(params: {
 
     case 'REVIEW_REQUIRED': {
       // REVIEW_REQUIRED -> Inapelekwa kwenye Admin Review Queue; haionekani hadharani
+      const isInfra = screeningResult.evaluationSource === 'INFRASTRUCTURE_FALLBACK';
+      const is503 = screeningResult.failureReason === 'MODEL_UNAVAILABLE_503';
+      const publicUnavailableReason = is503
+        ? 'Ukaguzi wa kiusalama wa AI umekwama kwa muda kutokana na wingi wa maombi (HTTP 503 UNAVAILABLE). Tangazo linashikiliwa kwa usalama likisubiri ukaguzi.'
+        : isInfra
+        ? 'Ukaguzi wa AI haujakamilika kutokana na changamoto ya muda mfupi ya miundombinu. Tangazo linashikiliwa kwa usalama.'
+        : 'Tangazo hili linahitaji ukaguzi maalum wa wasimamizi kabla ya kuchapishwa.';
+
+      const sellerNotice = is503
+        ? 'Ukaguzi wa tangazo lako unachukua muda kidogo kwa sababu ya wingi wa maombi kwenye mfumo wa AI. Tangazo lako lipo salama na linasubiri ukaguzi.'
+        : isInfra
+        ? 'Ukaguzi wa tangazo lako haujakamilika kikamilifu kutokana na hitilafu ya miundombinu. Tangazo lako linashikiliwa kwa usalama likisubiri uhakiki.'
+        : `Tangazo lako linahitaji ukaguzi wa wasimamizi: ${screeningResult.explanationSwahili || screeningResult.explanation}`;
+
       return {
         screeningResult,
         recommendedModerationStatus: 'PENDING_REVIEW',
         canPublishActiveImmediately: false,
-        publicUnavailableReason: 'Tangazo hili linahitaji ukaguzi maalum wa wasimamizi kabla ya kuchapishwa.',
-        sellerNotice: `Tangazo lako linahitaji ukaguzi wa wasimamizi: ${screeningResult.explanationSwahili || screeningResult.explanation}`
+        publicUnavailableReason,
+        sellerNotice
       };
     }
 
@@ -613,20 +633,257 @@ export function extractMultimodalImageParts(
 }
 
 /**
+ * Redacts API keys, bearer tokens, and raw base64 payloads to protect private data in logs.
+ */
+export function sanitizeLogMessage(msg: any): string {
+  if (!msg) return '';
+  let str = typeof msg === 'string' ? msg : String(msg?.message || msg || '');
+  str = str.replace(/AIza[0-9A-Za-z-_]{20,}/g, '[REDACTED_API_KEY]');
+  str = str.replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED_TOKEN]');
+  str = str.replace(/key=[A-Za-z0-9-_]+/gi, 'key=[REDACTED]');
+  str = str.replace(/data:image\/[^;]+;base64,[a-zA-Z0-9+/=]+/g, '[IMAGE_BASE64_DATA]');
+  return str;
+}
+
+/**
+ * Classifies whether an AI model error is transient and retryable (503, 429, timeout, network error).
+ * Intentional content safety blocks and permanent client 4xx errors are strictly non-retryable.
+ */
+export function isRetryableAiError(error: any): { isRetryable: boolean; reason: AIScreeningFailureReason } {
+  if (!error) return { isRetryable: false, reason: 'UNKNOWN' };
+
+  const status = Number(error?.status || error?.statusCode || error?.response?.status || 0);
+  const message = String(error?.message || error || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+  const name = String(error?.name || '');
+
+  // 1. Safety blocks are intentional safety enforcement, NEVER retryable
+  if (
+    message.includes('safety') ||
+    message.includes('harm') ||
+    message.includes('explicit') ||
+    message.includes('blocked by safety')
+  ) {
+    return { isRetryable: false, reason: 'UNKNOWN' };
+  }
+
+  // 2. 503 UNAVAILABLE / High demand / Temporary service overload
+  if (
+    status === 503 ||
+    code === 'unavailable' ||
+    message.includes('503') ||
+    message.includes('unavailable') ||
+    message.includes('high demand') ||
+    message.includes('overloaded') ||
+    message.includes('temporarily unavailable')
+  ) {
+    return { isRetryable: true, reason: 'MODEL_UNAVAILABLE_503' };
+  }
+
+  // 3. 429 Too Many Requests / Resource Exhausted / Rate limit
+  if (
+    status === 429 ||
+    code === 'resource_exhausted' ||
+    message.includes('429') ||
+    message.includes('rate limit') ||
+    message.includes('too many requests') ||
+    message.includes('resource_exhausted') ||
+    message.includes('quota')
+  ) {
+    return { isRetryable: true, reason: 'RATE_LIMITED_429' };
+  }
+
+  // 4. Timeout / Deadline exceeded
+  if (
+    status === 504 ||
+    name === 'TimeoutError' ||
+    name === 'AbortError' ||
+    code === 'etimedout' ||
+    code === 'deadline_exceeded' ||
+    message.includes('timeout') ||
+    message.includes('timed out') ||
+    message.includes('deadline exceeded')
+  ) {
+    return { isRetryable: true, reason: 'DEADLINE_EXCEEDED' };
+  }
+
+  // 5. Transient network errors (502, 500, socket hangup, connection reset)
+  if (
+    status === 502 ||
+    status === 500 ||
+    code === 'econnreset' ||
+    code === 'econnrefused' ||
+    code === 'eai_again' ||
+    code === 'und_err_connect_timeout' ||
+    message.includes('econnreset') ||
+    message.includes('fetch failed') ||
+    message.includes('network') ||
+    message.includes('bad gateway')
+  ) {
+    return { isRetryable: true, reason: 'NETWORK_ERROR' };
+  }
+
+  return { isRetryable: false, reason: 'UNKNOWN' };
+}
+
+export interface BoundedRetryOptions {
+  maxRetries?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  totalTimeoutMs?: number;
+  attemptTimeoutMs?: number;
+}
+
+/**
+ * Executes a Gemini model call with bounded retries, exponential backoff, jitter,
+ * and a strict overall request deadline.
+ */
+export async function callGeminiWithBoundedRetry(params: {
+  genAiClient: any;
+  model: string;
+  models?: string[];
+  contents: any[];
+  config: any;
+  maxRetries?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  totalTimeoutMs?: number;
+  attemptTimeoutMs?: number;
+}): Promise<{
+  success: boolean;
+  response?: any;
+  lastError?: any;
+  failureReason?: AIScreeningFailureReason;
+  attempts: number;
+  modelUsed?: string;
+}> {
+  const candidateModels = Array.isArray(params.models) && params.models.length > 0
+    ? params.models
+    : [params.model];
+  const maxRetries = params.maxRetries !== undefined ? params.maxRetries : 2;
+  const initialDelay = params.initialDelayMs !== undefined ? params.initialDelayMs : 500;
+  const maxDelay = params.maxDelayMs !== undefined ? params.maxDelayMs : 2500;
+  const totalTimeout = params.totalTimeoutMs !== undefined ? params.totalTimeoutMs : 20000;
+  const attemptTimeout = params.attemptTimeoutMs !== undefined ? params.attemptTimeoutMs : 6000;
+
+  const deadline = Date.now() + totalTimeout;
+  let attempts = 0;
+  let lastError: any = null;
+  let lastFailureReason: AIScreeningFailureReason = 'UNKNOWN';
+  let activeModel = candidateModels[0];
+
+  while (attempts <= maxRetries) {
+    attempts++;
+    activeModel = candidateModels[Math.min(attempts - 1, candidateModels.length - 1)];
+    const remainingTime = deadline - Date.now();
+    if (remainingTime <= 0) {
+      lastFailureReason = 'DEADLINE_EXCEEDED';
+      break;
+    }
+
+    try {
+      const attemptLimit = Math.min(attemptTimeout, remainingTime);
+      let timeoutHandle: any = null;
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          const err = new Error(`Model screening request timed out (${activeModel})`);
+          (err as any).name = 'TimeoutError';
+          (err as any).code = 'ETIMEDOUT';
+          reject(err);
+        }, attemptLimit);
+        if (timeoutHandle?.unref) timeoutHandle.unref();
+      });
+
+      const callPromise = params.genAiClient.models.generateContent({
+        model: activeModel,
+        contents: params.contents,
+        config: params.config
+      });
+
+      const response = await Promise.race([callPromise, timeoutPromise]);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+
+      return {
+        success: true,
+        response,
+        attempts,
+        modelUsed: activeModel
+      };
+    } catch (err: any) {
+      lastError = err;
+      const { isRetryable, reason } = isRetryableAiError(err);
+      lastFailureReason = reason;
+
+      // Intentional safety blocks are not retryable
+      const errMsg = String(err?.message || '').toLowerCase();
+      if (
+        errMsg.includes('safety') ||
+        errMsg.includes('harm') ||
+        errMsg.includes('blocked') ||
+        errMsg.includes('explicit') ||
+        errMsg.includes('nude')
+      ) {
+        return {
+          success: false,
+          lastError: err,
+          failureReason: 'UNKNOWN',
+          attempts,
+          modelUsed: activeModel
+        };
+      }
+
+      if (!isRetryable || attempts > maxRetries) {
+        break;
+      }
+
+      const delay = Math.min(maxDelay, initialDelay * Math.pow(2, attempts - 1));
+      const jitter = 0.7 + Math.random() * 0.6;
+      const actualDelay = Math.floor(delay * jitter);
+
+      if (Date.now() + actualDelay >= deadline) {
+        lastFailureReason = 'DEADLINE_EXCEEDED';
+        break;
+      }
+
+      console.info(
+        `[AI Screening Resilience] Transient provider delay (${reason}) on attempt ${attempts}/${maxRetries + 1}. Retrying in ${actualDelay}ms...`
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, actualDelay));
+    }
+  }
+
+  return {
+    success: false,
+    lastError,
+    failureReason: lastFailureReason,
+    attempts,
+    modelUsed: activeModel
+  };
+}
+
+export interface EvaluateListingScreeningOptions extends BoundedRetryOptions {
+  apiKey?: string;
+  genAiClient?: any;
+  mockResult?: AIScreeningResult;
+  mockMultimodalPass?: boolean;
+}
+
+/**
  * Server-authoritative multimodal screening evaluator.
  * Evaluates listing text and uploaded image content using Gemini multimodal models
- * when available, with strict fail-closed and deterministic safeguards.
+ * when available, with strict fail-closed resilience, bounded retries, and deterministic safeguards.
  */
 export async function evaluateMarketplaceListingContent(
   input: ListingScreeningInput,
-  options?: { apiKey?: string; genAiClient?: any; mockResult?: AIScreeningResult; mockMultimodalPass?: boolean }
+  options?: EvaluateListingScreeningOptions
 ): Promise<AIScreeningResult> {
   const startMs = Date.now();
   const now = new Date().toISOString();
   const requestId = input.requestId || `req_scr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const screeningId = `scr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-  // If explicit test mock result is supplied (Section 4 testing requirement)
+  // If explicit test mock result is supplied
   if (options?.mockResult) {
     const fingerprint = computeListingContentFingerprint({
       title: input.title,
@@ -642,7 +899,8 @@ export async function evaluateMarketplaceListingContent(
       screeningId: options.mockResult.screeningId || screeningId,
       requestId: options.mockResult.requestId || requestId,
       contentFingerprint: options.mockResult.contentFingerprint || fingerprint,
-      timestamp: options.mockResult.timestamp || now
+      timestamp: options.mockResult.timestamp || now,
+      evaluationSource: options.mockResult.evaluationSource || 'MODEL'
     };
   }
 
@@ -655,12 +913,24 @@ export async function evaluateMarketplaceListingContent(
     deterministicResult.status === 'BLOCK' &&
     deterministicResult.categories.includes('SEXUAL_OR_EXPLICIT_CONTENT')
   ) {
-    return deterministicResult;
+    return {
+      ...deterministicResult,
+      evaluationSource: 'DETERMINISTIC_RULES'
+    };
   }
 
   // 2. Extract image parts for multimodal inspection
   const imageParts = extractMultimodalImageParts(input.images, input.imageUrl);
-  const hasImages = imageParts.length > 0 || (Array.isArray(input.images) && input.images.length > 0) || Boolean(input.imageUrl);
+
+  const fingerprint = computeListingContentFingerprint({
+    title: input.title,
+    description: input.description,
+    category: input.category,
+    subcategory: input.subcategory,
+    price: input.price,
+    images: input.images,
+    imageUrl: input.imageUrl
+  });
 
   const apiKey = options?.apiKey || (typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : undefined);
   let genAiClient = options?.genAiClient;
@@ -677,14 +947,13 @@ export async function evaluateMarketplaceListingContent(
         },
       });
     } catch (importErr) {
-      console.warn('Could not load GoogleGenAI in evaluation service:', importErr);
+      console.warn('Could not load GoogleGenAI in evaluation service:', sanitizeLogMessage(importErr));
     }
   }
 
-  // 3. Attempt Gemini multimodal evaluation if client is available
+  // 3. Attempt Gemini multimodal evaluation with bounded retry if client is available
   if (genAiClient) {
-    try {
-      const prompt = `Wewe ni mfumo rasmi wa usalama na maadili wa Ufugaji Update (Tanzania Agricultural & Livestock Marketplace Multimodal Content Screening Engine).
+    const prompt = `Wewe ni mfumo rasmi wa usalama na maadili wa Ufugaji Update (Tanzania Agricultural & Livestock Marketplace Multimodal Content Screening Engine).
 Kazi yako ni kutathmini tangazo la bidhaa la mfugaji/muuzaji kwa makini sana, ukichunguza maandishi na picha zilizoambatanishwa.
 
 TAARIFA ZA TANGAZO:
@@ -721,17 +990,28 @@ Jibu KWA JSON PEKEE kwa muundo huu:
   "confidence": "HIGH" | "MEDIUM" | "LOW"
 }`;
 
-      const contentsParts: any[] = [...imageParts, { text: prompt }];
+    const contentsParts: any[] = [...imageParts, { text: prompt }];
 
-      const response = await genAiClient.models.generateContent({
-        model: AI_SCREENING_PRIMARY_MODEL,
-        contents: [{ role: 'user', parts: contentsParts }],
-        config: {
-          temperature: 0.1,
-          responseMimeType: 'application/json',
-        },
-      });
+    const retryResult = await callGeminiWithBoundedRetry({
+      genAiClient,
+      model: AI_SCREENING_PRIMARY_MODEL,
+      models: [AI_SCREENING_PRIMARY_MODEL, AI_SCREENING_FALLBACK_MODEL],
+      contents: [{ role: 'user', parts: contentsParts }],
+      config: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+      },
+      maxRetries: options?.maxRetries,
+      initialDelayMs: options?.initialDelayMs,
+      maxDelayMs: options?.maxDelayMs,
+      totalTimeoutMs: options?.totalTimeoutMs,
+      attemptTimeoutMs: options?.attemptTimeoutMs,
+    });
 
+    const activeModelName = retryResult.modelUsed || AI_SCREENING_PRIMARY_MODEL;
+
+    if (retryResult.success && retryResult.response) {
+      const response = retryResult.response;
       const candidate = response?.candidates?.[0];
       const promptFeedback = response?.promptFeedback;
 
@@ -740,16 +1020,10 @@ Jibu KWA JSON PEKEE kwa muundo huu:
         promptFeedback?.blockReason === 'SAFETY' ||
         promptFeedback?.blockReason === 'PROHIBITED_CONTENT'
       ) {
-        console.warn('[AI Screening Engine] Model candidate flagged safety block on image/text:', candidate?.finishReason || promptFeedback?.blockReason);
-        const fingerprint = computeListingContentFingerprint({
-          title: input.title,
-          description: input.description,
-          category: input.category,
-          subcategory: input.subcategory,
-          price: input.price,
-          images: input.images,
-          imageUrl: input.imageUrl
-        });
+        console.info(
+          '[AI Screening Engine] Model candidate flagged safety block on image/text:',
+          candidate?.finishReason || promptFeedback?.blockReason
+        );
 
         return {
           screeningId,
@@ -759,7 +1033,7 @@ Jibu KWA JSON PEKEE kwa muundo huu:
           explanation: 'Maudhui ya picha au maelezo yamezuiwa moja kwa moja na kichujio cha usalama (Safety Filter: Explicit/Prohibited Content).',
           explanationSwahili: 'Tangazo limezuiwa kwa sababu picha au maudhui yaliyowekwa yanakiuka maadili na usalama (utupu/ngono).',
           confidence: 'HIGH',
-          model: AI_SCREENING_PRIMARY_MODEL,
+          model: activeModelName,
           policyVersion: AI_SCREENING_POLICY_VERSION,
           contentFingerprint: fingerprint,
           timestamp: now,
@@ -770,29 +1044,28 @@ Jibu KWA JSON PEKEE kwa muundo huu:
             hasCategory: Boolean(input.category && input.category.trim()),
             hasPrice: input.price !== undefined,
             imageCount: imageParts.length
-          }
+          },
+          evaluationSource: 'SAFETY_FILTER',
+          isRetryable: false,
+          retryAttempts: retryResult.attempts
         };
       }
 
-      const rawText = response.text ? response.text.trim() : '';
+      let cleanText = response.text ? response.text.trim() : '';
+      if (cleanText.startsWith('```json')) {
+        cleanText = cleanText.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
+      } else if (cleanText.startsWith('```')) {
+        cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '').trim();
+      }
+
       let parsed: any = null;
       try {
-        parsed = rawText ? JSON.parse(rawText) : null;
+        parsed = cleanText ? JSON.parse(cleanText) : null;
       } catch (jsonErr) {
-        console.warn('[AI Screening Engine] Failed to parse model JSON output:', rawText);
+        console.info('[AI Screening Engine] Notice: Model response format required review fallback');
       }
 
       if (parsed && ['PASS', 'BLOCK', 'REVIEW_REQUIRED'].includes(parsed.status)) {
-        const fingerprint = computeListingContentFingerprint({
-          title: input.title,
-          description: input.description,
-          category: input.category,
-          subcategory: input.subcategory,
-          price: input.price,
-          images: input.images,
-          imageUrl: input.imageUrl
-        });
-
         return {
           screeningId,
           requestId,
@@ -801,7 +1074,7 @@ Jibu KWA JSON PEKEE kwa muundo huu:
           explanation: parsed.explanation || 'Ukaguzi wa kiotomatiki umekamilika.',
           explanationSwahili: parsed.explanationSwahili || parsed.explanation || 'Ukaguzi umekamilika.',
           confidence: parsed.confidence || 'HIGH',
-          model: AI_SCREENING_PRIMARY_MODEL,
+          model: activeModelName,
           policyVersion: AI_SCREENING_POLICY_VERSION,
           contentFingerprint: fingerprint,
           timestamp: now,
@@ -812,35 +1085,52 @@ Jibu KWA JSON PEKEE kwa muundo huu:
             hasCategory: Boolean(input.category && input.category.trim()),
             hasPrice: input.price !== undefined,
             imageCount: imageParts.length
-          }
+          },
+          evaluationSource: 'MODEL',
+          retryAttempts: retryResult.attempts
+        };
+      } else {
+        // Model returned text that is not valid JSON or lacks valid status -> Fail-closed
+        console.info('[AI Screening Engine] Model returned malformed response; failing closed to REVIEW_REQUIRED');
+        return {
+          screeningId,
+          requestId,
+          status: 'REVIEW_REQUIRED',
+          categories: ['UNCERTAIN'],
+          explanation: 'Jibu la mfumo wa AI halikukidhi vigezo vya kimuundo (Malformed Model Response). Tangazo linashikiliwa kwa usalama.',
+          explanationSwahili: 'Ukaguzi wa tangazo haukukamilika kikamilifu. Tangazo lako linasubiri uhakiki wa wasimamizi.',
+          confidence: 'LOW',
+          model: activeModelName,
+          policyVersion: AI_SCREENING_POLICY_VERSION,
+          contentFingerprint: fingerprint,
+          timestamp: now,
+          latencyMs: Date.now() - startMs,
+          evaluatedFields: {
+            hasTitle: Boolean(input.title && input.title.trim()),
+            hasDescription: Boolean(input.description && input.description.trim()),
+            hasCategory: Boolean(input.category && input.category.trim()),
+            hasPrice: input.price !== undefined,
+            imageCount: imageParts.length
+          },
+          evaluationSource: 'INFRASTRUCTURE_FALLBACK',
+          failureReason: 'MALFORMED_RESPONSE',
+          isRetryable: false,
+          retryAttempts: retryResult.attempts,
+          infrastructureError: 'Model returned malformed or unparseable JSON output'
         };
       }
-    } catch (geminiErr: any) {
-      const errMsg = (geminiErr?.message || '').toLowerCase();
-      const errStr = String(geminiErr || '').toLowerCase();
+    } else {
+      // Model call failed across bounded retries
+      const lastErr = retryResult.lastError;
+      const errMsg = String(lastErr?.message || '').toLowerCase();
       const isSafetyBlock =
         errMsg.includes('safety') ||
         errMsg.includes('harm') ||
         errMsg.includes('blocked') ||
         errMsg.includes('explicit') ||
-        errMsg.includes('sex') ||
-        errMsg.includes('sexual') ||
-        errMsg.includes('nude') ||
-        errStr.includes('safety') ||
-        errStr.includes('blocked');
+        errMsg.includes('nude');
 
       if (isSafetyBlock) {
-        console.warn('[AI Screening Engine] Model flagged safety block on image/text:', geminiErr?.message);
-        const fingerprint = computeListingContentFingerprint({
-          title: input.title,
-          description: input.description,
-          category: input.category,
-          subcategory: input.subcategory,
-          price: input.price,
-          images: input.images,
-          imageUrl: input.imageUrl
-        });
-
         return {
           screeningId,
           requestId,
@@ -849,7 +1139,7 @@ Jibu KWA JSON PEKEE kwa muundo huu:
           explanation: 'Maudhui ya picha au maelezo yamezuiwa moja kwa moja na mfumo wa usalama (Safety Filter: Explicit Content).',
           explanationSwahili: 'Tangazo limezuiwa kwa sababu picha au maudhui yaliyowekwa yanakiuka maadili na usalama (utupu/ngono).',
           confidence: 'HIGH',
-          model: AI_SCREENING_PRIMARY_MODEL,
+          model: activeModelName,
           policyVersion: AI_SCREENING_POLICY_VERSION,
           contentFingerprint: fingerprint,
           timestamp: now,
@@ -860,41 +1150,571 @@ Jibu KWA JSON PEKEE kwa muundo huu:
             hasCategory: Boolean(input.category && input.category.trim()),
             hasPrice: input.price !== undefined,
             imageCount: imageParts.length
-          }
+          },
+          evaluationSource: 'SAFETY_FILTER',
+          isRetryable: false,
+          retryAttempts: retryResult.attempts
         };
       }
 
-      console.warn('[AI Screening Engine] Model unavailable or timed out, applying deterministic safety rules:', geminiErr?.message);
+      const failureReason = retryResult.failureReason || 'UNKNOWN';
+      console.info(
+        `[AI Screening Engine] Model offline/unavailable (${failureReason}) after ${retryResult.attempts} attempt(s); failing closed to REVIEW_REQUIRED`
+      );
+
+      return {
+        screeningId,
+        requestId,
+        status: 'REVIEW_REQUIRED',
+        categories: ['UNCERTAIN'],
+        explanation: failureReason === 'MODEL_UNAVAILABLE_503'
+          ? 'Mfumo wa AI haupatikani kwa muda (HTTP 503 UNAVAILABLE - High Demand). Bounded retry imekamilika, tangazo linashikiliwa kwa usalama.'
+          : failureReason === 'RATE_LIMITED_429'
+          ? 'Mfumo wa AI umefikia kikomo cha maombi (HTTP 429 Rate Limited). Bounded retry imekamilika, tangazo linashikiliwa kwa usalama.'
+          : failureReason === 'DEADLINE_EXCEEDED'
+          ? 'Muda wa ukaguzi wa AI umepita kikomo (Request Deadline Exceeded). Tangazo linashikiliwa kwa usalama.'
+          : 'Hitilafu ya miundombinu au mtandao wa AI (Infrastructure Error). Tangazo linashikiliwa kwa usalama.',
+        explanationSwahili: 'Ukaguzi wa tangazo lako unachukua muda kidogo kwa sababu ya wingi wa maombi kwenye mfumo. Tangazo lako lipo salama na linasubiri ukaguzi.',
+        confidence: 'MEDIUM',
+        model: AI_SCREENING_PRIMARY_MODEL,
+        policyVersion: AI_SCREENING_POLICY_VERSION,
+        contentFingerprint: fingerprint,
+        timestamp: now,
+        latencyMs: Date.now() - startMs,
+        evaluatedFields: {
+          hasTitle: Boolean(input.title && input.title.trim()),
+          hasDescription: Boolean(input.description && input.description.trim()),
+          hasCategory: Boolean(input.category && input.category.trim()),
+          hasPrice: input.price !== undefined,
+          imageCount: imageParts.length
+        },
+        evaluationSource: 'INFRASTRUCTURE_FALLBACK',
+        failureReason,
+        isRetryable: true,
+        retryAttempts: retryResult.attempts,
+        infrastructureError: sanitizeLogMessage(lastErr?.message || lastErr)
+      };
     }
   }
 
-  // 4. Fallback: Fail-Closed Safeguard.
-  // CRITICAL FAIL-SAFE RULE (Section 4):
-  // Missing image data, image-fetch failure, model errors, malformed output and timeouts must never fall back to PASS.
-  // If images were supplied but multimodal inspection did not verify them, route to REVIEW_REQUIRED for human safety check.
-  if (deterministicResult.status === 'PASS' && hasImages && !options?.mockMultimodalPass) {
+  // 4. Fallback if no client initialized or in mock environments
+  if (options?.mockMultimodalPass) {
     return {
-      screeningId,
-      requestId,
-      status: 'REVIEW_REQUIRED',
-      categories: ['UNCERTAIN'],
-      explanation: 'Picha za tangazo zinahitaji uhakiki wa kiusalama wa wasimamizi kabla ya kuchapishwa.',
-      explanationSwahili: 'Tangazo lako linasubiri uhakiki wa picha na wasimamizi wa soko (Fail-Closed Image Policy).',
-      confidence: 'MEDIUM',
-      model: AI_SCREENING_PRIMARY_MODEL,
-      policyVersion: AI_SCREENING_POLICY_VERSION,
-      contentFingerprint: deterministicResult.contentFingerprint,
-      timestamp: now,
-      latencyMs: Date.now() - startMs,
-      evaluatedFields: {
-        hasTitle: Boolean(input.title && input.title.trim()),
-        hasDescription: Boolean(input.description && input.description.trim()),
-        hasCategory: Boolean(input.category && input.category.trim()),
-        hasPrice: input.price !== undefined,
-        imageCount: imageParts.length
-      }
+      ...deterministicResult,
+      status: 'PASS',
+      evaluationSource: 'MODEL'
     };
   }
 
-  return deterministicResult;
+  if (deterministicResult.status === 'BLOCK') {
+    return {
+      ...deterministicResult,
+      evaluationSource: 'DETERMINISTIC_RULES'
+    };
+  }
+
+  // STRICT FAIL-CLOSED RULE:
+  // When AI model screening is offline or uninitialized, never grant automatic PASS.
+  // Content is routed to REVIEW_REQUIRED for human moderation safety check.
+  return {
+    screeningId,
+    requestId,
+    status: 'REVIEW_REQUIRED',
+    categories: ['UNCERTAIN'],
+    explanation: 'Mfumo wa ukaguzi wa AI haupatikani katika mazingira haya. Tangazo linashikiliwa kwa usalama likisubiri ukaguzi wa wasimamizi.',
+    explanationSwahili: 'Tangazo lako linasubiri ukaguzi wa kiusalama wa wasimamizi wa soko (Fail-Closed Policy).',
+    confidence: 'MEDIUM',
+    model: AI_SCREENING_PRIMARY_MODEL,
+    policyVersion: AI_SCREENING_POLICY_VERSION,
+    contentFingerprint: deterministicResult.contentFingerprint,
+    timestamp: now,
+    latencyMs: Date.now() - startMs,
+    evaluatedFields: deterministicResult.evaluatedFields,
+    evaluationSource: 'INFRASTRUCTURE_FALLBACK',
+    failureReason: 'UNKNOWN',
+    isRetryable: true,
+    retryAttempts: 0,
+    infrastructureError: 'AI screening client not initialized or offline'
+  };
 }
+
+// ============================================================================
+// MARKETPLACE AI SCREENING V2: ASYNC BACKGROUND QUEUE & WORKER ENGINE
+// ============================================================================
+
+export const SCREENING_CONFIG = {
+  MAX_PROCESSING_WINDOW_MS: 300_000, // 5 minutes window
+  INITIAL_BACKOFF_MS: 3_000,         // 3 seconds initial backoff
+  MAX_BACKOFF_MS: 60_000,            // 60 seconds max interval
+  MAX_ATTEMPTS: 12,                  // Up to 12 attempts over 5 minutes
+  LEASE_TIMEOUT_MS: 45_000,          // 45 seconds lease timeout
+};
+
+const LOCAL_SCREENING_JOBS_KEY = 'ufugaji_marketplace_screening_jobs_v2';
+let inMemoryScreeningJobs: Map<string, MarketplaceScreeningJob> = new Map();
+
+/**
+ * Resolves fs and path handles safely across runtime environments
+ */
+function getStorageHelpers(): { fs: any; path: any; dataFile: string | null } {
+  let fs = aiScreeningFs;
+  let path = aiScreeningPath;
+
+  if (!fs || !path) {
+    try {
+      const reqFn = Function("return typeof require !== 'undefined' ? require : null")();
+      if (typeof reqFn === 'function') {
+        fs = reqFn('fs');
+        path = reqFn('path');
+      }
+    } catch {}
+  }
+
+  let dataFile: string | null = null;
+  if (fs && path && typeof process !== 'undefined') {
+    try {
+      const dir = path.resolve(process.cwd(), 'data');
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      dataFile = path.join(dir, 'marketplace_screening_jobs.json');
+    } catch {}
+  }
+
+  return { fs, path, dataFile };
+}
+
+/**
+ * Loads all durable screening jobs from disk / local cache
+ */
+export function getAllScreeningJobs(): MarketplaceScreeningJob[] {
+  const { fs, dataFile } = getStorageHelpers();
+
+  if (fs && dataFile) {
+    try {
+      if (fs.existsSync(dataFile)) {
+        const raw = fs.readFileSync(dataFile, 'utf8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          inMemoryScreeningJobs.clear();
+          for (const j of list) {
+            inMemoryScreeningJobs.set(j.jobId, j);
+          }
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not read screening jobs from disk:', sanitizeLogMessage(err));
+    }
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_SCREENING_JOBS_KEY);
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          inMemoryScreeningJobs.clear();
+          for (const j of list) {
+            inMemoryScreeningJobs.set(j.jobId, j);
+          }
+          return list;
+        }
+      }
+    } catch {}
+  }
+
+  return Array.from(inMemoryScreeningJobs.values());
+}
+
+/**
+ * Persists all screening jobs safely to disk and local cache
+ */
+export function saveScreeningJobs(jobs: MarketplaceScreeningJob[]): void {
+  for (const j of jobs) {
+    inMemoryScreeningJobs.set(j.jobId, j);
+  }
+
+  const { fs, dataFile } = getStorageHelpers();
+  if (fs && dataFile) {
+    try {
+      fs.writeFileSync(dataFile, JSON.stringify(jobs, null, 2), 'utf8');
+    } catch (err) {
+      console.warn('Could not write screening jobs to disk:', sanitizeLogMessage(err));
+    }
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_SCREENING_JOBS_KEY, JSON.stringify(jobs));
+    } catch {}
+  }
+}
+
+/**
+ * Retrieves a single job by stable identifier
+ */
+export function getScreeningJob(jobId: string): MarketplaceScreeningJob | null {
+  if (!jobId) return null;
+  const inMem = inMemoryScreeningJobs.get(jobId);
+  if (inMem) return inMem;
+  const all = getAllScreeningJobs();
+  return all.find((j) => j.jobId === jobId) || null;
+}
+
+/**
+ * Retrieves the latest active or completed job for a given product
+ */
+export function getScreeningJobByProductId(productId: string): MarketplaceScreeningJob | null {
+  if (!productId) return null;
+  const all = getAllScreeningJobs();
+  const matching = all.filter((j) => j.productId === productId);
+  if (matching.length === 0) return null;
+  matching.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return matching[0];
+}
+
+export interface EnqueueScreeningJobInput {
+  productId: string;
+  sellerId: string;
+  title: string;
+  description: string;
+  category: string;
+  subcategory?: string;
+  price?: number;
+  currency?: string;
+  images?: Array<{ url?: string; id?: string; dataUrl?: string; base64?: string; mimeType?: string; storagePath?: string; name?: string }>;
+  imageUrl?: string;
+  maxWindowMs?: number;
+}
+
+/**
+ * Enqueues a screening job for asynchronous background processing.
+ * Idempotent: Uses `job_${productId}_${contentFingerprint}` as unique key.
+ * If previous jobs exist for this product with a DIFFERENT fingerprint, supersedes them.
+ */
+export function enqueueScreeningJob(input: EnqueueScreeningJobInput): MarketplaceScreeningJob {
+  const contentFingerprint = computeListingContentFingerprint({
+    title: input.title,
+    description: input.description,
+    category: input.category,
+    subcategory: input.subcategory,
+    price: input.price,
+    images: input.images,
+    imageUrl: input.imageUrl
+  });
+
+  const jobId = `job_${input.productId}_${contentFingerprint}`;
+  const now = new Date().toISOString();
+  const maxWindow = input.maxWindowMs || SCREENING_CONFIG.MAX_PROCESSING_WINDOW_MS;
+  const expiresAt = new Date(Date.now() + maxWindow).toISOString();
+
+  const allJobs = getAllScreeningJobs();
+
+  // Check if this exact job already exists
+  const existingJob = allJobs.find((j) => j.jobId === jobId);
+  if (existingJob) {
+    // If it's already completed or currently pending with active time remaining, return it
+    if (
+      existingJob.status === 'COMPLETED' ||
+      ((existingJob.status === 'SCREENING_PENDING' || existingJob.status === 'SCREENING_PROCESSING') &&
+        new Date(existingJob.expiresAt).getTime() > Date.now())
+    ) {
+      return existingJob;
+    }
+  }
+
+  // Supersede any older active jobs for the same product with a DIFFERENT fingerprint
+  let modified = false;
+  for (const j of allJobs) {
+    if (j.productId === input.productId && j.jobId !== jobId) {
+      if (j.status === 'SCREENING_PENDING' || j.status === 'SCREENING_PROCESSING') {
+        j.status = 'SUPERSEDED';
+        j.updatedAt = now;
+        modified = true;
+      }
+    }
+  }
+
+  // Create or refresh job
+  const newJob: MarketplaceScreeningJob = {
+    jobId,
+    productId: input.productId,
+    sellerId: input.sellerId,
+    contentFingerprint,
+    status: 'SCREENING_PENDING',
+    createdAt: existingJob?.createdAt || now,
+    updatedAt: now,
+    startedAt: null,
+    completedAt: null,
+    expiresAt,
+    attemptCount: 0,
+    maxAttempts: SCREENING_CONFIG.MAX_ATTEMPTS,
+    nextRetryAt: now, // Ready for immediate pickup
+    claimedBy: null,
+    claimedAt: null,
+    result: null,
+    resolution: null,
+    listingSnapshot: {
+      title: input.title,
+      description: input.description,
+      category: input.category,
+      subcategory: input.subcategory,
+      price: input.price,
+      currency: input.currency || 'Tsh',
+      images: input.images,
+      imageUrl: input.imageUrl
+    }
+  };
+
+  const updatedJobs = allJobs.filter((j) => j.jobId !== jobId);
+  updatedJobs.unshift(newJob);
+  saveScreeningJobs(updatedJobs);
+
+  return newJob;
+}
+
+/**
+ * Claims the next pending job from the queue with worker lease locking.
+ */
+export function claimNextPendingScreeningJob(workerId: string = 'worker_default'): MarketplaceScreeningJob | null {
+  const allJobs = getAllScreeningJobs();
+  const nowMs = Date.now();
+  const nowIso = new Date().toISOString();
+
+  for (let i = 0; i < allJobs.length; i++) {
+    const job = allJobs[i];
+
+    // Check if expired
+    const isExpired = new Date(job.expiresAt).getTime() <= nowMs;
+    if (isExpired && (job.status === 'SCREENING_PENDING' || job.status === 'SCREENING_PROCESSING')) {
+      job.status = 'EXHAUSTED_DEADLINE';
+      job.lastFailureReason = 'DEADLINE_EXCEEDED';
+      job.updatedAt = nowIso;
+      job.completedAt = nowIso;
+      job.claimedBy = null;
+      allJobs[i] = job;
+      saveScreeningJobs(allJobs);
+      continue;
+    }
+
+    // Eligible for claim if:
+    // 1. Status is SCREENING_PENDING and nextRetryAt <= nowMs
+    // 2. OR Status is SCREENING_PROCESSING but worker lease expired (> 45s)
+    const isReadyForRetry = !job.nextRetryAt || new Date(job.nextRetryAt).getTime() <= nowMs;
+    const isLeaseExpired =
+      job.status === 'SCREENING_PROCESSING' &&
+      job.claimedAt &&
+      nowMs - new Date(job.claimedAt).getTime() > SCREENING_CONFIG.LEASE_TIMEOUT_MS;
+
+    if ((job.status === 'SCREENING_PENDING' && isReadyForRetry) || isLeaseExpired) {
+      job.status = 'SCREENING_PROCESSING';
+      job.claimedBy = workerId;
+      job.claimedAt = nowIso;
+      job.attemptCount += 1;
+      job.startedAt = job.startedAt || nowIso;
+      job.updatedAt = nowIso;
+
+      allJobs[i] = job;
+      saveScreeningJobs(allJobs);
+      return job;
+    }
+  }
+
+  return null;
+}
+
+export interface ProcessJobOptions extends EvaluateListingScreeningOptions {
+  forceTransientFail?: boolean;
+  forcePermanentFail?: boolean;
+}
+
+/**
+ * Processes a claimed screening job by running multimodal evaluation with bounded backoff.
+ */
+export async function processScreeningJob(
+  job: MarketplaceScreeningJob,
+  options?: ProcessJobOptions
+): Promise<{
+  job: MarketplaceScreeningJob;
+  screeningResult: AIScreeningResult;
+  resolution: ScreeningResolution;
+}> {
+  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+
+  // 1. Check if deadline already expired
+  if (new Date(job.expiresAt).getTime() <= nowMs) {
+    job.status = 'EXHAUSTED_DEADLINE';
+    job.lastFailureReason = 'DEADLINE_EXCEEDED';
+    job.completedAt = nowIso;
+    job.updatedAt = nowIso;
+    job.claimedBy = null;
+
+    const deadlineResult: AIScreeningResult = {
+      screeningId: `scr_${Date.now()}`,
+      requestId: `req_dead_${Date.now()}`,
+      status: 'REVIEW_REQUIRED',
+      categories: ['UNCERTAIN'],
+      explanation: 'Muda wa ukaguzi wa AI (dakika 5) umepita. Bounded retries zimemalizika bila kupata jibu kutoka kwa mtoa huduma. Tangazo linashikiliwa kwa usalama.',
+      explanationSwahili: 'Ukaguzi wa tangazo lako unachukua muda mrefu kutokana na wingi wa maombi kwenye mfumo wa AI. Tangazo lako lipo salama na linasubiri uhakiki wa wasimamizi.',
+      confidence: 'LOW',
+      model: AI_SCREENING_PRIMARY_MODEL,
+      policyVersion: AI_SCREENING_POLICY_VERSION,
+      contentFingerprint: job.contentFingerprint,
+      timestamp: nowIso,
+      evaluatedFields: {
+        hasTitle: Boolean(job.listingSnapshot.title),
+        hasDescription: Boolean(job.listingSnapshot.description),
+        hasCategory: Boolean(job.listingSnapshot.category),
+        hasPrice: job.listingSnapshot.price !== undefined,
+        imageCount: Array.isArray(job.listingSnapshot.images) ? job.listingSnapshot.images.length : (job.listingSnapshot.imageUrl ? 1 : 0)
+      },
+      evaluationSource: 'INFRASTRUCTURE_FALLBACK',
+      failureReason: 'DEADLINE_EXCEEDED',
+      isRetryable: true,
+      retryAttempts: job.attemptCount,
+      infrastructureError: '5-minute screening window deadline exceeded'
+    };
+
+    job.result = deadlineResult;
+    const resolution = resolveListingPublishingState({
+      screeningResult: deadlineResult,
+      sellerTrustStatus: 'NEW_SELLER'
+    });
+    job.resolution = resolution;
+
+    const allJobs = getAllScreeningJobs();
+    const idx = allJobs.findIndex((j) => j.jobId === job.jobId);
+    if (idx >= 0) {
+      allJobs[idx] = job;
+      saveScreeningJobs(allJobs);
+    }
+
+    return { job, screeningResult: deadlineResult, resolution };
+  }
+
+  // 2. Perform multimodal screening on the listing snapshot (strictly images + text, zero video)
+  let screeningResult: AIScreeningResult;
+  try {
+    screeningResult = await evaluateMarketplaceListingContent(
+      {
+        productId: job.productId,
+        sellerId: job.sellerId,
+        title: job.listingSnapshot.title,
+        description: job.listingSnapshot.description,
+        category: job.listingSnapshot.category,
+        subcategory: job.listingSnapshot.subcategory,
+        price: job.listingSnapshot.price,
+        currency: job.listingSnapshot.currency,
+        images: job.listingSnapshot.images,
+        imageUrl: job.listingSnapshot.imageUrl,
+        requestId: `req_${job.jobId}_att_${job.attemptCount}`
+      },
+      options
+    );
+  } catch (err: any) {
+    const { isRetryable, reason } = isRetryableAiError(err);
+    screeningResult = {
+      screeningId: `scr_${Date.now()}`,
+      requestId: `req_err_${Date.now()}`,
+      status: 'REVIEW_REQUIRED',
+      categories: ['UNCERTAIN'],
+      explanation: 'Hitilafu ya kiufundi ilitokea wakati wa kuwasiliana na mfumo wa AI.',
+      explanationSwahili: 'Ukaguzi wa tangazo lako unachelewa kidogo kutokana na changamoto ya kiufundi. Tangazo linashikiliwa kwa usalama.',
+      confidence: 'LOW',
+      model: AI_SCREENING_PRIMARY_MODEL,
+      policyVersion: AI_SCREENING_POLICY_VERSION,
+      contentFingerprint: job.contentFingerprint,
+      timestamp: nowIso,
+      evaluatedFields: {
+        hasTitle: Boolean(job.listingSnapshot.title),
+        hasDescription: Boolean(job.listingSnapshot.description),
+        hasCategory: Boolean(job.listingSnapshot.category),
+        hasPrice: job.listingSnapshot.price !== undefined,
+        imageCount: Array.isArray(job.listingSnapshot.images) ? job.listingSnapshot.images.length : (job.listingSnapshot.imageUrl ? 1 : 0)
+      },
+      evaluationSource: 'INFRASTRUCTURE_FALLBACK',
+      failureReason: reason,
+      isRetryable,
+      retryAttempts: job.attemptCount,
+      infrastructureError: sanitizeLogMessage(err?.message || err)
+    };
+  }
+
+  // 3. Evaluate whether outcome is final or transient retryable
+  const isTransientError =
+    screeningResult.evaluationSource === 'INFRASTRUCTURE_FALLBACK' &&
+    screeningResult.isRetryable === true;
+
+  if (isTransientError) {
+    // Check if we still have time in the 5-minute processing window
+    const remainingMs = new Date(job.expiresAt).getTime() - Date.now();
+    const canRetry = remainingMs > 5000 && job.attemptCount < job.maxAttempts;
+
+    if (canRetry) {
+      // Calculate bounded exponential backoff with jitter
+      const delay = Math.min(
+        SCREENING_CONFIG.MAX_BACKOFF_MS,
+        SCREENING_CONFIG.INITIAL_BACKOFF_MS * Math.pow(1.8, Math.max(0, job.attemptCount - 1))
+      );
+      const jitter = 0.8 + Math.random() * 0.4;
+      const actualDelay = Math.min(Math.floor(delay * jitter), remainingMs - 2000);
+
+      job.status = 'SCREENING_PENDING';
+      job.claimedBy = null;
+      job.claimedAt = null;
+      job.nextRetryAt = new Date(Date.now() + Math.max(2000, actualDelay)).toISOString();
+      job.lastFailureReason = screeningResult.failureReason;
+      job.lastError = screeningResult.infrastructureError || 'Transient upstream delay';
+      job.updatedAt = nowIso;
+      job.result = screeningResult;
+
+      console.info(
+        `[Background Screening Queue] Transient delay (${screeningResult.failureReason}) on job ${job.jobId} (attempt ${job.attemptCount}/${job.maxAttempts}). Next retry in ${actualDelay}ms...`
+      );
+    } else {
+      // Retries or time window exhausted
+      job.status = 'EXHAUSTED_DEADLINE';
+      job.lastFailureReason = 'DEADLINE_EXCEEDED';
+      job.completedAt = nowIso;
+      job.updatedAt = nowIso;
+      job.claimedBy = null;
+      job.result = screeningResult;
+
+      console.warn(
+        `[Background Screening Queue] Screening window exhausted on job ${job.jobId} after ${job.attemptCount} attempt(s). Listing kept unpublished.`
+      );
+    }
+  } else {
+    // Model decision received (PASS / BLOCK / REVIEW_REQUIRED / DETERMINISTIC BLOCK / SAFETY BLOCK)
+    job.status = 'COMPLETED';
+    job.completedAt = nowIso;
+    job.updatedAt = nowIso;
+    job.claimedBy = null;
+    job.claimedAt = null;
+    job.result = screeningResult;
+    job.lastFailureReason = undefined;
+    job.lastError = undefined;
+
+    console.info(
+      `[Background Screening Queue] Job ${job.jobId} completed successfully with status ${screeningResult.status} (${screeningResult.evaluationSource || 'MODEL'}).`
+    );
+  }
+
+  const resolution = resolveListingPublishingState({
+    screeningResult,
+    sellerTrustStatus: 'NEW_SELLER' // Safe baseline; actual publishing checks authoritative seller trust
+  });
+  job.resolution = resolution;
+
+  const allJobs = getAllScreeningJobs();
+  const idx = allJobs.findIndex((j) => j.jobId === job.jobId);
+  if (idx >= 0) {
+    allJobs[idx] = job;
+    saveScreeningJobs(allJobs);
+  }
+
+  return { job, screeningResult, resolution };
+}
+

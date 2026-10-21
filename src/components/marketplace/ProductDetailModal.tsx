@@ -468,9 +468,21 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     </p>
                   )}
                   {currentProduct.aiScreening && currentProduct.aiScreening.status !== 'PASS' && (
-                    <div className="bg-stone-100 p-2 rounded-lg border border-stone-200 text-stone-700 space-y-1">
-                      <p className="font-semibold text-[11px] text-stone-800">
-                        Ukaguzi wa Kiotomatiki (AI Screening): {currentProduct.aiScreening.status}
+                    <div className="bg-stone-100 p-2.5 rounded-lg border border-stone-200 text-stone-700 space-y-1">
+                      <p className="font-semibold text-[11px] text-stone-800 flex items-center justify-between">
+                        <span>
+                          Ukaguzi wa Kiotomatiki (AI Screening):{' '}
+                          {currentProduct.aiScreening.status === 'BLOCK'
+                            ? 'Imezuiwa (BLOCK)'
+                            : (currentProduct.aiScreening.evaluationSource === 'INFRASTRUCTURE_FALLBACK' || currentProduct.aiScreening.failureReason === 'MODEL_UNAVAILABLE_503')
+                            ? 'Miundombinu Haipatikani / 503 (Inasubiri Ukaguzi)'
+                            : 'Inahitaji Ukaguzi (REVIEW_REQUIRED)'}
+                        </span>
+                        {currentProduct.aiScreening.isRetryable && (
+                          <span className="text-[10px] text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded font-mono">
+                            Retryable
+                          </span>
+                        )}
                       </p>
                       <p className="text-[11px]">
                         {currentProduct.aiScreening.explanationSwahili || currentProduct.aiScreening.explanation}

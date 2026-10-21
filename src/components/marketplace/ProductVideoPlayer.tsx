@@ -3,7 +3,6 @@ import {
   Video as VideoIcon,
   AlertTriangle,
   RefreshCw,
-  DownloadCloud,
   CheckCircle2,
   HardDrive,
   Cloud
@@ -149,19 +148,22 @@ export const ProductVideoPlayer: React.FC<ProductVideoPlayerProps> = ({
 
   return (
     <div className={`space-y-2 ${className}`}>
-      {/* Video Container Box */}
-      <div className="relative w-full rounded-xl overflow-hidden bg-black border border-stone-800 aspect-video flex items-center justify-center group shadow-md">
+      {/* Video Container Box - Context menu prevented to disallow video saving */}
+      <div
+        className="relative w-full rounded-xl overflow-hidden bg-black border border-stone-800 aspect-video flex items-center justify-center group shadow-md"
+        onContextMenu={(e) => e.preventDefault()}
+      >
         {/* Restoring progress overlay */}
         {isRestoring && (
           <div className="absolute inset-0 z-20 bg-stone-950/85 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center">
             <div className="w-12 h-12 rounded-full border-3 border-amber-500/30 border-t-amber-500 animate-spin flex items-center justify-center mb-3">
-              <DownloadCloud className="w-5 h-5 text-amber-400" />
+              <Cloud className="w-5 h-5 text-amber-400" />
             </div>
             <p className="text-sm font-semibold text-white mb-1">
-              Inapakua video kutoka kwenye hifadhi ya kudumu...
+              Inapakia mtiririko wa video kutoka kwenye hifadhi ya kudumu...
             </p>
             <p className="text-xs text-stone-400 max-w-xs mb-3">
-              Kuhakikisha video haipotei hata baada ya seva kuwashwa upya.
+              Kuhakikisha video inacheza salama bila kupotea.
             </p>
             {/* Progress bar */}
             <div className="w-full max-w-xs bg-stone-800 rounded-full h-2 overflow-hidden border border-stone-700">
@@ -184,10 +186,13 @@ export const ProductVideoPlayer: React.FC<ProductVideoPlayerProps> = ({
             poster={video.thumbnailUrl}
             preload="metadata"
             controls
+            controlsList="nodownload"
+            disablePictureInPicture
+            onContextMenu={(e) => e.preventDefault()}
             playsInline
             autoPlay={autoPlay}
             onError={handleVideoError}
-            className="w-full h-full object-contain"
+            className="w-full h-full object-contain select-none"
             aria-label={video.title || `Video ya ${productTitle}`}
           >
             Kivinjari chako hakiwezi kucheza video hii moja kwa moja.
@@ -209,7 +214,7 @@ export const ProductVideoPlayer: React.FC<ProductVideoPlayerProps> = ({
               <span>Video Haiwezi Kuchezwa Moja kwa Moja</span>
             </div>
             <p className="text-xs text-stone-400 mb-3 leading-relaxed">
-              {errorMessage || 'Video haipatikani kwenye mtandao kwa sasa. Unaweza kujaribu kupakua upya.'}
+              {errorMessage || 'Video haipatikani kwa sasa. Unaweza kuunganisha upya mtiririko.'}
             </p>
             <button
               type="button"
@@ -218,7 +223,7 @@ export const ProductVideoPlayer: React.FC<ProductVideoPlayerProps> = ({
               className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 active:scale-98 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRestoring ? 'animate-spin' : ''}`} />
-              <span>Pakua Upya kutoka Cloud</span>
+              <span>Unganisha Upya kutoka Cloud</span>
             </button>
           </div>
         ) : (

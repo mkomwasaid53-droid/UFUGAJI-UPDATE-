@@ -137,6 +137,21 @@ export const AI_SCREENING_CATEGORY_LABELS: Record<AIScreeningCategory, { sw: str
   }
 };
 
+export type AIScreeningEvaluationSource =
+  | 'MODEL'
+  | 'DETERMINISTIC_RULES'
+  | 'INFRASTRUCTURE_FALLBACK'
+  | 'SAFETY_FILTER';
+
+export type AIScreeningFailureReason =
+  | 'MODEL_UNAVAILABLE_503'
+  | 'RATE_LIMITED_429'
+  | 'DEADLINE_EXCEEDED'
+  | 'MALFORMED_RESPONSE'
+  | 'IMAGE_FETCH_FAILED'
+  | 'NETWORK_ERROR'
+  | 'UNKNOWN';
+
 /**
  * Immutable Record of an AI Screening Evaluation
  */
@@ -161,6 +176,54 @@ export interface AIScreeningResult {
     imageCount: number;
   };
   cached?: boolean;
+  evaluationSource?: AIScreeningEvaluationSource;
+  failureReason?: AIScreeningFailureReason;
+  isRetryable?: boolean;
+  retryAttempts?: number;
+  infrastructureError?: string;
+}
+
+/**
+ * Asynchronous Background Screening Job Statuses
+ */
+export type ScreeningJobStatus =
+  | 'SCREENING_PENDING'
+  | 'SCREENING_PROCESSING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'EXHAUSTED_DEADLINE'
+  | 'SUPERSEDED';
+
+export interface MarketplaceScreeningJob {
+  jobId: string;
+  productId: string;
+  sellerId: string;
+  contentFingerprint: string;
+  status: ScreeningJobStatus;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  expiresAt: string;
+  attemptCount: number;
+  maxAttempts: number;
+  nextRetryAt?: string | null;
+  lastFailureReason?: AIScreeningFailureReason;
+  lastError?: string;
+  claimedBy?: string | null;
+  claimedAt?: string | null;
+  result?: AIScreeningResult | null;
+  resolution?: any | null;
+  listingSnapshot: {
+    title: string;
+    description: string;
+    category: string;
+    subcategory?: string;
+    price?: number;
+    currency?: string;
+    images?: Array<{ url?: string; id?: string; dataUrl?: string; base64?: string; mimeType?: string; storagePath?: string; name?: string }>;
+    imageUrl?: string;
+  };
 }
 
 
@@ -203,7 +266,10 @@ export type ModerationReasonCode =
   | 'DELIVERY_INFORMATION_PROBLEM'
   | 'MEDIA_PROBLEM'
   | 'POLICY_VIOLATION'
-  | 'OTHER';
+  | 'OTHER'
+  | 'AI_CONTENT_BLOCK'
+  | 'AI_REVIEW_REQUIRED'
+  | 'AI_MODEL_UNAVAILABLE';
 
 export const MODERATION_REASON_LABELS: Record<ModerationReasonCode, { sw: string; en: string }> = {
   INVALID_CATEGORY: {
@@ -265,6 +331,18 @@ export const MODERATION_REASON_LABELS: Record<ModerationReasonCode, { sw: string
   OTHER: {
     sw: 'Sababu nyingine ya kiutawala',
     en: 'Other administrative reason'
+  },
+  AI_CONTENT_BLOCK: {
+    sw: 'Maudhui yamezuiwa moja kwa moja na mfumo wa ukaguzi wa AI',
+    en: 'Content blocked by AI screening engine'
+  },
+  AI_REVIEW_REQUIRED: {
+    sw: 'Tangazo linahitaji uhakiki wa kiutawala (AI Review Required)',
+    en: 'Administrative review required by AI screening'
+  },
+  AI_MODEL_UNAVAILABLE: {
+    sw: 'Mfumo wa AI haupatikani kwa muda (503 / Offline Fallback)',
+    en: 'AI model temporarily unavailable (503 / offline fallback)'
   }
 };
 
@@ -340,6 +418,7 @@ export type ModerationQueueFilter =
   | 'AI_CLASSIFICATION_AMBIGUOUS'
   | 'CATEGORY_MISMATCH'
   | 'AI_SCREENING_BLOCKED'
+  | 'AI_MODEL_UNAVAILABLE'
   | 'SUSPENDED'
   | 'RECENTLY_UPDATED';
 

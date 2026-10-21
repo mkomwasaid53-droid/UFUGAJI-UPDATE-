@@ -1028,7 +1028,9 @@ async function startServer() {
             priority: screeningResult.status === 'BLOCK' ? 'CRITICAL' : screeningResult.status === 'REVIEW_REQUIRED' ? 'HIGH' : 'NORMAL',
             reasonCode: screeningResult.status === 'BLOCK' ? 'AI_CONTENT_BLOCK' : (screeningResult.status === 'REVIEW_REQUIRED' ? 'AI_REVIEW_REQUIRED' : null),
             reasonText: screeningResult.categories.length > 0 ? screeningResult.categories.join(', ') : null,
-            internalNote: `Authoritative update screening: ${screeningResult.status}`,
+            internalNote: screeningResult.evaluationSource === 'INFRASTRUCTURE_FALLBACK'
+              ? `AI Screening Unavailable (${screeningResult.failureReason || '503'}, retries: ${screeningResult.retryAttempts || 0})`
+              : `Authoritative update screening: ${screeningResult.status} (${screeningResult.evaluationSource || 'MODEL'})`,
             publicExplanation: resolution.publicUnavailableReason || (resolution.canPublishActiveImmediately ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).' : 'Tangazo linasubiri idhini ya msimamizi.'),
             correctionInstructions: null,
             reviewedByUserId: resolution.canPublishActiveImmediately ? 'system_ai_trusted_seller' : (screeningResult.status === 'BLOCK' ? 'system_ai_screening_block' : null),
@@ -1104,7 +1106,9 @@ async function startServer() {
             priority: screeningResult.status === 'BLOCK' ? 'CRITICAL' : screeningResult.status === 'REVIEW_REQUIRED' ? 'HIGH' : 'NORMAL',
             reasonCode: screeningResult.status === 'BLOCK' ? 'AI_CONTENT_BLOCK' : (screeningResult.status === 'REVIEW_REQUIRED' ? 'AI_REVIEW_REQUIRED' : null),
             reasonText: screeningResult.categories.length > 0 ? screeningResult.categories.join(', ') : null,
-            internalNote: `Authoritative creation screening: ${screeningResult.status}`,
+            internalNote: screeningResult.evaluationSource === 'INFRASTRUCTURE_FALLBACK'
+              ? `AI Screening Unavailable (${screeningResult.failureReason || '503'}, retries: ${screeningResult.retryAttempts || 0})`
+              : `Authoritative creation screening: ${screeningResult.status} (${screeningResult.evaluationSource || 'MODEL'})`,
             publicExplanation: resolution.publicUnavailableReason || (resolution.canPublishActiveImmediately ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).' : 'Tangazo limewasilishwa kwa ukaguzi wa wasimamizi (PENDING_REVIEW).'),
             correctionInstructions: null,
             reviewedByUserId: resolution.canPublishActiveImmediately ? 'system_ai_trusted_seller' : (screeningResult.status === 'BLOCK' ? 'system_ai_screening_block' : null),
@@ -1273,6 +1277,7 @@ async function startServer() {
         'WRONG_CATEGORY',
         'ANIMAL_WELFARE_CONCERN',
         'INAPPROPRIATE_CONTENT',
+        'INAPPROPRIATE_VIDEO_CONTENT',
         'COUNTERFEIT_OR_STOLEN',
         'OTHER',
         'SPAM',
@@ -1563,15 +1568,81 @@ async function startServer() {
         sellerTrustStatus: sellerTrust
       });
 
+      if (productId) {
+        const existing = readMarketplaceProductsFromDisk();
+        const idx = existing.findIndex((p: any) => p.productId === productId);
+        if (idx >= 0) {
+          const currentProd = existing[idx];
+          const currentFingerprint = computeListingContentFingerprint({
+            title: currentProd.title,
+            description: currentProd.description,
+            category: currentProd.category,
+            subcategory: currentProd.subcategory,
+            price: currentProd.price,
+            images: currentProd.images,
+            imageUrl: currentProd.imageUrl
+          });
+
+          // Only apply if the fingerprint matches the exact current product content
+          if (screeningResult.contentFingerprint === currentFingerprint) {
+            currentProd.aiScreening = screeningResult;
+            currentProd.aiScreenedAt = new Date().toISOString();
+
+            // Re-evaluate publication state respecting seller trust & existing sanctions
+            const resolvedPub = resolveListingPublishingState({
+              screeningResult,
+              sellerTrustStatus: sellerTrust,
+              currentModerationStatus: currentProd.moderationStatus
+            });
+
+            if (screeningResult.status === 'BLOCK') {
+              currentProd.moderationStatus = 'REJECTED';
+              currentProd.status = 'inactive';
+            } else if (resolvedPub.canPublishActiveImmediately && currentProd.status !== 'draft') {
+              currentProd.moderationStatus = resolvedPub.recommendedModerationStatus;
+              currentProd.status = 'active';
+            } else {
+              currentProd.moderationStatus = resolvedPub.recommendedModerationStatus;
+              currentProd.status = 'inactive';
+            }
+
+            existing[idx] = currentProd;
+            writeMarketplaceProductsToDisk(existing);
+
+            registerListingModerationRecord({
+              moderationId: `mod_${currentProd.productId}`,
+              targetType: 'LISTING',
+              targetId: currentProd.productId,
+              productId: currentProd.productId,
+              listingId: currentProd.productId,
+              sellerId: authoritativeSellerId,
+              shopId: currentProd.shopId || authoritativeSellerId,
+              status: currentProd.moderationStatus,
+              priority: screeningResult.status === 'BLOCK' ? 'CRITICAL' : screeningResult.status === 'REVIEW_REQUIRED' ? 'HIGH' : 'NORMAL',
+              reasonCode: screeningResult.status === 'BLOCK' ? 'AI_CONTENT_BLOCK' : (screeningResult.status === 'REVIEW_REQUIRED' ? 'AI_REVIEW_REQUIRED' : null),
+              reasonText: screeningResult.categories.length > 0 ? screeningResult.categories.join(', ') : null,
+              internalNote: `Re-screened: ${screeningResult.status} (${screeningResult.evaluationSource || 'MODEL'})`,
+              publicExplanation: resolvedPub.publicUnavailableReason || 'Tangazo limekaguliwa upya.',
+              reviewedByUserId: resolvedPub.canPublishActiveImmediately ? 'system_ai_trusted_seller' : null,
+              reviewedByDisplayName: resolvedPub.canPublishActiveImmediately ? 'AI Screening + Trusted Seller' : null,
+              reviewedAt: resolvedPub.canPublishActiveImmediately ? new Date().toISOString() : null,
+              createdAt: currentProd.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            });
+          }
+        }
+      }
+
       res.json({
         success: true,
         screeningResult,
         resolution
       });
     } catch (err: any) {
+      const sanitizedErr = String(err?.message || err || '').replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_API_KEY]');
       res.status(500).json({
         error: 'Hitilafu ya ukaguzi wa maudhui ya AI',
-        details: err?.message,
+        details: sanitizedErr,
         fallbackResult: {
           status: 'SCREENING_ERROR',
           categories: ['UNCERTAIN'],

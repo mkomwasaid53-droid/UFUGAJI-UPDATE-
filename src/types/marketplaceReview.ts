@@ -57,6 +57,7 @@ export type ReportReason =
   | 'DUPLICATE_REVIEW'
   | 'IMPERSONATION'
   | 'PRIVACY_VIOLATION'
+  | 'INAPPROPRIATE_VIDEO_CONTENT'
   | 'OTHER';
 
 export type ReportStatus = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'DISMISSED';

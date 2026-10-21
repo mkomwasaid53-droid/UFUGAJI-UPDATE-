@@ -28,8 +28,13 @@ import {
   Lock,
   EyeOff,
   RefreshCw,
-  X
+  X,
+  Package,
+  Layers,
+  DollarSign
 } from 'lucide-react';
+import { isScreeningResultUpToDate } from '../../services/marketplaceAiScreeningService';
+import { formatTshPrice } from '../../services/marketplaceService';
 
 interface ListingModerationActionModalProps {
   item: ModerationQueueItem;
@@ -68,9 +73,14 @@ export const ListingModerationActionModal: React.FC<ListingModerationActionModal
   );
   const [formError, setFormError] = useState<string | null>(null);
 
+  const activeScreening = item.aiScreening || product.aiScreening;
   const hasScreeningError =
-    item.aiScreening?.status === 'SCREENING_ERROR' ||
-    product.aiScreening?.status === 'SCREENING_ERROR';
+    activeScreening?.status === 'SCREENING_ERROR';
+
+  const isFingerprintStale = React.useMemo(() => {
+    if (!activeScreening || !activeScreening.contentFingerprint) return false;
+    return !isScreeningResultUpToDate(product, activeScreening);
+  }, [product, activeScreening]);
 
   // Map actionType to actual ModerationAction
   const getAction = (): ModerationAction => {
@@ -136,6 +146,22 @@ export const ListingModerationActionModal: React.FC<ListingModerationActionModal
       }
     }
 
+    // Stale Fingerprint guard
+    if (action === 'APPROVE_LISTING' && isFingerprintStale) {
+      if (!manualReviewOverride) {
+        setFormError(
+          'Maudhui ya tangazo hili yamebadilika tangu ukaguzi wa mwisho wa AI (Fingerprint Mismatch). Msimamizi lazima athibitishe kuwa amekagua maudhui ya sasa kwa macho (Manual Review Override) kabla ya kuidhinisha.'
+        );
+        return;
+      }
+      if (!internalNote.trim() || internalNote.trim().length < 5) {
+        setFormError(
+          'Tafadhali andika maelekezo ya ukaguzi wa mwongozo (internal note angalau herufi 5) kuthibitisha ukaguzi wa maudhui yaliyobadilika kabla ya kuidhinisha.'
+        );
+        return;
+      }
+    }
+
     try {
       await onSubmit({
         action,
@@ -145,7 +171,7 @@ export const ListingModerationActionModal: React.FC<ListingModerationActionModal
         publicExplanation: publicExplanation.trim() || undefined,
         correctionInstructions: correctionInstructions.trim() || undefined,
         relatedReportId: selectedReportId ? selectedReportId : undefined,
-        manualReviewOverride: hasScreeningError ? Boolean(manualReviewOverride) : undefined
+        manualReviewOverride: (hasScreeningError || isFingerprintStale) ? Boolean(manualReviewOverride) : undefined
       });
     } catch (err: any) {
       setFormError(err.message || 'Hitilafu wakati wa kutekeleza hatua ya ukaguzi.');
@@ -180,6 +206,26 @@ export const ListingModerationActionModal: React.FC<ListingModerationActionModal
 
         {/* Content & Form */}
         <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
+          {/* Target Product Summary Banner */}
+          <div className="p-3 bg-stone-100 rounded-xl border border-stone-200 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-semibold uppercase text-stone-500 tracking-wider">
+                Tangazo linalochukuliwa hatua:
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white border border-stone-300 text-stone-700">
+                {product.productId}
+              </span>
+            </div>
+            <p className="font-bold text-stone-900 text-sm truncate">{product.title}</p>
+            <div className="flex items-center gap-3 text-[11px] text-stone-600 flex-wrap">
+              <span>Muuzaji: <strong className="text-stone-800">{product.sellerName || product.sellerId}</strong></span>
+              <span>•</span>
+              <span>Kundi: <strong className="text-stone-800">{product.category}</strong></span>
+              <span>•</span>
+              <span>Bei: <strong className="text-emerald-700">{formatTshPrice(product.price)}</strong></span>
+            </div>
+          </div>
+
           {formError && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -216,8 +262,32 @@ export const ListingModerationActionModal: React.FC<ListingModerationActionModal
                 </div>
               )}
 
-              {/* SCREENING_ERROR Warning & Manual Override Checkbox (Requirement 6) */}
-              {hasScreeningError && (
+              {/* Stale Fingerprint Warning & Manual Override Checkbox */}
+              {isFingerprintStale && (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-300 text-amber-950 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-xs text-amber-900">
+                    <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>Maudhui ya Tangazo Yamebadilika (Fingerprint Mismatch)</span>
+                  </div>
+                  <p className="text-[11px] text-amber-900 leading-relaxed">
+                    Maudhui ya tangazo hili (maelezo, kundi, bei, au picha) yamebadilishwa na muuzaji baada ya ukaguzi wa awali wa AI. Kuidhinisha tangazo hili kutasasisha rekodi kwa maudhui ya sasa.
+                  </p>
+                  <label className="flex items-start gap-2 pt-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={manualReviewOverride}
+                      onChange={(e) => setManualReviewOverride(e.target.checked)}
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500 rounded cursor-pointer"
+                    />
+                    <span className="text-[11px] font-bold text-stone-900">
+                      Nathibitisha kuwa nimekagua maudhui mapya ya sasa kwa macho (Manual Review Override).
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {/* SCREENING_ERROR Warning & Manual Override Checkbox */}
+              {hasScreeningError && !isFingerprintStale && (
                 <div className="p-3 bg-amber-50 rounded-xl border border-amber-300 text-amber-950 space-y-2">
                   <div className="flex items-center gap-2 font-bold text-xs text-amber-900">
                     <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />

@@ -159,6 +159,8 @@ export interface MarketplaceProduct {
   // V1.0 AI Content Screening
   aiScreening?: import('./marketplaceModeration').AIScreeningResult | null;
   aiScreenedAt?: string;
+  screeningJobId?: string | null;
+  screeningJobStatus?: import('./marketplaceModeration').ScreeningJobStatus;
 
   // Seller Trust Status reference (V1.0 Admin Review & Trust Integration)
   sellerTrustStatus?: SellerTrustStatus;

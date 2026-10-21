@@ -30,6 +30,7 @@ export type ReportReasonCode =
   | 'WRONG_CATEGORY'
   | 'ANIMAL_WELFARE_CONCERN'
   | 'INAPPROPRIATE_CONTENT'
+  | 'INAPPROPRIATE_VIDEO_CONTENT'
   | 'COUNTERFEIT_OR_STOLEN'
   | 'SPAM'
   | 'WRONG_PRODUCT'
@@ -137,6 +138,11 @@ export const REPORT_REASON_METADATA: Record<
     sw: 'Maudhui Yasiyofaa Sokoni (Inappropriate Content)',
     en: 'Inappropriate content',
     description: 'Maudhui yasiyo na staha au yenye picha zisizofaa.'
+  },
+  INAPPROPRIATE_VIDEO_CONTENT: {
+    sw: 'Maudhui Yasiyofaa ya Video (Inappropriate Video Content)',
+    en: 'Inappropriate or harmful video content',
+    description: 'Video inaonyesha picha zisizo na staha, ukatili, utapeli, au bidhaa isiyolingana na maelezo ya tangazo.'
   },
   NON_MARKETPLACE_CONTENT: {
     sw: 'Maudhui Yasiyohusu Mifugo/Kilimo (Non-Marketplace Content)',

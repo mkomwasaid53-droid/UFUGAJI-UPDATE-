@@ -170,13 +170,13 @@ export const AdminListingModeration: React.FC = () => {
     let notReviewed = 0;
     let newSellerPending = 0;
     let aiReviewRequired = 0;
+    let aiModelUnavailable = 0;
     let aiScreeningError = 0;
     let reported = 0;
     let underReview = 0;
     let invalid = 0;
     let approved = 0;
     let suspended = 0;
-
     let blocked = 0;
 
     for (const item of queue) {
@@ -188,6 +188,12 @@ export const AdminListingModeration: React.FC = () => {
         newSellerPending++;
       }
       if (item.aiScreening?.status === 'REVIEW_REQUIRED') aiReviewRequired++;
+      if (
+        item.aiScreening?.evaluationSource === 'INFRASTRUCTURE_FALLBACK' ||
+        item.aiScreening?.failureReason === 'MODEL_UNAVAILABLE_503'
+      ) {
+        aiModelUnavailable++;
+      }
       if (item.aiScreening?.status === 'BLOCK' || item.moderationRecord.status === 'REJECTED') blocked++;
       if (item.aiScreening?.status === 'SCREENING_ERROR') aiScreeningError++;
       if (item.reportCount > 0) reported++;
@@ -202,6 +208,7 @@ export const AdminListingModeration: React.FC = () => {
       notReviewed,
       newSellerPending,
       aiReviewRequired,
+      aiModelUnavailable,
       blocked,
       aiScreeningError,
       reported,
@@ -326,6 +333,7 @@ export const AdminListingModeration: React.FC = () => {
             { id: 'ALL', label: `Zote (${stats.total})` },
             { id: 'NEW_SELLER_PENDING', label: `Wauzaji Wapya (${stats.newSellerPending})` },
             { id: 'AI_SCREENING_REVIEW_REQUIRED', label: `AI Review (${stats.aiReviewRequired})` },
+            { id: 'AI_MODEL_UNAVAILABLE', label: `AI 503/Offline (${stats.aiModelUnavailable})` },
             { id: 'AI_SCREENING_BLOCKED', label: `Zilizozuiwa (${stats.blocked})` },
             { id: 'AI_SCREENING_ERROR', label: `AI Hitilafu (${stats.aiScreeningError})` },
             { id: 'REPORTED', label: `Ripoti (${stats.reported})` },
@@ -377,6 +385,7 @@ export const AdminListingModeration: React.FC = () => {
               <option value="ALL">Yote ({stats.total})</option>
               <option value="NEW_SELLER_PENDING">Wauzaji Wapya Wanaosubiri ({stats.newSellerPending})</option>
               <option value="AI_SCREENING_REVIEW_REQUIRED">AI: Inahitaji Ukaguzi ({stats.aiReviewRequired})</option>
+              <option value="AI_MODEL_UNAVAILABLE">AI: Model Haipatikani / 503 ({stats.aiModelUnavailable})</option>
               <option value="AI_SCREENING_ERROR">AI: Hitilafu ya Screening ({stats.aiScreeningError})</option>
               <option value="REPORTED">Yenye Ripoti ({stats.reported})</option>
               <option value="UNDER_REVIEW">Yenye Ukaguzi Unaondelea ({stats.underReview})</option>
@@ -489,18 +498,29 @@ export const AdminListingModeration: React.FC = () => {
 
                     {item.aiScreening && (
                       <span
-                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                        className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
                           item.aiScreening.status === 'PASS'
                             ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                             : item.aiScreening.status === 'BLOCK'
-                            ? 'bg-rose-100 text-rose-800 border-rose-300'
+                            ? 'bg-rose-100 text-rose-800 border-rose-300 ring-1 ring-rose-300/40'
+                            : (item.aiScreening.evaluationSource === 'INFRASTRUCTURE_FALLBACK' || item.aiScreening.failureReason === 'MODEL_UNAVAILABLE_503')
+                            ? 'bg-purple-50 text-purple-900 border-purple-300 ring-1 ring-purple-300/50'
+                            : (item.aiScreening.status === 'REVIEW_REQUIRED' && item.aiScreening.evaluationSource === 'MODEL')
+                            ? 'bg-amber-100 text-amber-900 border-amber-300 ring-1 ring-amber-400/50'
                             : 'bg-amber-100 text-amber-900 border-amber-300'
                         }`}
                         title={item.aiScreening.explanationSwahili || item.aiScreening.explanation}
                       >
                         <Shield className="w-3 h-3" />
-                        AI: {item.aiScreening.status}
-                        {item.aiScreening.categories?.length > 0 && ` (${item.aiScreening.categories[0]})`}
+                        {item.aiScreening.status === 'BLOCK' ? (
+                          <span>AI: BLOCKED {item.aiScreening.evaluationSource === 'DETERMINISTIC_RULES' ? '(Sheria ya Usalama)' : '(Kikaguzi cha Usalama)'}</span>
+                        ) : (item.aiScreening.evaluationSource === 'INFRASTRUCTURE_FALLBACK' || item.aiScreening.failureReason === 'MODEL_UNAVAILABLE_503') ? (
+                          <span>AI: MODEL UNAVAILABLE ({item.aiScreening.failureReason === 'MODEL_UNAVAILABLE_503' ? '503 High Demand' : 'Offline/Retried'})</span>
+                        ) : (item.aiScreening.status === 'REVIEW_REQUIRED' && item.aiScreening.evaluationSource === 'MODEL') ? (
+                          <span>AI: REVIEW_REQUIRED (Uamuzi wa Model: {item.aiScreening.categories?.[0] || 'Muktadha'})</span>
+                        ) : (
+                          <span>AI: {item.aiScreening.status} {item.aiScreening.categories?.length > 0 && `(${item.aiScreening.categories[0]})`}</span>
+                        )}
                       </span>
                     )}
                   </div>

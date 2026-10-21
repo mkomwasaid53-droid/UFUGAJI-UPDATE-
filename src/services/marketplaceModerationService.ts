@@ -496,7 +496,14 @@ export async function fetchModerationQueue(
         matchesFilter = effectiveAiScreening?.status === 'REVIEW_REQUIRED';
         break;
       case 'AI_SCREENING_ERROR':
-        matchesFilter = effectiveAiScreening?.status === 'SCREENING_ERROR';
+        matchesFilter =
+          effectiveAiScreening?.status === 'SCREENING_ERROR' ||
+          effectiveAiScreening?.evaluationSource === 'INFRASTRUCTURE_FALLBACK';
+        break;
+      case 'AI_MODEL_UNAVAILABLE':
+        matchesFilter =
+          effectiveAiScreening?.evaluationSource === 'INFRASTRUCTURE_FALLBACK' ||
+          effectiveAiScreening?.failureReason === 'MODEL_UNAVAILABLE_503';
         break;
       case 'REPORTED':
         matchesFilter = combinedProductReports.length > 0;
