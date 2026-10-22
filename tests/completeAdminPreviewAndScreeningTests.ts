@@ -525,19 +525,27 @@ export async function runCompleteAdminPreviewAndScreeningTests() {
       status: 'PASS',
       categories: [],
       explanation: 'OK',
+      explanationSwahili: 'Sawa',
       confidence: 'HIGH',
       model: AI_SCREENING_PRIMARY_MODEL,
       policyVersion: AI_SCREENING_POLICY_VERSION,
       contentFingerprint: computeListingContentFingerprint(testProductForAction),
       timestamp: new Date().toISOString(),
-      evaluationSource: 'MODEL'
+      evaluationSource: 'MODEL',
+      evaluatedFields: {
+        hasTitle: true,
+        hasDescription: true,
+        hasCategory: true,
+        hasPrice: true,
+        imageCount: 1
+      }
     }
   };
 
   // Set seller as TRUSTED_SELLER so it is fully eligible
   saveSellerProfileToCache({
     uid: 'seller_action_test',
-    name: 'Said Mkomwa',
+    businessName: 'Said Mkomwa',
     phoneNumber: '0712345678',
     trustStatus: 'TRUSTED_SELLER',
     isIdentityVerified: true,
@@ -546,14 +554,14 @@ export async function runCompleteAdminPreviewAndScreeningTests() {
     successfulSalesCount: 15,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
-  });
+  } as any);
 
   // Ensure seller has active monetization record
   sellerMonetizationService.cacheRecord({
     sellerUserId: 'seller_action_test',
     sellerProfileId: 'seller_action_test',
     status: 'ACTIVE',
-    plan: 'BASIC',
+    plan: 'SELLER_MONTHLY',
     price: 25000,
     currency: 'TZS',
     trialStartAt: null,
@@ -564,7 +572,7 @@ export async function runCompleteAdminPreviewAndScreeningTests() {
     currentPeriodEndAt: new Date(Date.now() + 30 * 86400000).toISOString(),
     activatedAt: new Date().toISOString(),
     lastPaymentAt: new Date().toISOString(),
-    lastPaymentStatus: 'COMPLETED',
+    lastPaymentStatus: 'SUCCESS' as any,
     nextRenewalAt: new Date(Date.now() + 30 * 86400000).toISOString(),
     expiredAt: null,
     cancelledAt: null,

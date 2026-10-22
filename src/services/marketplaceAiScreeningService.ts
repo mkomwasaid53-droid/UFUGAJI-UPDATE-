@@ -1244,6 +1244,7 @@ Jibu KWA JSON PEKEE kwa muundo huu:
 
 export const SCREENING_CONFIG = {
   MAX_PROCESSING_WINDOW_MS: 300_000, // 5 minutes window
+  MAX_SCREENING_WINDOW_MS: 300_000,  // Alias for test compatibility
   INITIAL_BACKOFF_MS: 3_000,         // 3 seconds initial backoff
   MAX_BACKOFF_MS: 60_000,            // 60 seconds max interval
   MAX_ATTEMPTS: 12,                  // Up to 12 attempts over 5 minutes

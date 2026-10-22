@@ -1007,6 +1007,12 @@ export async function createMarketplaceProduct(
         newProduct.aiScreening = serverSaved.aiScreening;
         newProduct.aiScreenedAt = serverSaved.aiScreenedAt;
       }
+      if (serverSaved && serverSaved.screeningJobId) {
+        newProduct.screeningJobId = serverSaved.screeningJobId;
+      }
+      if (serverSaved && serverSaved.screeningJobStatus) {
+        newProduct.screeningJobStatus = serverSaved.screeningJobStatus;
+      }
       if (serverSaved && serverSaved.moderationStatus) {
         newProduct.moderationStatus = serverSaved.moderationStatus;
         newProduct.status = serverSaved.status;
@@ -1317,6 +1323,12 @@ export async function updateMarketplaceProduct(
       if (serverSaved && serverSaved.aiScreening) {
         updatedProduct.aiScreening = serverSaved.aiScreening;
         updatedProduct.aiScreenedAt = serverSaved.aiScreenedAt;
+      }
+      if (serverSaved && serverSaved.screeningJobId) {
+        updatedProduct.screeningJobId = serverSaved.screeningJobId;
+      }
+      if (serverSaved && serverSaved.screeningJobStatus) {
+        updatedProduct.screeningJobStatus = serverSaved.screeningJobStatus;
       }
       if (serverSaved && serverSaved.moderationStatus) {
         updatedProduct.moderationStatus = serverSaved.moderationStatus;

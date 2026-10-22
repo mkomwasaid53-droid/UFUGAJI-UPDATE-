@@ -269,9 +269,14 @@ export type ModerationReasonCode =
   | 'OTHER'
   | 'AI_CONTENT_BLOCK'
   | 'AI_REVIEW_REQUIRED'
-  | 'AI_MODEL_UNAVAILABLE';
+  | 'AI_MODEL_UNAVAILABLE'
+  | 'AI_SCREENING_PENDING';
 
 export const MODERATION_REASON_LABELS: Record<ModerationReasonCode, { sw: string; en: string }> = {
+  AI_SCREENING_PENDING: {
+    sw: 'Tangazo limewekwa kwenye foleni ya uchunguzi wa AI',
+    en: 'Listing enqueued for background AI screening'
+  },
   INVALID_CATEGORY: {
     sw: 'Kundi lisilo sahihi au lisilotambuliwa sokoni',
     en: 'Invalid or unrecognized category'

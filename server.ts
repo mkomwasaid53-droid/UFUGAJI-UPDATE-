@@ -113,8 +113,17 @@ import {
   isScreeningResultUpToDate,
   initAiScreeningStorage,
   AI_SCREENING_POLICY_VERSION,
-  AI_SCREENING_PRIMARY_MODEL
+  AI_SCREENING_PRIMARY_MODEL,
+  enqueueScreeningJob,
+  claimNextPendingScreeningJob,
+  processScreeningJob,
+  getScreeningJob,
+  getScreeningJobByProductId,
+  getAllScreeningJobs,
+  saveScreeningJobs,
+  SCREENING_CONFIG
 } from './src/services/marketplaceAiScreeningService';
+import { validateMarketplaceListing } from './src/services/marketplaceListingValidationService';
 import {
   evaluateProductMarketplaceEligibility,
   isProductMarketplaceEligible,
@@ -249,6 +258,149 @@ function writeMarketplaceProductsToDisk(products: any[]): void {
     fs.writeFileSync(MARKETPLACE_PRODUCTS_FILE, JSON.stringify(products, null, 2), 'utf-8');
   } catch (err) {
     console.error('Failed to write marketplace products to disk:', err);
+  }
+}
+
+// ==========================================
+// BACKGROUND SCREENING WORKER (V2)
+// ==========================================
+let isBackgroundWorkerRunning = false;
+
+async function executeBackgroundWorkerTick(): Promise<void> {
+  if (isBackgroundWorkerRunning) return;
+  isBackgroundWorkerRunning = true;
+
+  try {
+    const job = claimNextPendingScreeningJob('server_background_worker');
+    if (!job) {
+      return;
+    }
+
+    const startTime = Date.now();
+    const { job: processedJob, screeningResult } = await processScreeningJob(job);
+    const elapsedMs = Date.now() - startTime;
+
+    console.info(
+      `[Worker Tick] Processed job ${processedJob.jobId} for listing ${processedJob.productId} in ${elapsedMs}ms: status=${processedJob.status}, attempt=${processedJob.attemptCount}/${processedJob.maxAttempts}`
+    );
+
+    const products = readMarketplaceProductsFromDisk();
+    const productIndex = products.findIndex((p: any) => p && p.productId === processedJob.productId);
+
+    if (productIndex >= 0) {
+      const currentProduct = products[productIndex];
+      const currentFingerprint = computeListingContentFingerprint(currentProduct);
+
+      // Security Invariant: Stale fingerprint check!
+      if (currentFingerprint !== processedJob.contentFingerprint) {
+        console.warn(
+          `[Worker Tick] Stale screening discarded for product ${processedJob.productId}. Current fingerprint (${currentFingerprint}) != job fingerprint (${processedJob.contentFingerprint}).`
+        );
+        processedJob.status = 'SUPERSEDED';
+        const allJobs = getAllScreeningJobs();
+        const jIdx = allJobs.findIndex((j) => j.jobId === processedJob.jobId);
+        if (jIdx >= 0) {
+          allJobs[jIdx] = processedJob;
+          saveScreeningJobs(allJobs);
+        }
+      } else {
+        // Sync screening state onto product
+        currentProduct.screeningJobId = processedJob.jobId;
+        currentProduct.screeningJobStatus = processedJob.status;
+
+        if (processedJob.status === 'COMPLETED' && screeningResult) {
+          currentProduct.aiScreening = screeningResult;
+          currentProduct.aiScreenedAt = new Date().toISOString();
+
+          // Authoritative seller trust re-evaluation
+          const sellerTrust = getSellerTrustStatus(currentProduct.sellerId || processedJob.sellerId);
+          currentProduct.sellerTrustStatus = sellerTrust;
+
+          const validationResult = validateMarketplaceListing(currentProduct);
+
+          // Invariant: BLOCK remains unpublished regardless of seller trust
+          if (screeningResult.status === 'BLOCK') {
+            currentProduct.moderationStatus = 'REJECTED';
+            currentProduct.status = 'inactive';
+            currentProduct.moderatedAt = new Date().toISOString();
+            currentProduct.moderatedBy = 'system_ai_screening_block';
+            currentProduct.moderationPublicReason = 'Tangazo limezuiwa sokoni kwa kukiuka sera za maudhui na maadili.';
+          } else if (screeningResult.status === 'REVIEW_REQUIRED') {
+            // Invariant: REVIEW_REQUIRED remains unpublished until required review is completed
+            currentProduct.moderationStatus = 'PENDING_REVIEW';
+            currentProduct.status = 'inactive';
+          } else if (screeningResult.status === 'PASS') {
+            // Invariant: REJECTED, HIDDEN and SUSPENDED sanctions remain authoritative
+            const isSanctioned = ['REJECTED', 'SUSPENDED', 'HIDDEN'].includes(currentProduct.moderationStatus);
+            // Invariant: TRUSTED_SELLER + current PASS may publish only when every other existing requirement passes
+            if (sellerTrust === 'TRUSTED_SELLER' && validationResult.isEligibleForActive && !isSanctioned && currentProduct.status !== 'draft') {
+              currentProduct.moderationStatus = 'APPROVED';
+              currentProduct.status = 'active';
+              currentProduct.moderatedAt = new Date().toISOString();
+              currentProduct.moderatedBy = 'system_ai_trusted_seller';
+              currentProduct.moderationPublicReason = 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).';
+            } else {
+              // Invariant: NEW_SELLER + PASS remains pending for required administrator approval
+              currentProduct.moderationStatus = 'PENDING_REVIEW';
+              currentProduct.status = 'inactive';
+            }
+          }
+
+          // Register authoritative server-side moderation record
+          registerListingModerationRecord({
+            moderationId: `mod_${currentProduct.productId}`,
+            targetType: 'LISTING',
+            targetId: currentProduct.productId,
+            productId: currentProduct.productId,
+            listingId: currentProduct.productId,
+            sellerId: currentProduct.sellerId || processedJob.sellerId,
+            shopId: currentProduct.shopId || currentProduct.sellerId || processedJob.sellerId,
+            status: currentProduct.moderationStatus,
+            priority: screeningResult.status === 'BLOCK' ? 'CRITICAL' : (screeningResult.status === 'REVIEW_REQUIRED' ? 'HIGH' : 'NORMAL'),
+            reasonCode: screeningResult.status === 'BLOCK' ? 'AI_CONTENT_BLOCK' : (screeningResult.status === 'REVIEW_REQUIRED' ? 'AI_REVIEW_REQUIRED' : null),
+            reasonText: screeningResult.categories.length > 0 ? screeningResult.categories.join(', ') : null,
+            internalNote: screeningResult.evaluationSource === 'INFRASTRUCTURE_FALLBACK'
+              ? `AI Screening Fallback (${screeningResult.failureReason || '503'}, retries: ${screeningResult.retryAttempts || 0})`
+              : `Authoritative async screening: ${screeningResult.status} (${screeningResult.evaluationSource || 'MODEL'})`,
+            publicExplanation: currentProduct.status === 'active'
+              ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).'
+              : 'Tangazo linasubiri idhini ya msimamizi au marekebisho.',
+            correctionInstructions: null,
+            reviewedByUserId: currentProduct.status === 'active' ? 'system_ai_trusted_seller' : (screeningResult.status === 'BLOCK' ? 'system_ai_screening_block' : null),
+            reviewedByDisplayName: currentProduct.status === 'active' ? 'AI Screening + Trusted Seller' : (screeningResult.status === 'BLOCK' ? 'AI Safety Filter' : null),
+            reviewedAt: (currentProduct.status === 'active' || screeningResult.status === 'BLOCK') ? new Date().toISOString() : null,
+            createdAt: currentProduct.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        } else if (processedJob.status === 'EXHAUSTED_DEADLINE' || processedJob.status === 'FAILED') {
+          // If the maximum processing window expires, mark job retryable/failed and keep listing unpublished
+          currentProduct.screeningJobStatus = processedJob.status;
+          currentProduct.moderationStatus = 'PENDING_REVIEW';
+          currentProduct.status = 'inactive';
+          if (screeningResult) {
+            currentProduct.aiScreening = screeningResult;
+          }
+        }
+
+        products[productIndex] = currentProduct;
+        writeMarketplaceProductsToDisk(products);
+      }
+    }
+
+    // Check if more jobs can be claimed immediately
+    const remainingJobs = getAllScreeningJobs().filter(
+      (j) => (j.status === 'SCREENING_PENDING' || j.status === 'SCREENING_PROCESSING') &&
+             (!j.nextRetryAt || new Date(j.nextRetryAt).getTime() <= Date.now())
+    );
+    if (remainingJobs.length > 0) {
+      setImmediate(() => {
+        executeBackgroundWorkerTick().catch((e) => console.error('[Background Worker Loop Error]:', e));
+      });
+    }
+  } catch (err) {
+    console.error('[Worker Tick Exception]:', err);
+  } finally {
+    isBackgroundWorkerRunning = false;
   }
 }
 
@@ -974,7 +1126,16 @@ async function startServer() {
             ? product.images
             : (product.imageUrl ? [{ id: 'img_primary', url: product.imageUrl, isPrimary: true }] : (currentProd.images || []));
 
-          const screeningResult = await evaluateMarketplaceListingContent({
+          // An edit invalidates the previous screening result immediately.
+          // Persist listing in non-public state and enqueue screening job.
+          product.aiScreening = undefined;
+          product.aiScreenedAt = undefined;
+          product.moderationStatus = 'PENDING_REVIEW';
+          if (product.status !== 'draft') {
+            product.status = 'inactive';
+          }
+
+          const job = enqueueScreeningJob({
             productId: currentProd.productId,
             sellerId: authoritativeSellerId,
             title: product.title || currentProd.title,
@@ -986,36 +1147,22 @@ async function startServer() {
             imageUrl: product.imageUrl || currentProd.imageUrl
           });
 
-          const resolution = resolveListingPublishingState({
-            screeningResult,
-            sellerTrustStatus: sellerTrust,
-            currentModerationStatus: currentProd.moderationStatus
-          });
+          product.screeningJobId = job.jobId;
+          product.screeningJobStatus = job.status;
 
-          product.aiScreening = screeningResult;
-          product.aiScreenedAt = new Date().toISOString();
-          product.sellerTrustStatus = sellerTrust;
-
-          if (screeningResult.status === 'BLOCK') {
-            product.moderationStatus = 'REJECTED';
-            product.status = 'inactive';
-            product.moderatedAt = new Date().toISOString();
-            product.moderatedBy = 'system_ai_screening_block';
-            product.moderationPublicReason = 'Tangazo limezuiwa sokoni kwa kukiuka sera za maudhui na maadili.';
-          } else {
-            product.moderationStatus = resolution.recommendedModerationStatus;
-
-            if (!resolution.canPublishActiveImmediately) {
+          // If job was completed synchronously (e.g. deterministic rule block)
+          if (job.status === 'COMPLETED' && job.result) {
+            product.aiScreening = job.result;
+            product.aiScreenedAt = new Date().toISOString();
+            if (job.result.status === 'BLOCK') {
+              product.moderationStatus = 'REJECTED';
               product.status = 'inactive';
-            } else if (product.status !== 'draft') {
-              product.status = 'active';
               product.moderatedAt = new Date().toISOString();
-              product.moderatedBy = 'system_ai_trusted_seller';
-              product.moderationPublicReason = 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).';
+              product.moderatedBy = 'system_ai_screening_block';
+              product.moderationPublicReason = 'Tangazo limezuiwa sokoni kwa kukiuka sera za maudhui na maadili.';
             }
           }
 
-          // Register authoritative server-side moderation record for all states
           registerListingModerationRecord({
             moderationId: `mod_${currentProd.productId}`,
             targetType: 'LISTING',
@@ -1025,20 +1172,32 @@ async function startServer() {
             sellerId: authoritativeSellerId,
             shopId: currentProd.shopId || authoritativeSellerId,
             status: product.moderationStatus,
-            priority: screeningResult.status === 'BLOCK' ? 'CRITICAL' : screeningResult.status === 'REVIEW_REQUIRED' ? 'HIGH' : 'NORMAL',
-            reasonCode: screeningResult.status === 'BLOCK' ? 'AI_CONTENT_BLOCK' : (screeningResult.status === 'REVIEW_REQUIRED' ? 'AI_REVIEW_REQUIRED' : null),
-            reasonText: screeningResult.categories.length > 0 ? screeningResult.categories.join(', ') : null,
-            internalNote: screeningResult.evaluationSource === 'INFRASTRUCTURE_FALLBACK'
-              ? `AI Screening Unavailable (${screeningResult.failureReason || '503'}, retries: ${screeningResult.retryAttempts || 0})`
-              : `Authoritative update screening: ${screeningResult.status} (${screeningResult.evaluationSource || 'MODEL'})`,
-            publicExplanation: resolution.publicUnavailableReason || (resolution.canPublishActiveImmediately ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).' : 'Tangazo linasubiri idhini ya msimamizi.'),
+            priority: product.moderationStatus === 'REJECTED' ? 'CRITICAL' : 'NORMAL',
+            reasonCode: product.moderationStatus === 'REJECTED' ? 'AI_CONTENT_BLOCK' : 'AI_SCREENING_PENDING',
+            reasonText: 'Tangazo limewekwa kwenye foleni ya uchunguzi wa AI.',
+            internalNote: `Background screening job enqueued: ${job.jobId} (status: ${job.status})`,
+            publicExplanation: product.moderationStatus === 'REJECTED'
+              ? (product.moderationPublicReason || 'Tangazo limezuiwa sokoni.')
+              : 'Tangazo linakaguliwa kwa usalama na ubora kabla ya kuchapishwa.',
             correctionInstructions: null,
-            reviewedByUserId: resolution.canPublishActiveImmediately ? 'system_ai_trusted_seller' : (screeningResult.status === 'BLOCK' ? 'system_ai_screening_block' : null),
-            reviewedByDisplayName: resolution.canPublishActiveImmediately ? 'AI Screening + Trusted Seller' : (screeningResult.status === 'BLOCK' ? 'AI Safety Filter' : null),
-            reviewedAt: (resolution.canPublishActiveImmediately || screeningResult.status === 'BLOCK') ? new Date().toISOString() : null,
+            reviewedByUserId: product.moderationStatus === 'REJECTED' ? 'system_ai_screening_block' : null,
+            reviewedByDisplayName: product.moderationStatus === 'REJECTED' ? 'AI Safety Filter' : null,
+            reviewedAt: product.moderationStatus === 'REJECTED' ? new Date().toISOString() : null,
             createdAt: currentProd.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString()
           });
+
+          // Trigger background worker tick
+          setImmediate(() => {
+            executeBackgroundWorkerTick().catch((e) => console.error('[Background Worker Error]:', e));
+          });
+        } else if (!contentChanged) {
+          // Video-only edit or metadata edit: Preserve existing screening and moderation status!
+          product.aiScreening = currentProd.aiScreening;
+          product.aiScreenedAt = currentProd.aiScreenedAt;
+          product.moderationStatus = currentProd.moderationStatus;
+          product.screeningJobId = currentProd.screeningJobId;
+          product.screeningJobStatus = currentProd.screeningJobStatus || (currentProd.aiScreening ? 'COMPLETED' : undefined);
         }
 
         existing[index] = { ...existing[index], ...product };
@@ -1050,50 +1209,44 @@ async function startServer() {
           ? product.images
           : (product.imageUrl ? [{ id: `img_${product.productId}`, url: product.imageUrl, isPrimary: true }] : []);
 
-        const screeningResult = await evaluateMarketplaceListingContent({
-          productId: product.productId,
-          sellerId: authoritativeSellerId,
-          title: product.title || '',
-          description: product.description || '',
-          category: product.category || '',
-          subcategory: product.subcategory || '',
-          price: product.price,
-          images: normalizedImages,
-          imageUrl: product.imageUrl
-        });
-
-        const resolution = resolveListingPublishingState({
-          screeningResult,
-          sellerTrustStatus: sellerTrust,
-          currentModerationStatus: 'PENDING_REVIEW'
-        });
-
-        product.aiScreening = screeningResult;
-        product.aiScreenedAt = new Date().toISOString();
         product.sellerTrustStatus = sellerTrust;
 
         if (!isAdmin) {
           if (product.status === 'draft') {
             product.moderationStatus = 'DRAFT';
-          } else if (screeningResult.status === 'BLOCK') {
-            product.moderationStatus = 'REJECTED';
-            product.status = 'inactive';
-            product.moderatedAt = new Date().toISOString();
-            product.moderatedBy = 'system_ai_screening_block';
-            product.moderationPublicReason = 'Tangazo limezuiwa sokoni kwa kukiuka sera za maudhui na maadili.';
           } else {
-            product.moderationStatus = resolution.recommendedModerationStatus;
-            if (!resolution.canPublishActiveImmediately) {
+            product.moderationStatus = 'PENDING_REVIEW';
+            product.status = 'inactive';
+          }
+
+          const job = enqueueScreeningJob({
+            productId: product.productId,
+            sellerId: authoritativeSellerId,
+            title: product.title || '',
+            description: product.description || '',
+            category: product.category || '',
+            subcategory: product.subcategory || '',
+            price: product.price,
+            images: normalizedImages,
+            imageUrl: product.imageUrl
+          });
+
+          product.screeningJobId = job.jobId;
+          product.screeningJobStatus = job.status;
+
+          // If synchronously completed (e.g. deterministic keyword rule block)
+          if (job.status === 'COMPLETED' && job.result) {
+            product.aiScreening = job.result;
+            product.aiScreenedAt = new Date().toISOString();
+            if (job.result.status === 'BLOCK') {
+              product.moderationStatus = 'REJECTED';
               product.status = 'inactive';
-            } else {
-              product.status = 'active';
               product.moderatedAt = new Date().toISOString();
-              product.moderatedBy = 'system_ai_trusted_seller';
-              product.moderationPublicReason = 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).';
+              product.moderatedBy = 'system_ai_screening_block';
+              product.moderationPublicReason = 'Tangazo limezuiwa sokoni kwa kukiuka sera za maudhui na maadili.';
             }
           }
 
-          // Register authoritative moderation record on creation for all outcomes
           registerListingModerationRecord({
             moderationId: `mod_${product.productId}`,
             targetType: 'LISTING',
@@ -1103,19 +1256,24 @@ async function startServer() {
             sellerId: authoritativeSellerId,
             shopId: product.shopId || authoritativeSellerId,
             status: product.moderationStatus,
-            priority: screeningResult.status === 'BLOCK' ? 'CRITICAL' : screeningResult.status === 'REVIEW_REQUIRED' ? 'HIGH' : 'NORMAL',
-            reasonCode: screeningResult.status === 'BLOCK' ? 'AI_CONTENT_BLOCK' : (screeningResult.status === 'REVIEW_REQUIRED' ? 'AI_REVIEW_REQUIRED' : null),
-            reasonText: screeningResult.categories.length > 0 ? screeningResult.categories.join(', ') : null,
-            internalNote: screeningResult.evaluationSource === 'INFRASTRUCTURE_FALLBACK'
-              ? `AI Screening Unavailable (${screeningResult.failureReason || '503'}, retries: ${screeningResult.retryAttempts || 0})`
-              : `Authoritative creation screening: ${screeningResult.status} (${screeningResult.evaluationSource || 'MODEL'})`,
-            publicExplanation: resolution.publicUnavailableReason || (resolution.canPublishActiveImmediately ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).' : 'Tangazo limewasilishwa kwa ukaguzi wa wasimamizi (PENDING_REVIEW).'),
+            priority: product.moderationStatus === 'REJECTED' ? 'CRITICAL' : 'NORMAL',
+            reasonCode: product.moderationStatus === 'REJECTED' ? 'AI_CONTENT_BLOCK' : 'AI_SCREENING_PENDING',
+            reasonText: 'Tangazo limewekwa kwenye foleni ya uchunguzi wa AI.',
+            internalNote: `Background screening job enqueued: ${job.jobId} (status: ${job.status})`,
+            publicExplanation: product.moderationStatus === 'REJECTED'
+              ? (product.moderationPublicReason || 'Tangazo limezuiwa sokoni.')
+              : 'Tangazo limewasilishwa kwa ukaguzi wa wasimamizi na AI (PENDING_REVIEW).',
             correctionInstructions: null,
-            reviewedByUserId: resolution.canPublishActiveImmediately ? 'system_ai_trusted_seller' : (screeningResult.status === 'BLOCK' ? 'system_ai_screening_block' : null),
-            reviewedByDisplayName: resolution.canPublishActiveImmediately ? 'AI Screening + Trusted Seller' : (screeningResult.status === 'BLOCK' ? 'AI Safety Filter' : null),
-            reviewedAt: (resolution.canPublishActiveImmediately || screeningResult.status === 'BLOCK') ? new Date().toISOString() : null,
+            reviewedByUserId: product.moderationStatus === 'REJECTED' ? 'system_ai_screening_block' : null,
+            reviewedByDisplayName: product.moderationStatus === 'REJECTED' ? 'AI Safety Filter' : null,
+            reviewedAt: product.moderationStatus === 'REJECTED' ? new Date().toISOString() : null,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
+          });
+
+          // Trigger worker tick
+          setImmediate(() => {
+            executeBackgroundWorkerTick().catch((e) => console.error('[Background Worker Error]:', e));
           });
         } else {
           product.moderationStatus = product.moderationStatus || 'APPROVED';
@@ -1143,6 +1301,138 @@ async function startServer() {
       res.json({ success: true, deletedId: id });
     } catch (err: any) {
       res.status(500).json({ error: 'Hitilafu ya kufuta bidhaa', details: err?.message });
+    }
+  });
+
+  // Screening Status Polling Endpoint (Authorized)
+  app.get('/api/marketplace/screening-status', (req, res) => {
+    try {
+      const { productId, jobId } = req.query;
+      if (!productId && !jobId) {
+        return res.status(400).json({ error: 'Inahitaji productId au jobId.' });
+      }
+
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+
+      let job: any = null;
+      if (jobId && typeof jobId === 'string') {
+        job = getScreeningJob(jobId);
+      } else if (productId && typeof productId === 'string') {
+        job = getScreeningJobByProductId(productId);
+      }
+
+      if (!job) {
+        // Fall back to checking listing directly
+        const products = readMarketplaceProductsFromDisk();
+        const product = products.find((p: any) => p && p.productId === productId);
+        if (!product) {
+          return res.status(404).json({ error: 'Kazi ya ukaguzi au tangazo halijapatikana.' });
+        }
+        return res.json({
+          found: false,
+          productId: product.productId,
+          screeningJobStatus: product.screeningJobStatus || (product.aiScreening ? 'COMPLETED' : 'SCREENING_PENDING'),
+          aiScreening: product.aiScreening || null,
+          moderationStatus: product.moderationStatus
+        });
+      }
+
+      // Authorization: Caller must be the seller of the product or admin
+      if (callerUserId && !isAdmin && job.sellerId && job.sellerId !== callerUserId) {
+        return res.status(403).json({ error: 'Huruhusiwi kutazama hali ya ukaguzi wa bidhaa hii.' });
+      }
+
+      return res.json({
+        found: true,
+        jobId: job.jobId,
+        productId: job.productId,
+        sellerId: job.sellerId,
+        contentFingerprint: job.contentFingerprint,
+        status: job.status,
+        attemptCount: job.attemptCount,
+        maxAttempts: job.maxAttempts,
+        nextRetryAt: job.nextRetryAt,
+        lastFailureReason: job.lastFailureReason,
+        lastError: job.lastError,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        completedAt: job.completedAt,
+        result: job.result,
+        resolution: job.resolution
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Hitilafu ya kupata hali ya ukaguzi', details: err?.message });
+    }
+  });
+
+  // Rescreen / Retry Endpoint (Authorized Seller or Admin)
+  app.post('/api/marketplace/rescreen', async (req, res) => {
+    try {
+      const authInfo = extractUserAuthFromRequest(req);
+      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
+      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
+      const { productId } = req.body;
+
+      if (!productId) {
+        return res.status(400).json({ error: 'Inahitaji productId.' });
+      }
+
+      const products = readMarketplaceProductsFromDisk();
+      const productIndex = products.findIndex((p: any) => p && p.productId === productId);
+      if (productIndex < 0) {
+        return res.status(404).json({ error: 'Bidhaa haijapatikana.' });
+      }
+
+      const product = products[productIndex];
+      if (callerUserId && !isAdmin && product.sellerId && product.sellerId !== callerUserId) {
+        return res.status(403).json({ error: 'Huruhusiwi kuomba ukaguzi mpya kwa tangazo hili.' });
+      }
+
+      const authoritativeSellerId = product.sellerId || callerUserId || '';
+      const normalizedImages = (Array.isArray(product.images) && product.images.length > 0)
+        ? product.images
+        : (product.imageUrl ? [{ id: 'img_primary', url: product.imageUrl, isPrimary: true }] : []);
+
+      // Enqueue fresh screening job
+      const job = enqueueScreeningJob({
+        productId: product.productId,
+        sellerId: authoritativeSellerId,
+        title: product.title || '',
+        description: product.description || '',
+        category: product.category || '',
+        subcategory: product.subcategory || '',
+        price: product.price,
+        images: normalizedImages,
+        imageUrl: product.imageUrl
+      });
+
+      product.screeningJobId = job.jobId;
+      product.screeningJobStatus = job.status;
+
+      // Re-screen keeps listing unpublished until screening completes
+      if (product.moderationStatus === 'APPROVED' && !isAdmin) {
+        product.moderationStatus = 'PENDING_REVIEW';
+        product.status = 'inactive';
+      }
+
+      products[productIndex] = product;
+      writeMarketplaceProductsToDisk(products);
+
+      // Trigger immediate worker tick
+      setImmediate(() => {
+        executeBackgroundWorkerTick().catch((e) => console.error('[Background Worker Error]:', e));
+      });
+
+      return res.json({
+        success: true,
+        message: 'Ukaguzi wa AI umeanza upya.',
+        jobId: job.jobId,
+        screeningJobStatus: job.status
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Hitilafu ya kuomba ukaguzi mpya', details: err?.message });
     }
   });
 
@@ -8565,6 +8855,10 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`UFUGAJI UPDATE Server running on http://0.0.0.0:${PORT}`);
+    // Start marketplace background screening worker loop (V2)
+    setInterval(() => {
+      executeBackgroundWorkerTick().catch((err) => console.error('[Background Worker Polling Error]:', err));
+    }, 2500);
   });
   // Keep connection alive longer than reverse proxy (60s) to prevent ECONNRESET/Failed to fetch
   server.keepAliveTimeout = 65000;

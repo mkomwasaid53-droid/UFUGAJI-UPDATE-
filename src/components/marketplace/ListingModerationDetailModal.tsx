@@ -49,7 +49,8 @@ import {
   Calendar,
   AlertCircle,
   Eye,
-  Camera
+  Camera,
+  RefreshCw
 } from 'lucide-react';
 import { ProductVideoPlayer } from './ProductVideoPlayer';
 import { formatTshPrice } from '../../services/marketplaceService';
@@ -87,6 +88,34 @@ export const ListingModerationDetailModal: React.FC<ListingModerationDetailModal
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [imageErrorMap, setImageErrorMap] = useState<Record<string, boolean>>({});
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [isRescreening, setIsRescreening] = useState(false);
+  const [rescreenNotice, setRescreenNotice] = useState<string | null>(null);
+
+  const handleRescreenListing = async () => {
+    if (!product?.productId || isRescreening) return;
+    setIsRescreening(true);
+    setRescreenNotice(null);
+    try {
+      const resp = await fetch('/api/marketplace/rescreen', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-is-admin': 'true'
+        },
+        body: JSON.stringify({ productId: product.productId })
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        setRescreenNotice('Ukaguzi wa AI umeanza upya kwenye foleni salama ya nyuma.');
+      } else {
+        setRescreenNotice(`Hitilafu: ${data.error || 'Haikuweza kuanza ukaguzi'}`);
+      }
+    } catch (err: any) {
+      setRescreenNotice(`Hitilafu: ${err?.message || 'Hitilafu ya mtandao'}`);
+    } finally {
+      setIsRescreening(false);
+    }
+  };
 
   // Normalize all available images from product model
   const allImages = useMemo(() => {
@@ -750,34 +779,62 @@ export const ListingModerationDetailModal: React.FC<ListingModerationDetailModal
               <span className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
                 <Shield className="w-4 h-4 text-emerald-700" /> Ukaguzi wa Kiusalama wa AI (Multimodal Screening & Resilience Gate)
               </span>
-              {activeScreening ? (
-                <span
-                  className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase ${
-                    activeScreening.status === 'PASS'
-                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                      : activeScreening.status === 'BLOCK'
-                      ? 'bg-rose-100 text-rose-800 border border-rose-300'
+              <div className="flex items-center gap-2">
+                {product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' ? (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-sky-100 text-sky-800 border border-sky-300 flex items-center gap-1 animate-pulse">
+                    <RefreshCw className="w-3 h-3 animate-spin text-sky-600" /> Inakaguliwa (SCREENING_PENDING)
+                  </span>
+                ) : product.screeningJobStatus === 'EXHAUSTED_DEADLINE' ? (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-amber-700" /> Muda Umekwisha (EXHAUSTED_DEADLINE)
+                  </span>
+                ) : activeScreening ? (
+                  <span
+                    className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase ${
+                      activeScreening.status === 'PASS'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : activeScreening.status === 'BLOCK'
+                        ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                        : activeScreening.evaluationSource === 'INFRASTRUCTURE_FALLBACK' ||
+                          activeScreening.failureReason === 'MODEL_UNAVAILABLE_503'
+                        ? 'bg-purple-100 text-purple-900 border border-purple-300'
+                        : 'bg-amber-100 text-amber-900 border border-amber-300'
+                    }`}
+                  >
+                    {activeScreening.status === 'BLOCK'
+                      ? '⛔ Imezuiwa (BLOCK)'
                       : activeScreening.evaluationSource === 'INFRASTRUCTURE_FALLBACK' ||
                         activeScreening.failureReason === 'MODEL_UNAVAILABLE_503'
-                      ? 'bg-purple-100 text-purple-900 border border-purple-300'
-                      : 'bg-amber-100 text-amber-900 border border-amber-300'
-                  }`}
+                      ? '⚠ Model 503 / Haipatikani (Inasubiri)'
+                      : activeScreening.status === 'REVIEW_REQUIRED'
+                      ? '🔍 Inahitaji Ukaguzi (REVIEW_REQUIRED)'
+                      : '✓ Imefaulu (PASS)'}
+                  </span>
+                ) : (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-stone-200 text-stone-700">
+                    Haijakaguliwa bado
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleRescreenListing}
+                  disabled={isRescreening}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-stone-800 text-white hover:bg-stone-700 transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Anzisha upya uchunguzi wa AI kwa maudhui ya sasa ya tangazo"
                 >
-                  {activeScreening.status === 'BLOCK'
-                    ? '⛔ Imezuiwa (BLOCK)'
-                    : activeScreening.evaluationSource === 'INFRASTRUCTURE_FALLBACK' ||
-                      activeScreening.failureReason === 'MODEL_UNAVAILABLE_503'
-                    ? '⚠ Model 503 / Haipatikani (Inasubiri)'
-                    : activeScreening.status === 'REVIEW_REQUIRED'
-                    ? '🔍 Inahitaji Ukaguzi (REVIEW_REQUIRED)'
-                    : '✓ Imefaulu (PASS)'}
-                </span>
-              ) : (
-                <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-stone-200 text-stone-700">
-                  Haijakaguliwa bado
-                </span>
-              )}
+                  <RefreshCw className={`w-3 h-3 ${isRescreening ? 'animate-spin' : ''}`} />
+                  <span>{isRescreening ? 'Inatuma...' : 'Kagua Upya (Rescreen)'}</span>
+                </button>
+              </div>
             </div>
+
+            {rescreenNotice && (
+              <div className="p-2.5 bg-sky-50 rounded-lg border border-sky-200 text-sky-900 text-xs flex items-center gap-2">
+                <Info className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                <span>{rescreenNotice}</span>
+              </div>
+            )}
 
             {activeScreening ? (
               <div className="space-y-3 text-xs">

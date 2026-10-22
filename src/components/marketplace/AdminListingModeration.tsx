@@ -496,7 +496,17 @@ export const AdminListingModeration: React.FC = () => {
                       </span>
                     )}
 
-                    {item.aiScreening && (
+                    {product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' ? (
+                      <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full border bg-sky-50 text-sky-800 border-sky-300 flex items-center gap-1 animate-pulse">
+                        <RefreshCw className="w-3 h-3 animate-spin text-sky-600" />
+                        <span>AI: SCREENING_PENDING (Foleni ya Ukaguzi)</span>
+                      </span>
+                    ) : product.screeningJobStatus === 'EXHAUSTED_DEADLINE' ? (
+                      <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full border bg-amber-100 text-amber-900 border-amber-300 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 text-amber-700" />
+                        <span>AI: EXHAUSTED_DEADLINE (Muda Umekwisha)</span>
+                      </span>
+                    ) : item.aiScreening && (
                       <span
                         className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
                           item.aiScreening.status === 'PASS'
