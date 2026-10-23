@@ -418,64 +418,243 @@ export async function uploadProductVideo(
 }
 
 /**
- * Compresses an image file before upload using an HTML5 Canvas to keep file sizes optimal (< 800KB).
+ * Computes optimal target dimensions while maintaining aspect ratio
+ */
+function computeTargetDimensions(
+  srcWidth: number,
+  srcHeight: number,
+  maxWidth: number,
+  maxHeight: number
+): { width: number; height: number } {
+  let width = srcWidth;
+  let height = srcHeight;
+
+  if (width > maxWidth || height > maxHeight) {
+    if (width / height > maxWidth / maxHeight) {
+      height = Math.round((height * maxWidth) / width);
+      width = maxWidth;
+    } else {
+      width = Math.round((width * maxHeight) / height);
+      maxHeight = height;
+    }
+  }
+
+  return {
+    width: Math.max(1, width),
+    height: Math.max(1, height)
+  };
+}
+
+/**
+ * Compresses an image file before upload using a multi-tiered decoding and canvas pipeline:
+ * Tier 1: window.createImageBitmap (fastest, hardware decoded, zero Base64 memory overhead)
+ * Tier 2: HTMLImageElement via URL.createObjectURL (direct blob streaming, avoids FileReader read errors)
+ * Tier 3: FileReader.readAsDataURL (standard data URL stream)
+ * Tier 4: FileReader.readAsArrayBuffer -> reconstructed Blob URL
+ * Tier 5: Direct string / dataUrl handling
  */
 export async function compressImage(
-  file: File | Blob,
+  file: File | Blob | string,
   maxWidth = 1200,
   maxHeight = 1200,
   quality = 0.85
 ): Promise<{ blob: Blob; dataUrl: string }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
+  if (!file) {
+    throw new Error('Faili la picha halijapatikana au ni batili.');
+  }
 
-        if (width > maxWidth || height > maxHeight) {
-          if (width / height > maxWidth / maxHeight) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          } else {
-            width = Math.round((width * maxHeight) / height);
-            maxHeight = height;
+  // Handle case where file is already a data URL or image URL string
+  if (typeof file === 'string') {
+    if (file.startsWith('data:image/')) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const { width, height } = computeTargetDimensions(img.width, img.height, maxWidth, maxHeight);
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            const parts = file.split(',');
+            const byteString = atob(parts[1] || '');
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+            const blob = new Blob([ab], { type: 'image/jpeg' });
+            return resolve({ blob, dataUrl: file });
           }
-        }
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          canvas.toBlob(
+            (blob) => resolve({ blob: blob || new Blob([], { type: 'image/jpeg' }), dataUrl }),
+            'image/jpeg',
+            quality
+          );
+        };
+        img.onerror = () => {
+          resolve({ blob: new Blob([], { type: 'image/jpeg' }), dataUrl: file });
+        };
+        img.src = file;
+      });
+    }
+  }
 
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+  const blobFile = file as Blob;
+  if (blobFile.size === 0) {
+    throw new Error('Faili la picha halina taarifa (0 bytes). Tafadhali chagua picha nyingine.');
+  }
 
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          return reject(new Error('Canvas context could not be created'));
-        }
+  // Tier 1: Modern browser native createImageBitmap (fast, no FileReader memory lock)
+  if (typeof window !== 'undefined' && typeof window.createImageBitmap === 'function') {
+    try {
+      const bitmap = await window.createImageBitmap(blobFile);
+      const { width, height } = computeTargetDimensions(bitmap.width, bitmap.height, maxWidth, maxHeight);
 
-        // Draw and compress
-        ctx.drawImage(img, 0, 0, width, height);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(bitmap, 0, 0, width, height);
+        try { bitmap.close(); } catch {}
 
         const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        const compressedBlob = await new Promise<Blob>((resolveBlob) => {
+          canvas.toBlob((b) => resolveBlob(b || blobFile), 'image/jpeg', quality);
+        });
 
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              resolve({ blob, dataUrl });
-            } else {
-              // Fallback to dataUrl conversion if toBlob is not supported
-              resolve({ blob: file, dataUrl: (e.target?.result as string) || '' });
-            }
-          },
-          'image/jpeg',
-          quality
-        );
-      };
-      img.onerror = () => reject(new Error('Hitilafu ya kusoma faili la picha'));
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = () => reject(new Error('Hitilafu ya kufungua faili'));
-    reader.readAsDataURL(file);
-  });
+        return { blob: compressedBlob, dataUrl };
+      }
+      try { bitmap.close(); } catch {}
+    } catch (tier1Err) {
+      console.warn('[compressImage] Tier 1 (createImageBitmap) notice, falling back to Tier 2:', tier1Err);
+    }
+  }
+
+  // Tier 2: HTMLImageElement via URL.createObjectURL (direct blob streaming, avoids FileReader read errors)
+  if (typeof window !== 'undefined' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+    let tempUrl: string | null = null;
+    try {
+      tempUrl = URL.createObjectURL(blobFile);
+      const img = new Image();
+
+      await new Promise<void>((resolveImg, rejectImg) => {
+        img.onload = () => resolveImg();
+        img.onerror = () => rejectImg(new Error('HTMLImageElement blob decode failed'));
+        img.src = tempUrl!;
+      });
+
+      const { width, height } = computeTargetDimensions(img.width, img.height, maxWidth, maxHeight);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        const compressedBlob = await new Promise<Blob>((resolveBlob) => {
+          canvas.toBlob((b) => resolveBlob(b || blobFile), 'image/jpeg', quality);
+        });
+        return { blob: compressedBlob, dataUrl };
+      }
+    } catch (tier2Err) {
+      console.warn('[compressImage] Tier 2 (createObjectURL) notice, falling back to Tier 3:', tier2Err);
+    } finally {
+      if (tempUrl) {
+        try { URL.revokeObjectURL(tempUrl); } catch {}
+      }
+    }
+  }
+
+  // Tier 3: FileReader readAsDataURL with safe error handling
+  if (typeof window !== 'undefined' && typeof FileReader !== 'undefined') {
+    try {
+      const dataUrlResult = await new Promise<string>((resolveReader, rejectReader) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const res = e.target?.result as string;
+          if (res) resolveReader(res);
+          else rejectReader(new Error('Maudhui ya picha hayakuweza kusomwa vizuri'));
+        };
+        reader.onerror = () => {
+          const detail = reader.error ? ` (${reader.error.name})` : '';
+          rejectReader(new Error(`Hitilafu ya kufungua faili${detail}`));
+        };
+        reader.readAsDataURL(blobFile);
+      });
+
+      const img = new Image();
+      await new Promise<void>((resolveImg, rejectImg) => {
+        img.onload = () => resolveImg();
+        img.onerror = () => rejectImg(new Error('Hitilafu ya kusoma faili la picha'));
+        img.src = dataUrlResult;
+      });
+
+      const { width, height } = computeTargetDimensions(img.width, img.height, maxWidth, maxHeight);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        const compressedBlob = await new Promise<Blob>((resolveBlob) => {
+          canvas.toBlob((b) => resolveBlob(b || blobFile), 'image/jpeg', quality);
+        });
+        return { blob: compressedBlob, dataUrl };
+      }
+    } catch (tier3Err) {
+      console.warn('[compressImage] Tier 3 (FileReader DataURL) notice, falling back to Tier 4:', tier3Err);
+    }
+  }
+
+  // Tier 4: FileReader readAsArrayBuffer -> reconstructed Blob URL
+  if (typeof window !== 'undefined' && typeof FileReader !== 'undefined') {
+    try {
+      const arrayBuffer = await new Promise<ArrayBuffer>((resolveAb, rejectAb) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (e.target?.result instanceof ArrayBuffer) resolveAb(e.target.result);
+          else rejectAb(new Error('ArrayBuffer read failed'));
+        };
+        reader.onerror = () => rejectAb(reader.error || new Error('ArrayBuffer read failed'));
+        reader.readAsArrayBuffer(blobFile);
+      });
+
+      const fallbackBlob = new Blob([arrayBuffer], { type: blobFile.type || 'image/jpeg' });
+      if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        const tempUrl = URL.createObjectURL(fallbackBlob);
+        try {
+          const img = new Image();
+          await new Promise<void>((resolveImg, rejectImg) => {
+            img.onload = () => resolveImg();
+            img.onerror = () => rejectImg(new Error('Fallback blob decode failed'));
+            img.src = tempUrl;
+          });
+
+          const { width, height } = computeTargetDimensions(img.width, img.height, maxWidth, maxHeight);
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+            const compressedBlob = await new Promise<Blob>((resolveBlob) => {
+              canvas.toBlob((b) => resolveBlob(b || fallbackBlob), 'image/jpeg', quality);
+            });
+            return { blob: compressedBlob, dataUrl };
+          }
+        } finally {
+          try { URL.revokeObjectURL(tempUrl); } catch {}
+        }
+      }
+    } catch (tier4Err) {
+      console.warn('[compressImage] Tier 4 (ArrayBuffer) notice:', tier4Err);
+    }
+  }
+
+  throw new Error('Picha haikuweza kufunguliwa au kusindikwa. Tafadhali hakikisha faili ni picha sahihi (JPEG, PNG, WebP) na ujaribu tena.');
 }
 
 /**

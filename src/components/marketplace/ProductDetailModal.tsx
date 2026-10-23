@@ -5,7 +5,9 @@ import {
   updateProductPrice,
   updateProductStock,
   updateProductDelivery,
-  updateProductLocation
+  updateProductLocation,
+  pollScreeningStatus,
+  requestRescreen
 } from '../../services/marketplaceService';
 import {
   validateProductOwnership,
@@ -144,6 +146,71 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [isUpdatingDelivLoc, setIsUpdatingDelivLoc] = useState(false);
   const [delivLocSuccess, setDelivLocSuccess] = useState<string | null>(null);
   const [delivLocError, setDelivLocError] = useState<string | null>(null);
+
+  // Bounded Polling for Active Screening Jobs
+  const [isRescreening, setIsRescreening] = useState(false);
+  const [rescreenError, setRescreenError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!currentProduct?.productId) return;
+    const isJobActive =
+      currentProduct.screeningJobStatus === 'PENDING' ||
+      currentProduct.screeningJobStatus === 'PROCESSING' ||
+      currentProduct.screeningJobStatus === 'CLAIMED' ||
+      currentProduct.screeningJobStatus === 'SCREENING_PENDING' ||
+      currentProduct.screeningJobStatus === 'SCREENING_PROCESSING';
+
+    if (!isJobActive) return;
+
+    const stopPolling = pollScreeningStatus(
+      currentProduct.productId,
+      (statusUpdate) => {
+        if (statusUpdate.product) {
+          setCurrentProduct((prev: any) => ({ ...prev, ...statusUpdate.product }));
+          if (onProductUpdated) onProductUpdated({ ...currentProduct, ...statusUpdate.product });
+        } else if (statusUpdate.result) {
+          setCurrentProduct((prev: any) => ({
+            ...prev,
+            aiScreening: statusUpdate.result,
+            screeningJobStatus: statusUpdate.status,
+            moderationStatus: statusUpdate.moderationStatus || prev.moderationStatus
+          }));
+        }
+      },
+      (terminalStatus) => {
+        if (terminalStatus.product) {
+          setCurrentProduct((prev: any) => ({ ...prev, ...terminalStatus.product }));
+          if (onProductUpdated) onProductUpdated({ ...currentProduct, ...terminalStatus.product });
+        }
+      }
+    );
+
+    return () => {
+      stopPolling();
+    };
+  }, [currentProduct?.productId, currentProduct?.screeningJobStatus]);
+
+  const handleRescreen = async () => {
+    if (!currentProduct?.productId) return;
+    setIsRescreening(true);
+    setRescreenError(null);
+    try {
+      const res = await requestRescreen(currentProduct.productId);
+      if (res.job) {
+        setCurrentProduct((prev: any) => ({
+          ...prev,
+          screeningJobId: res.job.jobId,
+          screeningJobStatus: res.job.status,
+          moderationStatus: 'PENDING_REVIEW',
+          status: 'inactive'
+        }));
+      }
+    } catch (e: any) {
+      setRescreenError(e.message || 'Haikuweza kuanzisha ukaguzi upya.');
+    } finally {
+      setIsRescreening(false);
+    }
+  };
 
   const handleQuickDeliveryUpdate = async () => {
     if (!currentProduct) return;
@@ -425,35 +492,90 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             <div className={`p-4 rounded-2xl border mb-2 ${
               (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
                 ? 'bg-rose-50 border-rose-300 text-rose-950'
+                : (currentProduct.screeningJobStatus === 'EXHAUSTED' || currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' || currentProduct.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
+                ? 'bg-orange-50 border-orange-300 text-orange-950'
+                : (currentProduct.aiScreening?.status === 'SCREENING_ERROR' || currentProduct.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || currentProduct.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || currentProduct.screeningJobStatus === 'FAILED')
+                ? 'bg-rose-50 border-rose-300 text-rose-950'
+                : (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
+                ? 'bg-blue-50 border-blue-300 text-blue-950'
+                : (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
+                ? 'bg-purple-50 border-purple-300 text-purple-950'
                 : 'bg-amber-50 border-amber-300 text-amber-950'
             }`}>
               <div className="flex items-start gap-3">
                 <AlertTriangle className={`w-5 h-5 shrink-0 mt-0.5 ${
                   (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
                     ? 'text-rose-700'
+                    : (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
+                    ? 'text-blue-700'
+                    : (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
+                    ? 'text-purple-700'
                     : 'text-amber-700'
                 }`} />
                 <div className="text-xs space-y-1.5 flex-1">
-                  <div className={`font-bold uppercase tracking-wider text-[11px] flex items-center gap-2 ${
-                    (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
-                      ? 'text-rose-900'
-                      : 'text-amber-900'
-                  }`}>
-                    <span>Hali ya Kiutawala:</span>
-                    <span className={`px-2 py-0.5 rounded-md font-black ${
-                      (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
-                        ? 'bg-rose-200 text-rose-950'
-                        : 'bg-amber-200/90 text-amber-950'
-                    }`}>
-                      {(eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
-                        ? 'Imekataliwa / Imezuiwa (BLOCKED)'
-                        : !eligibility.isAiScreeningFresh
-                        ? 'Inahitaji Ukaguzi Mpya wa AI (Screening Required)'
-                        : (eligibility.moderationStatus === 'APPROVED' && !eligibility.isEligible)
-                        ? 'Haionekani Sokoni'
-                        : eligibility.moderationStatus}
-                    </span>
+                  <div className="font-bold uppercase tracking-wider text-[11px] flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span>Hali ya Kiutawala:</span>
+                      <span className={`px-2 py-0.5 rounded-md font-black ${
+                        (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
+                          ? 'bg-rose-200 text-rose-950'
+                          : (currentProduct.screeningJobStatus === 'EXHAUSTED' || currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' || currentProduct.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
+                          ? 'bg-orange-200 text-orange-950'
+                          : (currentProduct.aiScreening?.status === 'SCREENING_ERROR' || currentProduct.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || currentProduct.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || currentProduct.screeningJobStatus === 'FAILED')
+                          ? 'bg-rose-200 text-rose-950'
+                          : (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
+                          ? 'bg-blue-200 text-blue-950'
+                          : (currentProduct.aiScreening && !eligibility.isAiScreeningFresh)
+                          ? 'bg-amber-200 text-amber-950'
+                          : (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
+                          ? 'bg-purple-200 text-purple-950'
+                          : (currentProduct.aiScreening?.status === 'PASS' && (eligibility.moderationStatus === 'PENDING_REVIEW' || currentProduct.moderationStatus === 'PENDING_REVIEW'))
+                          ? 'bg-sky-200 text-sky-950'
+                          : 'bg-amber-200/90 text-amber-950'
+                      }`}>
+                        {(eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
+                          ? 'Imezuiwa (BLOCK)'
+                          : (currentProduct.screeningJobStatus === 'EXHAUSTED' || currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' || currentProduct.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
+                          ? 'Muda wa AI Umekwisha (EXHAUSTED)'
+                          : (currentProduct.aiScreening?.status === 'SCREENING_ERROR' || currentProduct.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || currentProduct.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || currentProduct.screeningJobStatus === 'FAILED')
+                          ? 'Hitilafu ya AI / Huduma Haipatikani (SCREENING_ERROR)'
+                          : (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
+                          ? 'Inachunguzwa na AI... (SCREENING_PENDING)'
+                          : (currentProduct.aiScreening && !eligibility.isAiScreeningFresh)
+                          ? 'Inahitaji Ukaguzi Mpya wa AI (Stale Fingerprint)'
+                          : (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
+                          ? 'Inahitaji Ukaguzi wa Msimamizi (REVIEW_REQUIRED)'
+                          : (currentProduct.aiScreening?.status === 'PASS' && (eligibility.moderationStatus === 'PENDING_REVIEW' || currentProduct.moderationStatus === 'PENDING_REVIEW'))
+                          ? 'Imefaulu AI (Inasubiri Idhini ya Msimamizi)'
+                          : eligibility.moderationStatus}
+                      </span>
+                    </div>
+
+                    {/* Rescreen Button if permitted */}
+                    {(currentProduct.aiScreening?.status === 'SCREENING_ERROR' ||
+                      currentProduct.screeningJobStatus === 'EXHAUSTED' ||
+                      currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' ||
+                      currentProduct.screeningJobStatus === 'FAILED' ||
+                      !eligibility.isAiScreeningFresh) && (
+                      <button
+                        type="button"
+                        onClick={handleRescreen}
+                        disabled={isRescreening}
+                        className="px-2.5 py-1 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                        title="Omba uchunguzi upya wa AI kwa maudhui haya"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isRescreening ? 'animate-spin' : ''}`} />
+                        <span>{isRescreening ? 'Inatuma...' : 'Kagua Upya (Rescreen)'}</span>
+                      </button>
+                    )}
                   </div>
+
+                  {rescreenError && (
+                    <p className="text-rose-700 bg-rose-100 p-1.5 rounded text-[11px] font-medium">
+                      {rescreenError}
+                    </p>
+                  )}
+
                   <p className="font-medium text-stone-800">
                     {eligibility.sellerNotice}
                   </p>
@@ -474,8 +596,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                           Ukaguzi wa Kiotomatiki (AI Screening):{' '}
                           {currentProduct.aiScreening.status === 'BLOCK'
                             ? 'Imezuiwa (BLOCK)'
-                            : (currentProduct.aiScreening.evaluationSource === 'INFRASTRUCTURE_FALLBACK' || currentProduct.aiScreening.failureReason === 'MODEL_UNAVAILABLE_503')
-                            ? 'Miundombinu Haipatikani / 503 (Inasubiri Ukaguzi)'
+                            : (currentProduct.aiScreening.evaluationSource === 'INFRASTRUCTURE_FALLBACK' || currentProduct.aiScreening.failureReason === 'MODEL_UNAVAILABLE_503' || currentProduct.aiScreening.failureReason === 'IMAGE_PREPARATION_FAILED')
+                            ? `Hitilafu ya AI (${currentProduct.aiScreening.failureReason || '503'})`
                             : 'Inahitaji Ukaguzi (REVIEW_REQUIRED)'}
                         </span>
                         {currentProduct.aiScreening.isRetryable && (

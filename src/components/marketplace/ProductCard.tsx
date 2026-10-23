@@ -118,6 +118,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <div className={`p-2 rounded-xl space-y-1 text-[11px] border ${
             (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
               ? 'bg-rose-50 border-rose-200 text-rose-950'
+              : (product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' || product.screeningJobStatus === 'PENDING' || product.screeningJobStatus === 'PROCESSING')
+              ? 'bg-blue-50 border-blue-200 text-blue-950'
+              : (product.aiScreening?.status === 'REVIEW_REQUIRED')
+              ? 'bg-purple-50 border-purple-200 text-purple-950'
               : 'bg-amber-50 border-amber-200 text-amber-950'
           }`}>
             <div className="flex items-center justify-between font-bold">
@@ -126,20 +130,22 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK') ? 'text-rose-700' : 'text-amber-700'
                 }`} />
                 <span>
-                  {governance.moderationStatus === 'PENDING_REVIEW'
-                    ? 'Inasubiri Idhini (PENDING)'
-                    : (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
-                    ? 'Imekataliwa / Imezuiwa (BLOCKED)'
-                    : governance.moderationStatus === 'HIDDEN'
-                    ? 'Imefichwa (HIDDEN)'
-                    : governance.moderationStatus === 'SUSPENDED'
-                    ? 'Imesimamishwa (SUSPENDED)'
+                  {(governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
+                    ? 'Imezuiwa (BLOCK)'
+                    : (product.screeningJobStatus === 'EXHAUSTED' || product.screeningJobStatus === 'EXHAUSTED_DEADLINE' || product.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
+                    ? 'Muda wa AI Umekwisha (EXHAUSTED)'
+                    : (product.aiScreening?.status === 'SCREENING_ERROR' || product.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || product.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || product.screeningJobStatus === 'FAILED')
+                    ? 'Hitilafu ya AI / Huduma Haipatikani'
+                    : (product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' || product.screeningJobStatus === 'PENDING' || product.screeningJobStatus === 'PROCESSING')
+                    ? 'Inachunguzwa na AI (SCREENING_PENDING)'
+                    : (product.aiScreening && governance.isAiScreeningFresh === false)
+                    ? 'Inahitaji Ukaguzi Mpya wa AI (Stale)'
+                    : (product.aiScreening?.status === 'REVIEW_REQUIRED')
+                    ? 'Inahitaji Ukaguzi wa Msimamizi (REVIEW_REQUIRED)'
+                    : (product.aiScreening?.status === 'PASS' && (governance.moderationStatus === 'PENDING_REVIEW' || product.moderationStatus === 'PENDING_REVIEW'))
+                    ? 'Imefaulu AI (Inasubiri Idhini ya Msimamizi)'
                     : governance.moderationStatus === 'DRAFT'
                     ? 'Rasimu (DRAFT)'
-                    : (governance.moderationStatus === 'APPROVED' && !governance.isEligible)
-                    ? (governance.isAiScreeningFresh === false
-                        ? 'Inahitaji Ukaguzi Mpya wa AI'
-                        : 'Haionekani Sokoni')
                     : governance.moderationStatus || 'Haionekani Sokoni'}
                 </span>
               </span>
@@ -259,12 +265,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-md border inline-flex items-center gap-0.5 ${
                   (governance.moderationStatus === 'REJECTED' || product.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
                     ? 'bg-rose-50 text-rose-800 border-rose-300'
-                    : !governance.isAiScreeningFresh
+                    : (product.screeningJobStatus === 'EXHAUSTED' || product.screeningJobStatus === 'EXHAUSTED_DEADLINE' || product.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
+                    ? 'bg-orange-50 text-orange-800 border-orange-300'
+                    : (product.aiScreening?.status === 'SCREENING_ERROR' || product.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || product.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || product.screeningJobStatus === 'FAILED')
+                    ? 'bg-rose-50 text-rose-800 border-rose-300'
+                    : (product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' || product.screeningJobStatus === 'PENDING' || product.screeningJobStatus === 'PROCESSING')
+                    ? 'bg-blue-50 text-blue-800 border-blue-300 animate-pulse'
+                    : (product.aiScreening && governance.isAiScreeningFresh === false)
                     ? 'bg-amber-50 text-amber-800 border-amber-300'
-                    : governance.isEligible
+                    : (product.aiScreening?.status === 'REVIEW_REQUIRED')
+                    ? 'bg-purple-50 text-purple-800 border-purple-300'
+                    : (product.aiScreening?.status === 'PASS' && (product.moderationStatus === 'PENDING_REVIEW' || governance.moderationStatus === 'PENDING_REVIEW'))
+                    ? 'bg-sky-50 text-sky-800 border-sky-300'
+                    : (governance.isEligible && product.status === 'active')
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                    : (governance.moderationStatus === 'PENDING_REVIEW' || product.moderationStatus === 'PENDING_REVIEW')
-                    ? 'bg-amber-50 text-amber-800 border-amber-300'
                     : product.validationStatus === 'INCOMPLETE'
                     ? 'bg-amber-50 text-amber-800 border-amber-300'
                     : 'bg-stone-100 text-stone-700 border-stone-300'
@@ -272,13 +286,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 title={product.validationErrors?.map((e) => e.message).join(', ') || `Hali ya kiutawala: ${governance.moderationStatus}`}
               >
                 {(governance.moderationStatus === 'REJECTED' || product.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
-                  ? 'Imekataliwa / Imezuiwa (BLOCKED)'
-                  : !governance.isAiScreeningFresh
+                  ? 'Imezuiwa (BLOCK)'
+                  : (product.screeningJobStatus === 'EXHAUSTED' || product.screeningJobStatus === 'EXHAUSTED_DEADLINE' || product.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
+                  ? 'Muda wa AI Umekwisha'
+                  : (product.aiScreening?.status === 'SCREENING_ERROR' || product.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || product.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || product.screeningJobStatus === 'FAILED')
+                  ? 'Hitilafu ya AI / 503'
+                  : (product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' || product.screeningJobStatus === 'PENDING' || product.screeningJobStatus === 'PROCESSING')
+                  ? 'Inachunguzwa na AI...'
+                  : (product.aiScreening && governance.isAiScreeningFresh === false)
                   ? 'Inahitaji Ukaguzi Mpya'
-                  : governance.isEligible
-                  ? 'Imeidhinishwa'
-                  : (governance.moderationStatus === 'PENDING_REVIEW' || product.moderationStatus === 'PENDING_REVIEW')
-                  ? 'Inasubiri Idhini'
+                  : (product.aiScreening?.status === 'REVIEW_REQUIRED')
+                  ? 'Inahitaji Ukaguzi'
+                  : (product.aiScreening?.status === 'PASS' && (product.moderationStatus === 'PENDING_REVIEW' || governance.moderationStatus === 'PENDING_REVIEW'))
+                  ? 'Imefaulu AI (Inasubiri Idhini)'
+                  : (governance.isEligible && product.status === 'active')
+                  ? 'Imeidhinishwa (PASS)'
                   : product.validationStatus === 'INCOMPLETE'
                   ? 'Haijakamilika'
                   : 'Rasimu / Imezimwa'}

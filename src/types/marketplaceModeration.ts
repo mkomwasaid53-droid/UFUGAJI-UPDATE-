@@ -149,6 +149,7 @@ export type AIScreeningFailureReason =
   | 'DEADLINE_EXCEEDED'
   | 'MALFORMED_RESPONSE'
   | 'IMAGE_FETCH_FAILED'
+  | 'IMAGE_PREPARATION_FAILED'
   | 'NETWORK_ERROR'
   | 'UNKNOWN';
 
@@ -174,9 +175,12 @@ export interface AIScreeningResult {
     hasCategory: boolean;
     hasPrice: boolean;
     imageCount: number;
+    preparedImageCount?: number;
+    failedImageCount?: number;
   };
   cached?: boolean;
   evaluationSource?: AIScreeningEvaluationSource;
+  decisionSource?: string;
   failureReason?: AIScreeningFailureReason;
   isRetryable?: boolean;
   retryAttempts?: number;

@@ -1698,3 +1698,90 @@ export function formatTshPrice(amount: number): string {
   return `Tsh ${Math.round(amount).toLocaleString('en-US')}`;
 }
 
+export interface ScreeningStatusResponse {
+  found: boolean;
+  jobId?: string;
+  productId: string;
+  sellerId?: string;
+  contentFingerprint?: string;
+  status: 'PENDING' | 'CLAIMED' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'EXHAUSTED' | string;
+  attemptCount?: number;
+  maxAttempts?: number;
+  nextRetryAt?: string | null;
+  lastFailureReason?: string | null;
+  lastError?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  completedAt?: string | null;
+  result?: any;
+  resolution?: any;
+  moderationStatus?: string;
+  screeningJobStatus?: string;
+  product?: Partial<MarketplaceProduct> | null;
+}
+
+export async function fetchScreeningStatus(productId: string, jobId?: string): Promise<ScreeningStatusResponse | null> {
+  try {
+    const params = new URLSearchParams();
+    if (productId) params.append('productId', productId);
+    if (jobId) params.append('jobId', jobId);
+    const res = await fetch(`/api/marketplace/screening-status?${params.toString()}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.warn('Error fetching screening status:', err);
+    return null;
+  }
+}
+
+export function pollScreeningStatus(
+  productId: string,
+  onUpdate: (status: ScreeningStatusResponse) => void,
+  onTerminal?: (status: ScreeningStatusResponse) => void,
+  maxAttempts = 40,
+  intervalMs = 2500
+): () => void {
+  let isCancelled = false;
+  let attempts = 0;
+  let timerId: any = null;
+
+  const poll = async () => {
+    if (isCancelled) return;
+    attempts++;
+    const data = await fetchScreeningStatus(productId);
+    if (data && !isCancelled) {
+      onUpdate(data);
+      const isTerminal = data.status === 'COMPLETED' || data.status === 'EXHAUSTED' || (data.status === 'FAILED' && (data.attemptCount || 0) >= (data.maxAttempts || 3));
+      if (isTerminal) {
+        if (onTerminal) onTerminal(data);
+        return;
+      }
+    }
+
+    if (attempts < maxAttempts && !isCancelled) {
+      const nextDelay = Math.min(intervalMs * Math.pow(1.08, Math.min(attempts, 8)), 8000);
+      timerId = setTimeout(poll, nextDelay);
+    }
+  };
+
+  timerId = setTimeout(poll, intervalMs);
+
+  return () => {
+    isCancelled = true;
+    if (timerId) clearTimeout(timerId);
+  };
+}
+
+export async function requestRescreen(productId: string): Promise<any> {
+  const res = await fetch('/api/marketplace/rescreen', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ productId })
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || 'Haikuweza kuanzisha ukaguzi upya.');
+  }
+  return await res.json();
+}
+

@@ -460,10 +460,18 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     setErrorMsg(null);
 
     const newImages: ProductImage[] = [];
+    let hasProcessingError = false;
+    let lastErrorMessage = '';
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (!file.type.startsWith('image/')) {
+      const isImage =
+        (file.type && file.type.startsWith('image/')) ||
+        /\.(jpe?g|png|webp|gif|bmp|heic|heif|jfif)$/i.test(file.name || '');
+
+      if (!isImage) {
+        hasProcessingError = true;
+        lastErrorMessage = `Faili "${file.name}" si picha inayotambulika. Tafadhali weka picha ya JPEG, PNG au WebP.`;
         continue;
       }
 
@@ -486,9 +494,15 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           isPrimary: isFirst,
           uploadedAt: new Date().toISOString()
         });
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error processing image:', err);
+        hasProcessingError = true;
+        lastErrorMessage = err?.message || 'Hitilafu ya kusindika faili la picha.';
       }
+    }
+
+    if (hasProcessingError && lastErrorMessage) {
+      setErrorMsg(lastErrorMessage);
     }
 
     if (newImages.length > 0) {
@@ -509,6 +523,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       handleProcessFiles(e.target.files);
+    }
+    if (e.target) {
+      e.target.value = '';
     }
   };
 

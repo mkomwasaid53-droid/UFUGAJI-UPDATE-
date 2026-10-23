@@ -291,6 +291,22 @@ async function executeBackgroundWorkerTick(): Promise<void> {
       const currentProduct = products[productIndex];
       const currentFingerprint = computeListingContentFingerprint(currentProduct);
 
+      // Security Invariant: Check if job has been superseded by a newer job in the queue
+      const latestJob = getScreeningJobByProductId(processedJob.productId);
+      if (latestJob && latestJob.jobId !== processedJob.jobId && latestJob.status !== 'SUPERSEDED') {
+        console.warn(
+          `[Worker Tick] Stale worker race discarded: job ${processedJob.jobId} was superseded by newer job ${latestJob.jobId}.`
+        );
+        processedJob.status = 'SUPERSEDED';
+        const allJobs = getAllScreeningJobs();
+        const jIdx = allJobs.findIndex((j) => j.jobId === processedJob.jobId);
+        if (jIdx >= 0) {
+          allJobs[jIdx] = processedJob;
+          saveScreeningJobs(allJobs);
+        }
+        return;
+      }
+
       // Security Invariant: Stale fingerprint check!
       if (currentFingerprint !== processedJob.contentFingerprint) {
         console.warn(
@@ -316,7 +332,19 @@ async function executeBackgroundWorkerTick(): Promise<void> {
           const sellerTrust = getSellerTrustStatus(currentProduct.sellerId || processedJob.sellerId);
           currentProduct.sellerTrustStatus = sellerTrust;
 
-          const validationResult = validateMarketplaceListing(currentProduct);
+          // Authoritative deterministic listing validation with proper options contract
+          const validationResult = validateMarketplaceListing({
+            product: currentProduct,
+            authenticatedUserId: currentProduct.sellerId || processedJob.sellerId,
+            targetStatus: 'active'
+          });
+
+          // Check commercial seller monetization
+          const monetization = sellerMonetizationService.canSellerSellOnMarketplace(currentProduct.sellerId || processedJob.sellerId);
+          const isMonetizationAllowed = monetization.canSell;
+
+          const isFresh = isScreeningResultUpToDate(currentProduct, screeningResult);
+          const isSanctioned = ['REJECTED', 'SUSPENDED', 'HIDDEN'].includes(currentProduct.moderationStatus);
 
           // Invariant: BLOCK remains unpublished regardless of seller trust
           if (screeningResult.status === 'BLOCK') {
@@ -329,11 +357,19 @@ async function executeBackgroundWorkerTick(): Promise<void> {
             // Invariant: REVIEW_REQUIRED remains unpublished until required review is completed
             currentProduct.moderationStatus = 'PENDING_REVIEW';
             currentProduct.status = 'inactive';
+            currentProduct.moderatedAt = new Date().toISOString();
+            currentProduct.moderationPublicReason = screeningResult.explanationSwahili || screeningResult.explanation;
           } else if (screeningResult.status === 'PASS') {
             // Invariant: REJECTED, HIDDEN and SUSPENDED sanctions remain authoritative
-            const isSanctioned = ['REJECTED', 'SUSPENDED', 'HIDDEN'].includes(currentProduct.moderationStatus);
             // Invariant: TRUSTED_SELLER + current PASS may publish only when every other existing requirement passes
-            if (sellerTrust === 'TRUSTED_SELLER' && validationResult.isEligibleForActive && !isSanctioned && currentProduct.status !== 'draft') {
+            if (
+              sellerTrust === 'TRUSTED_SELLER' &&
+              validationResult.isEligibleForActive &&
+              isMonetizationAllowed &&
+              !isSanctioned &&
+              currentProduct.status !== 'draft' &&
+              isFresh
+            ) {
               currentProduct.moderationStatus = 'APPROVED';
               currentProduct.status = 'active';
               currentProduct.moderatedAt = new Date().toISOString();
@@ -343,6 +379,16 @@ async function executeBackgroundWorkerTick(): Promise<void> {
               // Invariant: NEW_SELLER + PASS remains pending for required administrator approval
               currentProduct.moderationStatus = 'PENDING_REVIEW';
               currentProduct.status = 'inactive';
+              if (sellerTrust === 'NEW_SELLER') {
+                currentProduct.moderationPublicReason = 'Tangazo limefaulu ukaguzi wa AI na linasubiri idhini ya msimamizi wa soko (New Seller Pending Approval).';
+              } else if (!validationResult.isEligibleForActive) {
+                const errMsgs = validationResult.errors.map((e) => e.message).join(', ');
+                currentProduct.moderationPublicReason = `Tangazo linahitaji marekebisho ya fomu: ${errMsgs}`;
+              } else if (!isMonetizationAllowed) {
+                currentProduct.moderationPublicReason = monetization.reasonSwahili || 'Uwezo wa kuuza umezuiwa kiutawala.';
+              } else if (isSanctioned) {
+                currentProduct.moderationPublicReason = `Tangazo lipo chini ya hatua ya kiutawala (${currentProduct.moderationStatus}).`;
+              }
             }
           }
 
@@ -364,7 +410,7 @@ async function executeBackgroundWorkerTick(): Promise<void> {
               : `Authoritative async screening: ${screeningResult.status} (${screeningResult.evaluationSource || 'MODEL'})`,
             publicExplanation: currentProduct.status === 'active'
               ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).'
-              : 'Tangazo linasubiri idhini ya msimamizi au marekebisho.',
+              : (currentProduct.moderationPublicReason || 'Tangazo linasubiri idhini ya msimamizi au marekebisho.'),
             correctionInstructions: null,
             reviewedByUserId: currentProduct.status === 'active' ? 'system_ai_trusted_seller' : (screeningResult.status === 'BLOCK' ? 'system_ai_screening_block' : null),
             reviewedByDisplayName: currentProduct.status === 'active' ? 'AI Screening + Trusted Seller' : (screeningResult.status === 'BLOCK' ? 'AI Safety Filter' : null),
@@ -372,6 +418,19 @@ async function executeBackgroundWorkerTick(): Promise<void> {
             createdAt: currentProduct.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString()
           });
+
+          // Update job resolution atomically
+          processedJob.resolution = resolveListingPublishingState({
+            screeningResult,
+            sellerTrustStatus: sellerTrust,
+            currentModerationStatus: currentProduct.moderationStatus
+          });
+          const allJobs = getAllScreeningJobs();
+          const jIdx = allJobs.findIndex((j) => j.jobId === processedJob.jobId);
+          if (jIdx >= 0) {
+            allJobs[jIdx] = processedJob;
+            saveScreeningJobs(allJobs);
+          }
         } else if (processedJob.status === 'EXHAUSTED_DEADLINE' || processedJob.status === 'FAILED') {
           // If the maximum processing window expires, mark job retryable/failed and keep listing unpublished
           currentProduct.screeningJobStatus = processedJob.status;
@@ -1150,7 +1209,7 @@ async function startServer() {
           product.screeningJobId = job.jobId;
           product.screeningJobStatus = job.status;
 
-          // If job was completed synchronously (e.g. deterministic rule block)
+          // If job was completed synchronously (e.g. deterministic rule block or mock pass)
           if (job.status === 'COMPLETED' && job.result) {
             product.aiScreening = job.result;
             product.aiScreenedAt = new Date().toISOString();
@@ -1160,6 +1219,35 @@ async function startServer() {
               product.moderatedAt = new Date().toISOString();
               product.moderatedBy = 'system_ai_screening_block';
               product.moderationPublicReason = 'Tangazo limezuiwa sokoni kwa kukiuka sera za maudhui na maadili.';
+            } else if (job.result.status === 'PASS') {
+              const currentFingerprint = computeListingContentFingerprint({
+                title: product.title || currentProd.title,
+                description: product.description || currentProd.description,
+                category: product.category || currentProd.category,
+                subcategory: product.subcategory || currentProd.subcategory,
+                price: product.price !== undefined ? product.price : currentProd.price,
+                images: normalizedImages,
+                imageUrl: product.imageUrl || currentProd.imageUrl
+              });
+              const isFresh = job.contentFingerprint === currentFingerprint;
+              const validationResult = validateMarketplaceListing({
+                product: { ...currentProd, ...product },
+                authenticatedUserId: authoritativeSellerId,
+                targetStatus: 'active'
+              });
+              const monetization = sellerMonetizationService.canSellerSellOnMarketplace(authoritativeSellerId);
+              const isMonetizationAllowed = monetization.canSell;
+              const isSanctioned = ['REJECTED', 'SUSPENDED', 'HIDDEN'].includes(currentProd?.moderationStatus || product.moderationStatus);
+
+              if (sellerTrust === 'TRUSTED_SELLER' && isFresh && validationResult.isEligibleForActive && isMonetizationAllowed && !isSanctioned && product.status !== 'draft') {
+                product.moderationStatus = 'APPROVED';
+                product.status = 'active';
+                product.moderatedAt = new Date().toISOString();
+                product.moderatedBy = 'system_ai_trusted_seller_auto_pass';
+              } else {
+                product.moderationStatus = 'PENDING_REVIEW';
+                product.status = 'inactive';
+              }
             }
           }
 
@@ -1234,7 +1322,7 @@ async function startServer() {
           product.screeningJobId = job.jobId;
           product.screeningJobStatus = job.status;
 
-          // If synchronously completed (e.g. deterministic keyword rule block)
+          // If synchronously completed (e.g. deterministic keyword rule block or mock pass)
           if (job.status === 'COMPLETED' && job.result) {
             product.aiScreening = job.result;
             product.aiScreenedAt = new Date().toISOString();
@@ -1244,6 +1332,35 @@ async function startServer() {
               product.moderatedAt = new Date().toISOString();
               product.moderatedBy = 'system_ai_screening_block';
               product.moderationPublicReason = 'Tangazo limezuiwa sokoni kwa kukiuka sera za maudhui na maadili.';
+            } else if (job.result.status === 'PASS') {
+              const currentFingerprint = computeListingContentFingerprint({
+                title: product.title || '',
+                description: product.description || '',
+                category: product.category || '',
+                subcategory: product.subcategory || '',
+                price: product.price,
+                images: normalizedImages,
+                imageUrl: product.imageUrl
+              });
+              const isFresh = job.contentFingerprint === currentFingerprint;
+              const validationResult = validateMarketplaceListing({
+                product,
+                authenticatedUserId: authoritativeSellerId,
+                targetStatus: 'active'
+              });
+              const monetization = sellerMonetizationService.canSellerSellOnMarketplace(authoritativeSellerId);
+              const isMonetizationAllowed = monetization.canSell;
+              const isSanctioned = ['REJECTED', 'SUSPENDED', 'HIDDEN'].includes(product.moderationStatus);
+
+              if (sellerTrust === 'TRUSTED_SELLER' && isFresh && validationResult.isEligibleForActive && isMonetizationAllowed && !isSanctioned && product.status !== 'draft') {
+                product.moderationStatus = 'APPROVED';
+                product.status = 'active';
+                product.moderatedAt = new Date().toISOString();
+                product.moderatedBy = 'system_ai_trusted_seller_auto_pass';
+              } else {
+                product.moderationStatus = 'PENDING_REVIEW';
+                product.status = 'inactive';
+              }
             }
           }
 
@@ -1323,10 +1440,12 @@ async function startServer() {
         job = getScreeningJobByProductId(productId);
       }
 
+      const products = readMarketplaceProductsFromDisk();
+      const targetProductId = (job && job.productId) || (typeof productId === 'string' ? productId : '');
+      const product = products.find((p: any) => p && p.productId === targetProductId);
+
       if (!job) {
         // Fall back to checking listing directly
-        const products = readMarketplaceProductsFromDisk();
-        const product = products.find((p: any) => p && p.productId === productId);
         if (!product) {
           return res.status(404).json({ error: 'Kazi ya ukaguzi au tangazo halijapatikana.' });
         }
@@ -1335,7 +1454,15 @@ async function startServer() {
           productId: product.productId,
           screeningJobStatus: product.screeningJobStatus || (product.aiScreening ? 'COMPLETED' : 'SCREENING_PENDING'),
           aiScreening: product.aiScreening || null,
-          moderationStatus: product.moderationStatus
+          moderationStatus: product.moderationStatus,
+          product: {
+            productId: product.productId,
+            status: product.status,
+            moderationStatus: product.moderationStatus,
+            aiScreening: product.aiScreening || null,
+            screeningJobStatus: product.screeningJobStatus,
+            contentFingerprint: product.contentFingerprint
+          }
         });
       }
 
@@ -1360,7 +1487,15 @@ async function startServer() {
         updatedAt: job.updatedAt,
         completedAt: job.completedAt,
         result: job.result,
-        resolution: job.resolution
+        resolution: job.resolution,
+        product: product ? {
+          productId: product.productId,
+          status: product.status,
+          moderationStatus: product.moderationStatus,
+          aiScreening: product.aiScreening || null,
+          screeningJobStatus: product.screeningJobStatus,
+          contentFingerprint: product.contentFingerprint
+        } : null
       });
     } catch (err: any) {
       return res.status(500).json({ error: 'Hitilafu ya kupata hali ya ukaguzi', details: err?.message });
