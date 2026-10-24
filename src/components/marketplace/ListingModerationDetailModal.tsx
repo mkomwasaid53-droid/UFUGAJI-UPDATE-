@@ -13,7 +13,7 @@
  * 8. Moderation Audit History & Private Internal Notes
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ModerationQueueItem,
   MODERATION_REASON_LABELS
@@ -114,6 +114,73 @@ export const ListingModerationDetailModal: React.FC<ListingModerationDetailModal
       setRescreenNotice(`Hitilafu: ${err?.message || 'Hitilafu ya mtandao'}`);
     } finally {
       setIsRescreening(false);
+    }
+  };
+
+  // Publication Diagnosis & Reconciliation V2.2 States
+  const [publicationDiagnosis, setPublicationDiagnosis] = useState<any>(null);
+  const [isLoadingDiagnosis, setIsLoadingDiagnosis] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [reconcileFeedback, setReconcileFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
+  const fetchPublicationDiagnosis = async () => {
+    if (!product?.productId) return;
+    setIsLoadingDiagnosis(true);
+    try {
+      const resp = await fetch(`/api/marketplace/admin/products/${product.productId}/publication-diagnosis`, {
+        headers: { 'x-is-admin': 'true' }
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setPublicationDiagnosis(data);
+      }
+    } catch (err) {
+      console.error('Failed to load publication diagnosis:', err);
+    } finally {
+      setIsLoadingDiagnosis(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPublicationDiagnosis();
+  }, [product?.productId]);
+
+  const handleReconcilePublication = async () => {
+    if (!product?.productId || isReconciling) return;
+    setIsReconciling(true);
+    setReconcileFeedback(null);
+    try {
+      const resp = await fetch(`/api/marketplace/admin/products/${product.productId}/reconcile-publication`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-is-admin': 'true'
+        },
+        body: JSON.stringify({
+          adminDisplayName: 'Msimamizi wa Mfumo'
+        })
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        setReconcileFeedback({
+          type: data.reconciliation?.isNowPublic ? 'success' : 'info',
+          message: data.message || `Upatanisho umekamilika: ${data.reconciliation?.reason || ''}`
+        });
+        // Refresh diagnosis to display updated state immediately
+        await fetchPublicationDiagnosis();
+      } else {
+        setReconcileFeedback({
+          type: 'error',
+          message: data.error || 'Hitilafu ya upatanisho wa tangazo'
+        });
+      }
+    } catch (err: any) {
+      setReconcileFeedback({
+        type: 'error',
+        message: err?.message || 'Hitilafu ya mtandao wakati wa upatanisho'
+      });
+    } finally {
+      setIsReconciling(false);
     }
   };
 
@@ -1098,6 +1165,249 @@ export const ListingModerationDetailModal: React.FC<ListingModerationDetailModal
               )}
             </div>
           )}
+
+          {/* 8. PUBLICATION DIAGNOSIS & RECONCILIATION V2.2 */}
+          <div className="p-4 sm:p-5 rounded-2xl border-2 border-emerald-300 bg-emerald-50/30 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2 border-b border-emerald-200/80 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-700 text-white">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-stone-900 flex items-center gap-2">
+                    Uchunguzi wa Uchapishaji (Publication Diagnosis V2.2)
+                  </h4>
+                  <p className="text-[11px] text-stone-600">
+                    Uthibitisho wa mamlaka ya tangazo, vigezo vya kuonekana hadharani na upatanisho salama
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {isLoadingDiagnosis ? (
+                  <span className="text-xs px-2.5 py-1 rounded-lg bg-stone-100 text-stone-600 font-medium flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3 animate-spin text-stone-500" /> Inachunguza...
+                  </span>
+                ) : publicationDiagnosis ? (
+                  <span
+                    className={`text-xs px-2.5 py-1 rounded-lg font-bold border flex items-center gap-1.5 ${
+                      publicationDiagnosis.publicEligibility?.isEligible
+                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                        : 'bg-amber-100 text-amber-900 border-amber-300'
+                    }`}
+                  >
+                    {publicationDiagnosis.publicEligibility?.isEligible ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                        Inaonekana Sokoni (Publicly Visible)
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                        Haionekani Sokoni (Hidden / Unpublished)
+                      </>
+                    )}
+                  </span>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={fetchPublicationDiagnosis}
+                  disabled={isLoadingDiagnosis}
+                  className="p-1.5 rounded-lg bg-white border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-stone-50 transition-colors cursor-pointer"
+                  title="Sasisha uchunguzi wa chapisho"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDiagnosis ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Reconciliation Feedback Alert */}
+            {reconcileFeedback && (
+              <div
+                className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
+                  reconcileFeedback.type === 'success'
+                    ? 'bg-emerald-100/90 text-emerald-900 border-emerald-300'
+                    : reconcileFeedback.type === 'error'
+                    ? 'bg-rose-100 text-rose-950 border-rose-300'
+                    : 'bg-blue-100 text-blue-900 border-blue-300'
+                }`}
+              >
+                {reconcileFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                ) : reconcileFeedback.type === 'error' ? (
+                  <XCircle className="w-4 h-4 text-rose-700 shrink-0 mt-0.5" />
+                ) : (
+                  <Info className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <span className="font-bold">
+                    {reconcileFeedback.type === 'success'
+                      ? 'Upatanisho Umekamilika Salama'
+                      : reconcileFeedback.type === 'error'
+                      ? 'Hitilafu ya Upatanisho'
+                      : 'Taarifa ya Upatanisho'}
+                  </span>
+                  <p className="mt-0.5">{reconcileFeedback.message}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Publication Diagnosis Details Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+              {/* Pillar 1: AI Decision & Freshness */}
+              <div className="p-3 rounded-xl bg-white border border-stone-200 space-y-1">
+                <span className="text-stone-500 font-medium block text-[11px]">1. AI Screening & Freshness</span>
+                <p className="font-bold text-stone-900 flex items-center gap-1.5">
+                  {publicationDiagnosis?.aiScreening?.status === 'PASS' ? (
+                    <span className="text-emerald-700">✓ PASS (Imeruhusiwa)</span>
+                  ) : publicationDiagnosis?.aiScreening?.status === 'BLOCK' ? (
+                    <span className="text-rose-700">⛔ BLOCK (Imezuiwa)</span>
+                  ) : publicationDiagnosis?.aiScreening?.status === 'REVIEW_REQUIRED' ? (
+                    <span className="text-amber-700">🔍 REVIEW_REQUIRED</span>
+                  ) : (
+                    <span>{publicationDiagnosis?.aiScreening?.status || 'Bado'}</span>
+                  )}
+                </p>
+                <div className="text-[11px] text-stone-600 space-y-0.5 pt-0.5">
+                  <p>
+                    Fingerprint:{' '}
+                    {publicationDiagnosis?.aiScreening?.isFresh ? (
+                      <span className="text-emerald-700 font-semibold">✓ Fresh</span>
+                    ) : (
+                      <span className="text-amber-700 font-bold">⚠ Stale / Mismatch</span>
+                    )}
+                  </p>
+                  <p className="text-stone-500 text-[10px]">
+                    Chanzo: {publicationDiagnosis?.aiScreening?.evaluationSource || 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Pillar 2: Authoritative Seller Trust */}
+              <div className="p-3 rounded-xl bg-white border border-stone-200 space-y-1">
+                <span className="text-stone-500 font-medium block text-[11px]">2. Uaminifu wa Muuzaji</span>
+                <p className="font-bold text-stone-900">
+                  <span
+                    className={`px-2 py-0.5 rounded text-[11px] ${
+                      publicationDiagnosis?.sellerTrustStatus === 'TRUSTED_SELLER'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : publicationDiagnosis?.sellerTrustStatus === 'RESTRICTED_SELLER'
+                        ? 'bg-rose-100 text-rose-800'
+                        : 'bg-stone-100 text-stone-800'
+                    }`}
+                  >
+                    {publicationDiagnosis?.sellerTrustStatus || sellerTrust}
+                  </span>
+                </p>
+                <p className="text-[11px] text-stone-500 pt-0.5">
+                  {publicationDiagnosis?.sellerTrustStatus === 'TRUSTED_SELLER'
+                    ? 'Inaruhusiwa kuchapishwa moja kwa moja ikipita ukaguzi.'
+                    : publicationDiagnosis?.sellerTrustStatus === 'NEW_SELLER'
+                    ? 'Muuzaji mpya anahitaji idhini ya msimamizi kabla ya kuwa active.'
+                    : 'Muuzaji amezuiwa kuchapisha bidhaa mpya sokoni.'}
+                </p>
+              </div>
+
+              {/* Pillar 3: Deterministic Validation */}
+              <div className="p-3 rounded-xl bg-white border border-stone-200 space-y-1">
+                <span className="text-stone-500 font-medium block text-[11px]">3. Vigezo vya Kisheria (Validation)</span>
+                <p className="font-bold text-stone-900">
+                  {publicationDiagnosis?.validation?.isEligibleForActive ? (
+                    <span className="text-emerald-700 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Vigezo Vyote Vimepita (Pass)
+                    </span>
+                  ) : (
+                    <span className="text-rose-700 flex items-center gap-1">
+                      <XCircle className="w-3.5 h-3.5" /> Hitilafu za Kisheria (Fail)
+                    </span>
+                  )}
+                </p>
+                {publicationDiagnosis?.validation?.errorCodes && publicationDiagnosis.validation.errorCodes.length > 0 ? (
+                  <p className="text-[10.5px] text-rose-800 font-mono">
+                    Msimbo: {publicationDiagnosis.validation.errorCodes.join(', ')}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-stone-500">Hakuna makosa yaliyopatikana.</p>
+                )}
+              </div>
+
+              {/* Pillar 4: Commercial Entitlement */}
+              <div className="p-3 rounded-xl bg-white border border-stone-200 space-y-1">
+                <span className="text-stone-500 font-medium block text-[11px]">4. Haki ya Kibiashara (Entitlement)</span>
+                <p className="font-bold text-stone-900">
+                  {publicationDiagnosis?.commercialEntitlement?.canSell ? (
+                    <span className="text-emerald-700">✓ Inaruhusiwa Kuuza (Active)</span>
+                  ) : (
+                    <span className="text-rose-700">✗ Imezuiliwa Kibiashara</span>
+                  )}
+                </p>
+                <p className="text-[11px] text-stone-600">
+                  {publicationDiagnosis?.commercialEntitlement?.reasonSwahili || 'Akaunti ina uwezo wa kuuza sokoni.'}
+                </p>
+              </div>
+
+              {/* Pillar 5: Product & Moderation Status */}
+              <div className="p-3 rounded-xl bg-white border border-stone-200 space-y-1">
+                <span className="text-stone-500 font-medium block text-[11px]">5. Hali ya Tangazo & Mfumo</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-stone-900 font-semibold">
+                    status: <strong className="text-emerald-800">{publicationDiagnosis?.status || product.status}</strong>
+                  </span>
+                  <span className="font-mono text-stone-900 font-semibold">
+                    moderation: <strong className="text-blue-800">{publicationDiagnosis?.moderationStatus || product.moderationStatus}</strong>
+                  </span>
+                </div>
+                <p className="text-[11px] text-stone-500">
+                  Hali halisi iliyopo kwenye rekodi rasmi ya soko.
+                </p>
+              </div>
+
+              {/* Pillar 6: Public Eligibility Reason */}
+              <div className="p-3 rounded-xl bg-white border border-stone-200 space-y-1">
+                <span className="text-stone-500 font-medium block text-[11px]">6. Sababu ya Kutokuonekana Sokoni</span>
+                {publicationDiagnosis?.publicEligibility?.isEligible ? (
+                  <p className="font-semibold text-emerald-800">
+                    Tangazo linapatikana hadharani sokoni bila kizuizi chochote.
+                  </p>
+                ) : (
+                  <p className="font-semibold text-rose-800 text-[11.5px] leading-snug">
+                    {publicationDiagnosis?.publicEligibility?.reason ||
+                      publicationDiagnosis?.publicationResolver?.reasonSwahili ||
+                      'Tangazo halijakamilisha vigezo vyote vya kuwa hadharani.'}
+                  </p>
+                )}
+                {publicationDiagnosis?.reconciliationInfo?.lastReconciledAt && (
+                  <p className="text-[10px] text-stone-400 font-mono pt-1">
+                    Upatanisho wa mwisho: {new Date(publicationDiagnosis.reconciliationInfo.lastReconciledAt).toLocaleTimeString('sw-TZ')}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Reconciliation Action Box */}
+            <div className="p-3.5 bg-white rounded-xl border border-emerald-300/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+              <div className="text-xs space-y-0.5">
+                <span className="font-bold text-stone-900 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-emerald-700" /> Patanisha Hali ya Uchapishaji (Safe Publication Reconciliation)
+                </span>
+                <p className="text-[11px] text-stone-600 max-w-xl">
+                  Inakokotoa upya data rasmi bila kubadili maamuzi ya BLOCK au vikwazo vya msimamizi.
+                  Ikiwa muuzaji ni TRUSTED_SELLER, AI imetoa PASS, na vigezo vyote vimepita, tangazo litakuwa active mara moja.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleReconcilePublication}
+                disabled={isReconciling}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white transition-colors cursor-pointer shadow-xs shrink-0 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isReconciling ? 'animate-spin' : ''}`} />
+                <span>{isReconciling ? 'Inapatanisha...' : 'Patanisha Sasa (Reconcile)'}</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Modal Footer Controls */}

@@ -144,6 +144,7 @@ export function validateMarketplaceListing(
   // ---------------------------------------------------------------------------
   // 2. SHOP OWNERSHIP CHECK
   // ---------------------------------------------------------------------------
+  const effectiveShopId = (cleanShopId || cleanSellerId).trim();
   if (cleanSellerId) {
     if (cleanShopId && cleanShopId !== cleanSellerId && !isAdmin) {
       addCheck(
@@ -152,7 +153,7 @@ export function validateMarketplaceListing(
         'Duka la bidhaa halilingani na umiliki halisi wa muuzaji.',
         'SHOP_OWNERSHIP_INVALID'
       );
-    } else if (!cleanShopId && isActiveTarget) {
+    } else if (!effectiveShopId && isActiveTarget) {
       addCheck(
         'SHOP_OWNERSHIP',
         'FAILED',

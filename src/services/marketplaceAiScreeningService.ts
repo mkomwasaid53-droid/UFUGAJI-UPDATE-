@@ -68,7 +68,8 @@ export interface ScreeningResolution {
     | 'REJECTED'
     | 'UNDER_REVIEW'
     | 'HIDDEN'
-    | 'SUSPENDED';
+    | 'SUSPENDED'
+    | 'DRAFT';
   canPublishActiveImmediately: boolean;
   publicUnavailableReason?: string;
   sellerNotice?: string;
@@ -189,8 +190,8 @@ export function computeListingContentFingerprint(input: {
 }): string {
   const normTitle = (input.title || '').trim().toLowerCase();
   const normDesc = (input.description || '').trim().toLowerCase();
-  const normCat = (input.category || '').trim().toLowerCase();
-  const normSubcat = (input.subcategory || '').trim().toLowerCase();
+  const normCat = (input.category || (input as any).categoryId || '').trim().toLowerCase();
+  const normSubcat = (input.subcategory || (input as any).subcategoryId || '').trim().toLowerCase();
   const normPrice = input.price !== undefined && input.price !== null ? String(input.price).trim() : '0';
   
   // Extract and sort image signatures (URLs, paths, or dataUrl prefixes)
@@ -229,8 +230,8 @@ export function isScreeningResultUpToDate(
   const currentFingerprint = computeListingContentFingerprint({
     title: product.title,
     description: product.description,
-    category: product.category,
-    subcategory: product.subcategory,
+    category: product.category || (product as any).categoryId || '',
+    subcategory: product.subcategory || (product as any).subcategoryId || '',
     price: product.price,
     images: product.images || (product.imageUrl ? [{ url: product.imageUrl }] : []),
     imageUrl: product.imageUrl
@@ -425,17 +426,29 @@ export function evaluateListingContentDeterministically(
  * 2. Seller Trust Status (NEW_SELLER, TRUSTED_SELLER, RESTRICTED_SELLER)
  * 3. Existing Moderation Status (REJECTED, HIDDEN, SUSPENDED must NEVER be bypassed)
  */
-export function resolveListingPublishingState(params: {
+export interface ResolvePublishingStateParams {
   screeningResult: AIScreeningResult;
   sellerTrustStatus: SellerTrustStatus;
   currentModerationStatus?: string;
   isExistingRestrictedOrBlocked?: boolean;
-}): ScreeningResolution {
+  validationResult?: { isEligibleForActive?: boolean; errors?: Array<{ message?: string; code?: string }> };
+  isMonetizationAllowed?: boolean;
+  monetizationReasonSwahili?: string;
+  isDraft?: boolean;
+  isFresh?: boolean;
+}
+
+export function resolveListingPublishingState(params: ResolvePublishingStateParams): ScreeningResolution {
   const {
     screeningResult,
     sellerTrustStatus,
     currentModerationStatus,
-    isExistingRestrictedOrBlocked = false
+    isExistingRestrictedOrBlocked = false,
+    validationResult,
+    isMonetizationAllowed,
+    monetizationReasonSwahili,
+    isDraft = false,
+    isFresh = true
   } = params;
 
   // Invariant 1: If current listing is already REJECTED, HIDDEN, or SUSPENDED,
@@ -465,15 +478,58 @@ export function resolveListingPublishingState(params: {
     };
   }
 
-  // Invariant 3: Handle Screening Outcome according to Seller Trust Status
+  // Invariant 3: Handle Screening Outcome according to Seller Trust Status and Authoritative Gates
   switch (screeningResult.status) {
     case 'PASS': {
       if (sellerTrustStatus === 'TRUSTED_SELLER') {
-        // TRUSTED_SELLER + PASS -> Allowed to publish immediately
+        // Enforce all remaining authoritative publication gates
+        if (validationResult && validationResult.isEligibleForActive === false) {
+          const errMsgs = (validationResult.errors || []).map((e) => e.message || e.code).join(', ');
+          return {
+            screeningResult,
+            recommendedModerationStatus: 'PENDING_REVIEW',
+            canPublishActiveImmediately: false,
+            publicUnavailableReason: `Tangazo linahitaji marekebisho ya fomu ya taarifa kabla ya kuwa active: ${errMsgs}`,
+            sellerNotice: 'Tangazo lako limefaulu ukaguzi wa AI lakini linashindwa vigezo vya fomu ya tangazo.'
+          };
+        }
+
+        if (isMonetizationAllowed === false) {
+          return {
+            screeningResult,
+            recommendedModerationStatus: 'PENDING_REVIEW',
+            canPublishActiveImmediately: false,
+            publicUnavailableReason: monetizationReasonSwahili || 'Uwezo wa kuuza umezuiwa kiutawala (Commercial Entitlement Locked).',
+            sellerNotice: monetizationReasonSwahili || 'Usajili wako wa muuzaji hauruhusu kuchapisha matangazo mapya sokoni kwa sasa.'
+          };
+        }
+
+        if (isDraft) {
+          return {
+            screeningResult,
+            recommendedModerationStatus: 'DRAFT',
+            canPublishActiveImmediately: false,
+            publicUnavailableReason: 'Tangazo bado liko katika hali ya Rasimu (Draft).',
+            sellerNotice: 'Tangazo lako limefaulu ukaguzi wa AI na limehifadhiwa kama Rasimu.'
+          };
+        }
+
+        if (!isFresh) {
+          return {
+            screeningResult,
+            recommendedModerationStatus: 'PENDING_REVIEW',
+            canPublishActiveImmediately: false,
+            publicUnavailableReason: 'Maudhui ya tangazo yamebadilika na yanahitaji ukaguzi mpya wa AI.',
+            sellerNotice: 'Maudhui yamebadilika baada ya ukaguzi wa awali. Ukaguzi mpya unahitajika.'
+          };
+        }
+
+        // All gates passed: TRUSTED_SELLER + valid PASS -> APPROVED and live
         return {
           screeningResult,
           recommendedModerationStatus: 'APPROVED',
-          canPublishActiveImmediately: true
+          canPublishActiveImmediately: true,
+          sellerNotice: 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).'
         };
       }
       // NEW_SELLER + PASS -> Cannot publish immediately! Held in PENDING_REVIEW for admin approval

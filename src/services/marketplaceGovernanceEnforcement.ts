@@ -73,6 +73,17 @@ export function syncAuthoritativeModerationState(product: MarketplaceProduct): M
   let authoritativeStatus: ModerationStatus =
     authoritativeRecord?.status || (product.moderationStatus as ModerationStatus) || 'NOT_REVIEWED';
 
+  // If authoritativeRecord was PENDING_REVIEW, but product was actually updated to APPROVED by trusted seller auto-pass, check if it should be reconciled
+  if (
+    authoritativeRecord &&
+    authoritativeRecord.status === 'PENDING_REVIEW' &&
+    product.moderationStatus === 'APPROVED' &&
+    screening?.status === 'PASS' &&
+    isScreeningResultUpToDate(product, screening)
+  ) {
+    authoritativeStatus = 'APPROVED';
+  }
+
   // RULE 1: An AI BLOCK must NEVER be overridden by previous approval or seller trust.
   // If the listing received an AI BLOCK, its authoritative status MUST be REJECTED.
   if (screening?.status === 'BLOCK') {

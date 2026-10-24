@@ -103,52 +103,167 @@ import {
 
 const LOCAL_MODERATION_CACHE_KEY = 'ufugaji_marketplace_moderation_cache';
 const LOCAL_AUDIT_CACHE_KEY = 'ufugaji_marketplace_moderation_audit_cache';
+const MODERATION_RECORDS_FILE = 'data/marketplace_moderation_records.json';
+const MODERATION_AUDIT_FILE = 'data/marketplace_moderation_audits.json';
+
+// In-memory cache for fast lookups, Node.js server persistence, and test suites
+const inMemoryModerationRecordsMap = new Map<string, MarketplaceModerationRecord>();
+let inMemoryAuditLogsList: MarketplaceModerationAuditEntry[] = [];
+
+const isNode = typeof window === 'undefined';
+let fsModule: any = null;
+let pathModule: any = null;
+
+export function initModerationStorage(customFs?: any, customPath?: any): void {
+  if (customFs && customPath) {
+    fsModule = customFs;
+    pathModule = customPath;
+    loadModerationFromDisk();
+  }
+}
+
+if (isNode) {
+  try {
+    const nodeReq = (globalThis as any).require;
+    if (typeof nodeReq === 'function') {
+      fsModule = nodeReq('fs');
+      pathModule = nodeReq('path');
+      loadModerationFromDisk();
+    }
+  } catch {}
+}
+
+function loadModerationFromDisk(): void {
+  if (!fsModule || !pathModule) return;
+  try {
+    const recPath = pathModule.resolve(process.cwd(), MODERATION_RECORDS_FILE);
+    if (fsModule.existsSync(recPath)) {
+      const data = JSON.parse(fsModule.readFileSync(recPath, 'utf8'));
+      if (Array.isArray(data)) {
+        data.forEach((r: MarketplaceModerationRecord) => {
+          if (r && r.productId) {
+            inMemoryModerationRecordsMap.set(r.productId, r);
+          }
+        });
+      }
+    }
+
+    const auditPath = pathModule.resolve(process.cwd(), MODERATION_AUDIT_FILE);
+    if (fsModule.existsSync(auditPath)) {
+      const data = JSON.parse(fsModule.readFileSync(auditPath, 'utf8'));
+      if (Array.isArray(data)) {
+        inMemoryAuditLogsList = data;
+      }
+    }
+  } catch (err) {
+    console.warn('Hitilafu ya kusoma moderation records kutoka disk:', err);
+  }
+}
+
+function saveModerationRecordsToDisk(): void {
+  if (!fsModule || !pathModule) return;
+  try {
+    const recPath = pathModule.resolve(process.cwd(), MODERATION_RECORDS_FILE);
+    const dir = pathModule.dirname(recPath);
+    if (!fsModule.existsSync(dir)) {
+      fsModule.mkdirSync(dir, { recursive: true });
+    }
+    const records = Array.from(inMemoryModerationRecordsMap.values());
+    fsModule.writeFileSync(recPath, JSON.stringify(records, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Hitilafu ya kuandika moderation records kwenye disk:', err);
+  }
+}
+
+function saveAuditLogsToDisk(): void {
+  if (!fsModule || !pathModule) return;
+  try {
+    const auditPath = pathModule.resolve(process.cwd(), MODERATION_AUDIT_FILE);
+    const dir = pathModule.dirname(auditPath);
+    if (!fsModule.existsSync(dir)) {
+      fsModule.mkdirSync(dir, { recursive: true });
+    }
+    fsModule.writeFileSync(auditPath, JSON.stringify(inMemoryAuditLogsList, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Hitilafu ya kuandika moderation audits kwenye disk:', err);
+  }
+}
 
 // ==========================================
 // 1. LOCAL CACHE & STORAGE
 // ==========================================
 
 export function getLocalCachedModerationRecords(): MarketplaceModerationRecord[] {
+  if (isNode && inMemoryModerationRecordsMap.size === 0) {
+    loadModerationFromDisk();
+  }
   try {
-    if (typeof localStorage === 'undefined') return [];
+    if (typeof localStorage === 'undefined') {
+      return Array.from(inMemoryModerationRecordsMap.values());
+    }
     const raw = localStorage.getItem(LOCAL_MODERATION_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        parsed.forEach((r) => inMemoryModerationRecordsMap.set(r.productId, r));
+        return parsed;
+      }
     }
   } catch (err) {
     console.warn('Hitilafu ya kusoma akiba ya moderation:', err);
   }
-  return [];
+  return Array.from(inMemoryModerationRecordsMap.values());
 }
 
 export function saveModerationRecordsToCache(records: MarketplaceModerationRecord[]): void {
+  for (const r of records) {
+    if (r && r.productId) {
+      inMemoryModerationRecordsMap.set(r.productId, r);
+    }
+  }
+  if (isNode) {
+    saveModerationRecordsToDisk();
+  }
   try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(LOCAL_MODERATION_CACHE_KEY, JSON.stringify(records));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_MODERATION_CACHE_KEY, JSON.stringify(records));
+    }
   } catch (err) {
     console.warn('Hitilafu ya kuhifadhi akiba ya moderation:', err);
   }
 }
 
 export function getLocalCachedAuditLogs(): MarketplaceModerationAuditEntry[] {
+  if (isNode && inMemoryAuditLogsList.length === 0) {
+    loadModerationFromDisk();
+  }
   try {
-    if (typeof localStorage === 'undefined') return [];
+    if (typeof localStorage === 'undefined') {
+      return inMemoryAuditLogsList;
+    }
     const raw = localStorage.getItem(LOCAL_AUDIT_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        inMemoryAuditLogsList = parsed;
+        return parsed;
+      }
     }
   } catch (err) {
     console.warn('Hitilafu ya kusoma akiba ya audit logs:', err);
   }
-  return [];
+  return inMemoryAuditLogsList;
 }
 
 export function saveAuditLogsToCache(logs: MarketplaceModerationAuditEntry[]): void {
+  inMemoryAuditLogsList = logs;
+  if (isNode) {
+    saveAuditLogsToDisk();
+  }
   try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(LOCAL_AUDIT_CACHE_KEY, JSON.stringify(logs));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_AUDIT_CACHE_KEY, JSON.stringify(logs));
+    }
   } catch (err) {
     console.warn('Hitilafu ya kuhifadhi akiba ya audit logs:', err);
   }
