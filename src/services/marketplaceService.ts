@@ -63,6 +63,7 @@ import {
   getSellerTrustStatus,
   saveSellerProfileToCache
 } from './sellerTrustService';
+import { dispatchListingRejectedNotification } from './notificationService';
 
 const LOCAL_PRODUCTS_CACHE_KEY = 'ufugaji_marketplace_products_cache';
 const LOCAL_SELLER_PROFILES_KEY = 'ufugaji_seller_profiles_cache';
@@ -1042,6 +1043,18 @@ export async function createMarketplaceProduct(
           createdAt: now,
           updatedAt: now
         });
+
+        // Ensure seller gets an immediate notification if listing was rejected from gulio
+        if (newProduct.moderationStatus === 'REJECTED') {
+          dispatchListingRejectedNotification({
+            sellerId: cleanSellerId,
+            productId: newProduct.productId,
+            productTitle: newProduct.title,
+            reason: serverSaved.moderationPublicReason || 'Maudhui hayakidhi vigezo vya usalama na maadili ya gulio.',
+            moderationId: `mod_${productId}`,
+            correctionInstructions: 'Tafadhali rekebisha picha na maelezo ya tangazo lako ili likidhi vigezo vya soko.'
+          }).catch(() => {});
+        }
       }
     }
   } catch (serverErr) {

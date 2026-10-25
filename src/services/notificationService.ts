@@ -947,6 +947,51 @@ export async function dispatchModerationNotification(params: {
 }
 
 /**
+ * Dispatches an explicit notification to the seller when their listing is rejected from the marketplace (Gulio),
+ * informing them why it was rejected and providing actionable guidance.
+ */
+export async function dispatchListingRejectedNotification(params: {
+  sellerId: string;
+  productId: string;
+  productTitle: string;
+  reason: string;
+  moderationId?: string;
+  correctionInstructions?: string;
+}): Promise<AppNotification | null> {
+  if (!params.sellerId) return null;
+
+  const moderationId = params.moderationId || `mod_reject_${params.productId}_${Date.now()}`;
+  const title = 'Tangazo Lako Limekataliwa Gulioni';
+  const cleanReason = params.reason || 'Halikidhi vigezo vya usalama na maadili ya gulio.';
+  const message = `Tangazo lako "${params.productTitle}" limekataliwa gulioni kwa sababu halijakidhi vigezo: ${cleanReason}. ${
+    params.correctionInstructions ? `Maelekezo: ${params.correctionInstructions}. ` : ''
+  }Unaweza kurekebisha taarifa zake na kuwasilisha tena au kuwasiliana na wasimamizi wa gulio.`;
+
+  return createAuthoritativeNotification({
+    recipientUserId: params.sellerId,
+    type: 'LISTING_REJECTED',
+    category: 'GOVERNANCE',
+    title,
+    message,
+    priority: 'HIGH',
+    targetType: 'LISTING',
+    targetId: params.productId,
+    relatedProductId: params.productId,
+    relatedListingId: params.productId,
+    relatedSellerId: params.sellerId,
+    relatedModerationId: moderationId,
+    metadata: {
+      rejectedFromMarketplace: true,
+      productId: params.productId,
+      productTitle: params.productTitle,
+      rejectionReason: cleanReason,
+      correctionInstructions: params.correctionInstructions
+    },
+    actionUrl: `/market?product=${params.productId}`
+  });
+}
+
+/**
  * Dispatches a warning notification to a seller.
  */
 export async function dispatchWarningNotification(params: {
