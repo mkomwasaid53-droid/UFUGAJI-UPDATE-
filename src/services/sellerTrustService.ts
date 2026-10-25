@@ -225,13 +225,12 @@ export function evaluateSellerPublishCapability(
   if (trustStatus === 'TRUSTED_SELLER') {
     return {
       trustStatus,
-      // In V2 with AI screening: Trusted Sellers bypass human admin review and publish active directly
-      // provided listing meets criteria and AI screening returns PASS. If screening fails, status is REVIEW_REQUIRED.
-      canBypassAdminReview: true,
-      canPublishActiveImmediately: true,
+      // In V1.0 without AI screening, even trusted sellers cannot bypass review
+      canBypassAdminReview: false,
+      canPublishActiveImmediately: false,
       isRestricted: false,
       explanationSwahili:
-        'Muuzaji Anayeaminika (Trusted Seller): Tangazo lako lililokidhi vigezo linachapishwa moja kwa moja kwenye gulio baada ya ukaguzi wa AI. Ikiwa ukaguzi utashindwa, litawekwa "Review Required". Likikosa vigezo litazuiliwa moja kwa moja au kubaki pending na utapokea ujumbe rasmi.'
+        'Tangazo limewasilishwa kwa ukaguzi wa wasimamizi (PENDING_REVIEW). Hatua za ukaguzi wa moja kwa moja zitaamilishwa katika toleo lijalo.'
     };
   }
 
