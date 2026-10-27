@@ -1048,11 +1048,13 @@ export async function createMarketplaceProduct(
     console.warn('Haikuweza kuhifadhi kwenye seva moja kwa moja:', serverErr);
   }
 
-  // 2. Persist to Firestore with sanitized payload (no undefined values)
+  // 2. Persist to Firestore with sanitized payload (no undefined values) to both collections
   try {
-    const productRef = doc(db, 'marketplaceProducts', productId);
     const cleaned = cleanProductForFirestore(newProduct);
-    await setDoc(productRef, cleaned);
+    await Promise.allSettled([
+      setDoc(doc(db, 'products', productId), cleaned, { merge: true }),
+      setDoc(doc(db, 'marketplaceProducts', productId), cleaned, { merge: true }),
+    ]);
   } catch (err) {
     console.warn('Haikuweza kuhifadhi kwenye Firestore moja kwa moja, imehifadhiwa ndani ya seva na kifaa:', err);
   }
@@ -1365,11 +1367,13 @@ export async function updateMarketplaceProduct(
     console.warn('Haikuweza kusasisha kwenye seva moja kwa moja:', serverErr);
   }
 
-  // 2. Update in Firestore with cleaned payload
+  // 2. Update in Firestore with cleaned payload in both collections
   try {
-    const productRef = doc(db, 'marketplaceProducts', productId);
     const cleaned = cleanProductForFirestore(updatedProduct);
-    await setDoc(productRef, cleaned, { merge: true });
+    await Promise.allSettled([
+      setDoc(doc(db, 'products', productId), cleaned, { merge: true }),
+      setDoc(doc(db, 'marketplaceProducts', productId), cleaned, { merge: true }),
+    ]);
   } catch (err) {
     console.warn('Haikuweza kusasisha kwenye Firestore moja kwa moja:', err);
   }
@@ -1734,6 +1738,63 @@ export async function fetchScreeningStatus(productId: string, jobId?: string): P
   }
 }
 
+export const PRODUCT_UPDATED_EVENT = 'ufugaji_marketplace_product_updated';
+
+/**
+ * Updates a product across local caches (localStorage and in-memory listeners)
+ * and dispatches a notification event to all active UI subscribers.
+ */
+export function updateProductInAllCaches(updatedProduct: MarketplaceProduct): void {
+  if (!updatedProduct || !updatedProduct.productId) return;
+
+  try {
+    const raw = localStorage.getItem('ufugaji_marketplace_products');
+    if (raw) {
+      const list: MarketplaceProduct[] = JSON.parse(raw);
+      const idx = list.findIndex(p => p.productId === updatedProduct.productId);
+      if (idx !== -1) {
+        list[idx] = { ...list[idx], ...updatedProduct };
+      } else {
+        list.unshift(updatedProduct);
+      }
+      localStorage.setItem('ufugaji_marketplace_products', JSON.stringify(list));
+    }
+  } catch (e) {
+    // ignore localStorage storage quota or parsing errors
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(PRODUCT_UPDATED_EVENT, { detail: updatedProduct })
+    );
+  }
+}
+
+/**
+ * Subscribes to real-time product update events across the application.
+ * Returns an unsubscribe teardown function.
+ */
+export function subscribeToProductUpdates(
+  callback: (product: MarketplaceProduct) => void
+): () => void {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  const handler = (event: Event) => {
+    const customEvent = event as CustomEvent<MarketplaceProduct>;
+    if (customEvent.detail) {
+      callback(customEvent.detail);
+    }
+  };
+
+  window.addEventListener(PRODUCT_UPDATED_EVENT, handler);
+
+  return () => {
+    window.removeEventListener(PRODUCT_UPDATED_EVENT, handler);
+  };
+}
+
 export function pollScreeningStatus(
   productId: string,
   onUpdate: (status: ScreeningStatusResponse) => void,
@@ -1744,17 +1805,29 @@ export function pollScreeningStatus(
   let isCancelled = false;
   let attempts = 0;
   let timerId: any = null;
+  let lastAttemptCount = -1;
 
   const poll = async () => {
     if (isCancelled) return;
     attempts++;
     const data = await fetchScreeningStatus(productId);
     if (data && !isCancelled) {
-      onUpdate(data);
-      const isTerminal = data.status === 'COMPLETED' || data.status === 'EXHAUSTED' || (data.status === 'FAILED' && (data.attemptCount || 0) >= (data.maxAttempts || 3));
-      if (isTerminal) {
-        if (onTerminal) onTerminal(data);
-        return;
+      const respAttempt = data.attemptCount ?? attempts;
+      if (respAttempt >= lastAttemptCount) {
+        lastAttemptCount = respAttempt;
+        if (data.product) {
+          updateProductInAllCaches(data.product as MarketplaceProduct);
+        }
+        onUpdate(data);
+        const isTerminal =
+          data.status === 'COMPLETED' ||
+          data.status === 'EXHAUSTED' ||
+          data.status === 'SUPERSEDED' ||
+          (data.status === 'FAILED' && (data.attemptCount || 0) >= (data.maxAttempts || 3));
+        if (isTerminal) {
+          if (onTerminal) onTerminal(data);
+          return;
+        }
       }
     }
 
@@ -1784,4 +1857,5 @@ export async function requestRescreen(productId: string): Promise<any> {
   }
   return await res.json();
 }
+
 

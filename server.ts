@@ -8,6 +8,8 @@ import dotenv from 'dotenv';
 import multer from 'multer';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import { initializeApp as initServerFirebase, getApps as getServerApps, getApp as getServerApp } from 'firebase/app';
+import { getFirestore as getServerFirestore, doc as serverDoc, setDoc as serverSetDoc } from 'firebase/firestore';
 import { classifyMarketplaceIntent } from './src/utils/marketplaceIntentClassifier';
 import { classifyDoctorIntent, validateAndSanitizeDoctorAction } from './src/utils/doctorHandoffClassifier';
 import { AiDoctorAction } from './src/types/aiDoctorAction';
@@ -266,6 +268,64 @@ function writeMarketplaceProductsToDisk(products: any[]): void {
 }
 
 // ==========================================
+// SERVER-SIDE FIRESTORE CLIENT & SYNC
+// ==========================================
+let serverFirestoreDb: any = null;
+try {
+  const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(firebaseConfigPath)) {
+    const configData = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf-8'));
+    const serverApp = getServerApps().length > 0 ? getServerApp() : initServerFirebase(configData);
+    serverFirestoreDb = getServerFirestore(serverApp);
+    console.info('[Server Firestore] Initialized successfully for background screening sync.');
+  }
+} catch (e: any) {
+  console.warn('[Server Firestore] Init notice:', e?.message);
+}
+
+async function syncScreeningResultToFirestore(productId: string, payload: {
+  moderationStatus: string;
+  visible: boolean;
+  reviewedBy?: string;
+  reason?: string;
+  status?: string;
+  aiScreening?: any;
+  aiScreenedAt?: string;
+  updatedAt?: string;
+}) {
+  if (!serverFirestoreDb || !productId) return;
+  const updateData: any = {
+    productId,
+    moderationStatus: payload.moderationStatus,
+    visible: payload.visible,
+    updatedAt: payload.updatedAt || new Date().toISOString()
+  };
+  if (payload.reviewedBy) updateData.reviewedBy = payload.reviewedBy;
+  if (payload.reason) updateData.reason = payload.reason;
+  if (payload.status) updateData.status = payload.status;
+  if (payload.aiScreening) updateData.aiScreening = payload.aiScreening;
+  if (payload.aiScreenedAt) updateData.aiScreenedAt = payload.aiScreenedAt;
+
+  // 1. Update 'products' collection (as specified in user requirements)
+  try {
+    const pDoc = serverDoc(serverFirestoreDb, 'products', productId);
+    await serverSetDoc(pDoc, updateData, { merge: true });
+    console.info(`[Firestore Sync] Successfully updated collection('products').doc('${productId}') with moderationStatus: "${payload.moderationStatus}", visible: ${payload.visible}`);
+  } catch (err: any) {
+    console.warn(`[Firestore Sync Notice: products] ${err?.message}`);
+  }
+
+  // 2. Also sync to 'marketplaceProducts' collection for full backwards compatibility
+  try {
+    const mpDoc = serverDoc(serverFirestoreDb, 'marketplaceProducts', productId);
+    await serverSetDoc(mpDoc, updateData, { merge: true });
+    console.info(`[Firestore Sync] Successfully updated collection('marketplaceProducts').doc('${productId}') with moderationStatus: "${payload.moderationStatus}", visible: ${payload.visible}`);
+  } catch (err: any) {
+    console.warn(`[Firestore Sync Notice: marketplaceProducts] ${err?.message}`);
+  }
+}
+
+// ==========================================
 // BACKGROUND SCREENING WORKER (V2)
 // ==========================================
 let isBackgroundWorkerRunning = false;
@@ -350,50 +410,102 @@ async function executeBackgroundWorkerTick(): Promise<void> {
           const isFresh = isScreeningResultUpToDate(currentProduct, screeningResult);
           const isSanctioned = ['REJECTED', 'SUSPENDED', 'HIDDEN'].includes(currentProduct.moderationStatus);
 
-          // Invariant: BLOCK remains unpublished regardless of seller trust
-          if (screeningResult.status === 'BLOCK') {
-            currentProduct.moderationStatus = 'REJECTED';
+          const isTrusted =
+            (sellerTrust as string) === 'TRUSTED_SELLER' ||
+            (sellerTrust as string) === 'VERIFIED_SELLER' ||
+            currentProduct.sellerVerificationStatus === 'verified' ||
+            (currentProduct.sellerTrustStatus as string) === 'TRUSTED_SELLER';
+          const sellerType = isTrusted ? 'trusted' : 'normal';
+
+          const jobStatus = `${screeningResult.status} (${screeningResult.evaluationSource || 'MODEL'})`;
+          const isPass = screeningResult.status === 'PASS' || jobStatus.includes('PASS');
+          const isBlock = screeningResult.status === 'BLOCK' || jobStatus.includes('BLOCK');
+          const isFail = (screeningResult.status as string) === 'FAIL' || (processedJob.status as string) === 'FAILED';
+
+          // Mfano wa jinsi Background Queue inatakiwa kumaliza kazi yake:
+          if (isBlock) {
+            // AI imezuia -> ifiche kabisa
+            currentProduct.moderationStatus = 'rejected';
+            currentProduct.visible = false;
             currentProduct.status = 'inactive';
             currentProduct.moderatedAt = new Date().toISOString();
             currentProduct.moderatedBy = 'system_ai_screening_block';
-            currentProduct.moderationPublicReason = 'Tangazo limezuiwa sokoni kwa kukiuka sera za maudhui na maadili.';
-          } else if (screeningResult.status === 'REVIEW_REQUIRED') {
-            // Invariant: REVIEW_REQUIRED remains unpublished until required review is completed
-            currentProduct.moderationStatus = 'PENDING_REVIEW';
+            currentProduct.moderationPublicReason = 'Auto-blocked by AI safety policy';
+            currentProduct.reason = 'Auto-blocked by AI safety policy';
+
+            await syncScreeningResultToFirestore(currentProduct.productId, {
+              moderationStatus: 'rejected',
+              visible: false,
+              reason: 'Auto-blocked by AI safety policy',
+              status: 'inactive',
+              reviewedBy: 'AI_SCREENING',
+              aiScreening: screeningResult,
+              aiScreenedAt: new Date().toISOString()
+            });
+          } else if (isPass && sellerType === 'trusted') {
+            // AI imepitisha na muuzaji anaaminika -> weka sokoni moja kwa moja
+            currentProduct.moderationStatus = 'approved';
+            currentProduct.visible = true;
+            currentProduct.status = 'active';
+            currentProduct.moderatedAt = new Date().toISOString();
+            currentProduct.moderatedBy = 'AI_SCREENING';
+            currentProduct.reviewedBy = 'AI_SCREENING';
+            currentProduct.moderationPublicReason = 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).';
+
+            await syncScreeningResultToFirestore(currentProduct.productId, {
+              moderationStatus: 'approved',
+              visible: true,
+              reviewedBy: 'AI_SCREENING',
+              status: 'active',
+              aiScreening: screeningResult,
+              aiScreenedAt: new Date().toISOString()
+            });
+          } else if (isFail && sellerType === 'trusted') {
+            // AI ikifeli kwa trusted seller -> inapelekwa kwa admin
+            currentProduct.moderationStatus = 'pending_admin';
+            currentProduct.visible = false;
             currentProduct.status = 'inactive';
             currentProduct.moderatedAt = new Date().toISOString();
-            currentProduct.moderationPublicReason = screeningResult.explanationSwahili || screeningResult.explanation;
-          } else if (screeningResult.status === 'PASS') {
-            // Invariant: REJECTED, HIDDEN and SUSPENDED sanctions remain authoritative
-            // Invariant: TRUSTED_SELLER + current PASS may publish only when every other existing requirement passes
-            if (
-              sellerTrust === 'TRUSTED_SELLER' &&
-              validationResult.isEligibleForActive &&
-              isMonetizationAllowed &&
-              !isSanctioned &&
-              currentProduct.status !== 'draft' &&
-              isFresh
-            ) {
-              currentProduct.moderationStatus = 'APPROVED';
-              currentProduct.status = 'active';
-              currentProduct.moderatedAt = new Date().toISOString();
-              currentProduct.moderatedBy = 'system_ai_trusted_seller';
-              currentProduct.moderationPublicReason = 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).';
-            } else {
-              // Invariant: NEW_SELLER + PASS remains pending for required administrator approval
-              currentProduct.moderationStatus = 'PENDING_REVIEW';
-              currentProduct.status = 'inactive';
-              if (sellerTrust === 'NEW_SELLER') {
-                currentProduct.moderationPublicReason = 'Tangazo limefaulu ukaguzi wa AI na linasubiri idhini ya msimamizi wa soko (New Seller Pending Approval).';
-              } else if (!validationResult.isEligibleForActive) {
-                const errMsgs = validationResult.errors.map((e) => e.message).join(', ');
-                currentProduct.moderationPublicReason = `Tangazo linahitaji marekebisho ya fomu: ${errMsgs}`;
-              } else if (!isMonetizationAllowed) {
-                currentProduct.moderationPublicReason = monetization.reasonSwahili || 'Uwezo wa kuuza umezuiwa kiutawala.';
-              } else if (isSanctioned) {
-                currentProduct.moderationPublicReason = `Tangazo lipo chini ya hatua ya kiutawala (${currentProduct.moderationStatus}).`;
-              }
-            }
+            currentProduct.moderationPublicReason = 'AI screening failed, pending admin review';
+
+            await syncScreeningResultToFirestore(currentProduct.productId, {
+              moderationStatus: 'pending_admin',
+              visible: false,
+              status: 'inactive',
+              aiScreening: screeningResult,
+              aiScreenedAt: new Date().toISOString()
+            });
+          } else if (isPass && sellerType !== 'trusted') {
+            // AI imepitisha lakini muuzaji si trusted -> inapelekwa kwa admin
+            currentProduct.moderationStatus = 'pending_admin';
+            currentProduct.visible = false;
+            currentProduct.status = 'inactive';
+            currentProduct.moderatedAt = new Date().toISOString();
+            currentProduct.reviewedBy = 'AI_SCREENING';
+            currentProduct.moderationPublicReason = 'Tangazo limefaulu ukaguzi wa AI na linasubiri idhini ya msimamizi wa soko (New Seller Pending Approval).';
+
+            await syncScreeningResultToFirestore(currentProduct.productId, {
+              moderationStatus: 'pending_admin',
+              visible: false,
+              reviewedBy: 'AI_SCREENING',
+              status: 'inactive',
+              aiScreening: screeningResult,
+              aiScreenedAt: new Date().toISOString()
+            });
+          } else {
+            currentProduct.moderationStatus = 'pending_admin';
+            currentProduct.visible = false;
+            currentProduct.status = 'inactive';
+            currentProduct.moderatedAt = new Date().toISOString();
+            currentProduct.moderationPublicReason = screeningResult.explanationSwahili || screeningResult.explanation || 'Tangazo linasubiri ukaguzi.';
+
+            await syncScreeningResultToFirestore(currentProduct.productId, {
+              moderationStatus: 'pending_admin',
+              visible: false,
+              status: 'inactive',
+              aiScreening: screeningResult,
+              aiScreenedAt: new Date().toISOString()
+            });
           }
 
           // Register authoritative server-side moderation record
@@ -405,20 +517,18 @@ async function executeBackgroundWorkerTick(): Promise<void> {
             listingId: currentProduct.productId,
             sellerId: currentProduct.sellerId || processedJob.sellerId,
             shopId: currentProduct.shopId || currentProduct.sellerId || processedJob.sellerId,
-            status: currentProduct.moderationStatus,
-            priority: screeningResult.status === 'BLOCK' ? 'CRITICAL' : (screeningResult.status === 'REVIEW_REQUIRED' ? 'HIGH' : 'NORMAL'),
-            reasonCode: screeningResult.status === 'BLOCK' ? 'AI_CONTENT_BLOCK' : (screeningResult.status === 'REVIEW_REQUIRED' ? 'AI_REVIEW_REQUIRED' : null),
-            reasonText: screeningResult.categories.length > 0 ? screeningResult.categories.join(', ') : null,
-            internalNote: screeningResult.evaluationSource === 'INFRASTRUCTURE_FALLBACK'
-              ? `AI Screening Fallback (${screeningResult.failureReason || '503'}, retries: ${screeningResult.retryAttempts || 0})`
-              : `Authoritative async screening: ${screeningResult.status} (${screeningResult.evaluationSource || 'MODEL'})`,
+            status: currentProduct.moderationStatus === 'approved' ? 'APPROVED' : (currentProduct.moderationStatus === 'rejected' ? 'REJECTED' : 'PENDING_REVIEW'),
+            priority: isBlock ? 'CRITICAL' : 'NORMAL',
+            reasonCode: isBlock ? 'AI_CONTENT_BLOCK' : null,
+            reasonText: isBlock ? 'Auto-blocked by AI safety policy' : null,
+            internalNote: `Authoritative async screening: ${jobStatus}`,
             publicExplanation: currentProduct.status === 'active'
               ? 'Tangazo limeidhinishwa kiotomatiki (Trusted Seller + AI Pass).'
               : (currentProduct.moderationPublicReason || 'Tangazo linasubiri idhini ya msimamizi au marekebisho.'),
             correctionInstructions: null,
-            reviewedByUserId: currentProduct.status === 'active' ? 'system_ai_trusted_seller' : (screeningResult.status === 'BLOCK' ? 'system_ai_screening_block' : null),
-            reviewedByDisplayName: currentProduct.status === 'active' ? 'AI Screening + Trusted Seller' : (screeningResult.status === 'BLOCK' ? 'AI Safety Filter' : null),
-            reviewedAt: (currentProduct.status === 'active' || screeningResult.status === 'BLOCK') ? new Date().toISOString() : null,
+            reviewedByUserId: currentProduct.status === 'active' ? 'system_ai_trusted_seller' : (isBlock ? 'system_ai_screening_block' : null),
+            reviewedByDisplayName: currentProduct.status === 'active' ? 'AI Screening + Trusted Seller' : (isBlock ? 'AI Safety Filter' : null),
+            reviewedAt: (currentProduct.status === 'active' || isBlock) ? new Date().toISOString() : null,
             createdAt: currentProduct.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString()
           });
@@ -427,7 +537,7 @@ async function executeBackgroundWorkerTick(): Promise<void> {
           processedJob.resolution = resolveListingPublishingState({
             screeningResult,
             sellerTrustStatus: sellerTrust,
-            currentModerationStatus: currentProduct.moderationStatus,
+            currentModerationStatus: currentProduct.moderationStatus === 'approved' ? 'APPROVED' : (currentProduct.moderationStatus === 'rejected' ? 'REJECTED' : 'PENDING_REVIEW'),
             validationResult,
             isMonetizationAllowed,
             monetizationReasonSwahili: monetization.reasonSwahili,
@@ -443,11 +553,19 @@ async function executeBackgroundWorkerTick(): Promise<void> {
         } else if (processedJob.status === 'EXHAUSTED_DEADLINE' || processedJob.status === 'FAILED') {
           // If the maximum processing window expires, mark job retryable/failed and keep listing unpublished
           currentProduct.screeningJobStatus = processedJob.status;
-          currentProduct.moderationStatus = 'PENDING_REVIEW';
+          currentProduct.moderationStatus = 'pending_admin';
+          currentProduct.visible = false;
           currentProduct.status = 'inactive';
           if (screeningResult) {
             currentProduct.aiScreening = screeningResult;
           }
+          await syncScreeningResultToFirestore(currentProduct.productId, {
+            moderationStatus: 'pending_admin',
+            visible: false,
+            status: 'inactive',
+            aiScreening: screeningResult,
+            aiScreenedAt: new Date().toISOString()
+          });
         }
 
         products[productIndex] = currentProduct;
@@ -1411,6 +1529,13 @@ async function startServer() {
       }
 
       writeMarketplaceProductsToDisk(existing);
+      syncScreeningResultToFirestore(product.productId, {
+        moderationStatus: product.moderationStatus || 'pending_admin',
+        visible: product.moderationStatus === 'APPROVED' || product.moderationStatus === 'approved',
+        status: product.status,
+        reviewedBy: product.reviewedBy || (product.moderationStatus === 'APPROVED' ? 'AI_SCREENING' : undefined),
+        reason: product.reason || product.moderationPublicReason
+      }).catch((e) => console.warn('[Sync Product To Firestore Notice]:', e?.message));
       res.json(product);
     } catch (err: any) {
       res.status(500).json({ error: 'Hitilafu ya kuhifadhi bidhaa', details: err?.message });
@@ -8357,107 +8482,32 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     }
   });
 
-  // 3. Create a new group (Request)
-  app.post('/api/gumzo/groups', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Huruhusiwi kuunda kikundi bila kuingia kwenye mfumo.' });
-      }
+  // GUMZO RETIREMENT V1.0: Authoritative response for retired ordinary-user write operations
+  const GUMZO_RETIRED_RESPONSE = {
+    error: 'Huduma ya Gumzo imestaafishwa kwa muda.',
+    message: 'Tunafanyia sehemu hii maboresho ili kukuletea huduma bora zaidi. Tafadhali endelea kutumia huduma nyingine za Ufugaji Update.',
+    code: 'GUMZO_RETIRED',
+    retired: true
+  };
 
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true';
-      const input = req.body.input || req.body;
-
-      const result = gumzoGroupService.createGroup({
-        input,
-        authenticatedUserId: callerUserId,
-        isPlatformAdmin: isAdmin
-      });
-
-      return res.status(201).json(result);
-    } catch (err: any) {
-      const status = err.message?.includes('Huruhusiwi') || err.message?.includes('Authenticated user') ? 401 : 400;
-      return res.status(status).json({ error: err.message });
-    }
+  // 3. Create a new group (Request) — Retired V1.0
+  app.post('/api/gumzo/groups', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
-  // 4. Join group (Authoritative V9.6)
-  app.post('/api/gumzo/groups/:groupId/join', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo (401 Unauthorized).' });
-      }
-
-      // Anti-spoofing: prevent client from forging another user's join
-      if (req.body.userId && req.body.userId !== callerUserId && !authInfo?.isAdmin) {
-        return res.status(403).json({ error: 'Huruhusiwi kuwasilisha ombi la kujiunga kwa niaba ya mtumiaji mwingine.' });
-      }
-
-      const membership = gumzoGroupService.joinGroup(req.params.groupId, callerUserId);
-      const group = gumzoGroupService.getGroupById(req.params.groupId, callerUserId);
-      return res.json({ membership, group });
-    } catch (err: any) {
-      const status = err.message?.includes('Hujaingia') ? 401 : 400;
-      return res.status(status).json({ error: err.message });
-    }
+  // 4. Join group (Authoritative V9.6) — Retired V1.0
+  app.post('/api/gumzo/groups/:groupId/join', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
-  // 5. Leave group (Authoritative V9.6)
-  app.post('/api/gumzo/groups/:groupId/leave', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo (401 Unauthorized).' });
-      }
-
-      // Anti-spoofing: member can strictly only leave their own membership
-      if (req.body.userId && req.body.userId !== callerUserId && !authInfo?.isAdmin) {
-        return res.status(403).json({ error: 'Huruhusiwi kumwondoa mwanachama mwingine kupitia njia hii ya kujiondoa.' });
-      }
-
-      const membership = gumzoGroupService.leaveGroup(req.params.groupId, callerUserId);
-      const group = gumzoGroupService.getGroupById(req.params.groupId, callerUserId);
-      return res.json({ membership, group });
-    } catch (err: any) {
-      const status = err.message?.includes('Hujaingia') ? 401 : 400;
-      return res.status(status).json({ error: err.message });
-    }
+  // 5. Leave group (Authoritative V9.6) — Retired V1.0
+  app.post('/api/gumzo/groups/:groupId/leave', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
-  // 5b. Update member status (Approve, Suspend, Remove, Reinstate - V9.6)
-  app.post('/api/gumzo/groups/:groupId/members/:targetUserId/status', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string);
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
-
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo (401 Unauthorized).' });
-      }
-
-      const { newStatus, reason } = req.body;
-      if (!newStatus) {
-        return res.status(400).json({ error: 'Tafadhali taja hali mpya ya uanachama (newStatus).' });
-      }
-
-      const membership = gumzoGroupService.updateMembershipStatus(
-        req.params.groupId,
-        req.params.targetUserId,
-        newStatus,
-        callerUserId,
-        reason,
-        isAdmin
-      );
-      const group = gumzoGroupService.getGroupById(req.params.groupId, callerUserId, isAdmin);
-      return res.json({ membership, group });
-    } catch (err: any) {
-      const status = err.message?.includes('403') || err.message?.includes('Huna mamlaka') ? 403 : 400;
-      return res.status(status).json({ error: err.message });
-    }
+  // 5b. Update member status (Approve, Suspend, Remove, Reinstate) — Retired V1.0
+  app.post('/api/gumzo/groups/:groupId/members/:targetUserId/status', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
   // 5c. Get group members list (Protected for private groups - V9.6)
@@ -8524,55 +8574,9 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     }
   });
 
-  // 8. Leadership Admin / Platform Admin transfer Founder Admin ownership (V9.4)
-  // «Only authorized Leadership Admin operations may assign or replace the Founder Admin.»
-  app.post('/api/gumzo/groups/:groupId/transfer-founder', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.actingAdminUserId;
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
-
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo (401 Unauthorized).' });
-      }
-
-      const groupId = req.params.groupId;
-      const group = gumzoGroupService.getGroupById(groupId, callerUserId, isAdmin);
-      if (!group) {
-        return res.status(404).json({ error: 'Kikundi hakikupatikana.' });
-      }
-
-      // Strictly Leadership Admin or Platform Admin can transfer Founder Admin
-      const isLeadership = group.leadershipAdminUserId === callerUserId;
-      if (!isAdmin && !isLeadership) {
-        // Log privilege escalation attempt
-        gumzoAuditService.logEvent({
-          actorUserId: callerUserId,
-          action: 'PRIVILEGE_ESCALATION_ATTEMPT',
-          targetType: 'GOVERNANCE',
-          targetResourceId: groupId,
-          groupId,
-          outcome: 'DENIED',
-          reason: 'Mtumiaji asiye na mamlaka ya Leadership Admin amejaribu kuhamisha uongozi wa mwanzilishi kupitia API.',
-          details: { attemptedNewFounder: req.body.newFounderUserId },
-        });
-        return res.status(403).json({ error: 'Huna mamlaka ya Leadership Admin kuhamisha wadhifa wa Founder Admin (403 Forbidden).' });
-      }
-
-      const result = gumzoGroupService.transferFounderAdmin({
-        groupId,
-        newFounderUserId: req.body.newFounderUserId,
-        actingAdminUserId: callerUserId,
-        isPlatformAdmin: isAdmin,
-        reason: req.body.reason,
-      });
-
-      return res.json(result);
-    } catch (err: any) {
-      const isForbidden = err.message?.includes('403') || err.message?.includes('Huna mamlaka');
-      const statusCode = isForbidden ? 403 : 400;
-      return res.status(statusCode).json({ error: err.message });
-    }
+  // 8. Transfer Founder Admin ownership — Retired V1.0
+  app.post('/api/gumzo/groups/:groupId/transfer-founder', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
   // 9. Gumzo Governance Audit Log (V9.4 — Platform / Leadership Admin)
@@ -8654,169 +8658,24 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     }
   });
 
-  // 3. Create post (STRICT ADMIN ONLY: FOUNDER_ADMIN or LEADERSHIP_ADMIN)
-  // Members receive strict 403 / PERMISSION_DENIED
-  app.post('/api/gumzo/groups/:groupId/posts', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.authorUserId;
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Huruhusiwi kuandika chapisho bila kuingia kwenye mfumo (401 Authenticated user required).' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
-      const input = {
-        groupId: req.params.groupId,
-        content: req.body.content,
-        media: req.body.media,
-        status: req.body.status,
-        visibility: req.body.visibility
-      };
-
-      const post = gumzoPostService.createPost({
-        input,
-        authenticatedUserId: callerUserId,
-        isPlatformAdmin: isAdmin
-      });
-
-      return res.status(201).json(post);
-    } catch (err: any) {
-      const msg = err.message || '';
-      const isForbidden = msg.includes('Wanachama hawaruhusiwi') ||
-        msg.includes('Mamlaka ya uongozi') ||
-        msg.includes('403') ||
-        msg.includes('PERMISSION_DENIED');
-      const isUnauth = msg.includes('401') || msg.includes('Authenticated user required');
-
-      const statusCode = isForbidden ? 403 : isUnauth ? 401 : 400;
-      return res.status(statusCode).json({ error: msg });
-    }
+  // 3. Create post — Retired V1.0
+  app.post('/api/gumzo/groups/:groupId/posts', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
-  // 3b. Upload media for Gumzo Admin Post (STRICT ADMIN ONLY: FOUNDER_ADMIN or LEADERSHIP_ADMIN)
-  app.post('/api/gumzo/groups/:groupId/posts/upload-media', gumzoPostMediaUpload.single('media'), async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.body?.callerUserId as string);
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Huruhusiwi kupakia media bila kuingia kwenye mfumo (401 Unauthorized).' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
-      const groupId = req.params.groupId;
-
-      const group = gumzoGroupService.getGroupById(groupId, callerUserId, isAdmin);
-      if (!group) {
-        return res.status(404).json({ error: 'Kikundi hakikupatikana.' });
-      }
-
-      if (group.status === 'REJECTED' || (group.status !== 'ACTIVE' && !isAdmin)) {
-        return res.status(403).json({ error: 'Kikundi hiki kimesimamishwa au hakiruhusu machapisho kwa sasa.' });
-      }
-
-      const membership = gumzoGroupService.getMembership(groupId, callerUserId);
-      const isFounder = group.founderAdminUserId === callerUserId || membership?.role === 'FOUNDER_ADMIN';
-      const isLeadership = group.leadershipAdminUserId === callerUserId || membership?.role === 'LEADERSHIP_ADMIN';
-
-      if (!isFounder && !isLeadership && !isAdmin) {
-        return res.status(403).json({ error: 'Mwanachama wa kawaida haruhusiwi kupakia maudhui ya machapisho ya kiutawala (403 Forbidden).' });
-      }
-
-      if (!req.file) {
-        return res.status(400).json({ error: 'Faili la media linahitajika.' });
-      }
-
-      const mime = req.file.mimetype || 'application/octet-stream';
-      const originalName = req.file.originalname || 'media';
-      const isVideo = mime.startsWith('video/') || Boolean(originalName.match(/\.(mp4|mov|webm|3gp|m4v)$/i));
-      const isImage = mime.startsWith('image/') || Boolean(originalName.match(/\.(jpg|jpeg|png|webp|gif)$/i));
-
-      if (!isVideo && !isImage) {
-        return res.status(400).json({ error: 'Aina ya faili haikubaliki. Tumia faili la picha au video pekee.' });
-      }
-
-      const maxBytes = isVideo ? 50 * 1024 * 1024 : 15 * 1024 * 1024;
-      const maxMb = isVideo ? '50MB' : '15MB';
-      if (req.file.size > maxBytes) {
-        return res.status(400).json({ error: `Ukubwa wa faili umezidi kiwango cha juu cha ${maxMb}.` });
-      }
-
-      const groupFolder = path.join(GUMZO_POSTS_DIR, groupId.replace(/[^a-zA-Z0-9_-]/g, ''));
-      if (!fs.existsSync(groupFolder)) {
-        fs.mkdirSync(groupFolder, { recursive: true });
-      }
-
-      const ext = isVideo ? 'mp4' : (mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg');
-      const mediaId = `gpost_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      const fileName = `${mediaId}.${ext}`;
-      const filePath = path.join(groupFolder, fileName);
-
-      fs.writeFileSync(filePath, req.file.buffer);
-
-      const publicUrl = `/uploads/gumzo_posts/${groupId}/${fileName}`;
-      const storagePath = `gumzo/posts/${groupId}/${fileName}`;
-
-      return res.status(201).json({
-        id: mediaId,
-        type: isVideo ? 'video' : 'image',
-        url: publicUrl,
-        storagePath,
-        caption: req.body.caption || undefined,
-        sizeBytes: req.file.size,
-        mimeType: mime,
-      });
-    } catch (err: any) {
-      const status = err.message?.includes('403') || err.message?.includes('Huruhusiwi') ? 403 : 500;
-      return res.status(status).json({ error: err.message || 'Hitilafu ya kupakia faili la chapisho' });
-    }
+  // 3b. Upload media for Gumzo Admin Post — Retired V1.0
+  app.post('/api/gumzo/groups/:groupId/posts/upload-media', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
-  // 4. Update/Edit post (Author or Group Leader)
-  app.patch('/api/gumzo/groups/:groupId/posts/:postId', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
-      const updated = gumzoPostService.updatePost({
-        postId: req.params.postId,
-        input: req.body,
-        authenticatedUserId: callerUserId,
-        isPlatformAdmin: isAdmin
-      });
-
-      return res.json(updated);
-    } catch (err: any) {
-      const isForbidden = err.message?.includes('Huruhusiwi') || err.message?.includes('PERMISSION_DENIED');
-      return res.status(isForbidden ? 403 : 400).json({ error: err.message });
-    }
+  // 4. Update/Edit post — Retired V1.0
+  app.patch('/api/gumzo/groups/:groupId/posts/:postId', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
-  // 5. Delete post (Soft-delete: Author, Founder, or Leadership Admin)
-  app.delete('/api/gumzo/groups/:groupId/posts/:postId', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
-      const deleted = gumzoPostService.deletePost({
-        postId: req.params.postId,
-        authenticatedUserId: callerUserId,
-        isPlatformAdmin: isAdmin,
-        reason: (req.query.reason as string) || (req.body?.reason as string)
-      });
-
-      return res.json(deleted);
-    } catch (err: any) {
-      const isForbidden = err.message?.includes('Huruhusiwi') || err.message?.includes('PERMISSION_DENIED');
-      return res.status(isForbidden ? 403 : 400).json({ error: err.message });
-    }
+  // 5. Delete post — Retired V1.0
+  app.delete('/api/gumzo/groups/:groupId/posts/:postId', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
   // ========================================================================
@@ -8850,189 +8709,24 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     }
   });
 
-  // 2. Create comment on a post (MEMBER, FOUNDER_ADMIN, LEADERSHIP_ADMIN)
-  app.post('/api/gumzo/groups/:groupId/posts/:postId/comments', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo kuweka maoni (401 Unauthorized).' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
-      const { groupId, postId } = req.params;
-      const input = req.body.input || req.body;
-      const authorDisplayName = req.body.authorDisplayName || (req.headers['x-user-name'] as string);
-
-      const created = gumzoCommentService.createComment({
-        groupId,
-        postId,
-        input,
-        authenticatedUserId: callerUserId,
-        authorDisplayName,
-        isPlatformAdmin: isAdmin
-      });
-
-      return res.status(201).json(created);
-    } catch (err: any) {
-      const isForbidden = (err as any).statusCode === 403 || err.message?.includes('403') || err.message?.includes('Huna ruhusa') || err.message?.includes('Huruhusiwi');
-      const isUnauth = err.message?.includes('Hujaingia') || err.message?.includes('Authenticated user');
-      const statusCode = isForbidden ? 403 : isUnauth ? 401 : 400;
-      return res.status(statusCode).json({ error: err.message });
-    }
+  // 2. Create comment on a post — Retired V1.0
+  app.post('/api/gumzo/groups/:groupId/posts/:postId/comments', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
-  // 2b. Upload media for Gumzo Member Comment (ACTIVE MEMBER or Group Admin)
-  app.post('/api/gumzo/groups/:groupId/comments/upload-media', gumzoCommentMediaUpload.single('media'), async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.body?.callerUserId as string);
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Huruhusiwi kupakia media bila kuingia kwenye mfumo (401 Unauthorized).' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
-      const groupId = req.params.groupId;
-
-      const group = gumzoGroupService.getGroupById(groupId, callerUserId, isAdmin);
-      if (!group) {
-        return res.status(404).json({ error: 'Kikundi hakikupatikana.' });
-      }
-
-      if (group.status === 'REJECTED' || (group.status !== 'ACTIVE' && !isAdmin)) {
-        return res.status(403).json({ error: 'Kikundi hiki kimesimamishwa au hakiruhusu maoni kwa sasa.' });
-      }
-
-      const membership = gumzoGroupService.getMembership(groupId, callerUserId);
-      if (membership) {
-        if (membership.status === 'PENDING') {
-          return res.status(403).json({ error: 'Uanachama wako unasubiri idhini (Pending approval).' });
-        }
-        if (membership.status === 'LEFT') {
-          return res.status(403).json({ error: 'Ulijiondoa kwenye kikundi hiki (Left).' });
-        }
-        if (membership.status === 'SUSPENDED') {
-          return res.status(403).json({ error: 'Uanachama wako umesimamishwa kwenye kikundi hiki (Suspended).' });
-        }
-        if (membership.status === 'REMOVED') {
-          return res.status(403).json({ error: 'Uanachama wako umeondolewa kwenye kikundi hiki (Removed).' });
-        }
-        if (membership.status !== 'ACTIVE') {
-          return res.status(403).json({ error: 'Uanachama wako si amilifu katika kikundi hiki.' });
-        }
-      } else {
-        const isFounder = group.founderAdminUserId === callerUserId;
-        const isLeadership = group.leadershipAdminUserId === callerUserId;
-        if (!isFounder && !isLeadership && !isAdmin) {
-          return res.status(403).json({ error: 'Huna uanachama hai katika kikundi hiki kupakia faili (Active membership required).' });
-        }
-      }
-
-      if (!req.file) {
-        return res.status(400).json({ error: 'Faili la media linahitajika.' });
-      }
-
-      const mime = req.file.mimetype || 'application/octet-stream';
-      const originalName = req.file.originalname || 'media';
-      const isVideo = mime.startsWith('video/') || Boolean(originalName.match(/\.(mp4|mov|webm|3gp|m4v)$/i));
-      const isImage = mime.startsWith('image/') || Boolean(originalName.match(/\.(jpg|jpeg|png|webp|gif)$/i));
-
-      if (!isVideo && !isImage) {
-        return res.status(400).json({ error: 'Aina ya faili haikubaliki. Tumia faili la picha au video pekee.' });
-      }
-
-      const maxBytes = isVideo ? 50 * 1024 * 1024 : 15 * 1024 * 1024;
-      const maxMb = isVideo ? '50MB' : '15MB';
-      if (req.file.size > maxBytes) {
-        return res.status(400).json({ error: `Ukubwa wa faili umezidi kiwango cha juu cha ${maxMb}.` });
-      }
-
-      const groupCommentFolder = path.join(GUMZO_COMMENTS_DIR, groupId.replace(/[^a-zA-Z0-9_-]/g, ''));
-      if (!fs.existsSync(groupCommentFolder)) {
-        fs.mkdirSync(groupCommentFolder, { recursive: true });
-      }
-
-      const ext = isVideo ? 'mp4' : (mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg');
-      const mediaId = `gcmt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      const fileName = `${mediaId}.${ext}`;
-      const filePath = path.join(groupCommentFolder, fileName);
-
-      fs.writeFileSync(filePath, req.file.buffer);
-
-      const publicUrl = `/uploads/gumzo_comments/${groupId}/${fileName}`;
-      const storagePath = `gumzo/comments/${groupId}/${fileName}`;
-
-      return res.status(201).json({
-        id: mediaId,
-        type: isVideo ? 'video' : 'image',
-        url: publicUrl,
-        storagePath,
-        caption: req.body.caption || undefined,
-        sizeBytes: req.file.size,
-        mimeType: mime,
-      });
-    } catch (err: any) {
-      const status = err.message?.includes('403') || err.message?.includes('Huruhusiwi') ? 403 : 500;
-      return res.status(status).json({ error: err.message || 'Hitilafu ya kupakia faili la maoni' });
-    }
+  // 2b. Upload media for Gumzo Member Comment — Retired V1.0
+  app.post('/api/gumzo/groups/:groupId/comments/upload-media', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
-  // 3. Edit comment (Author or Group Admins)
-  app.patch('/api/gumzo/groups/:groupId/posts/:postId/comments/:commentId', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body.userId;
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
-      const { groupId, postId, commentId } = req.params;
-      const input = req.body.input || req.body;
-
-      const updated = gumzoCommentService.editComment({
-        groupId,
-        postId,
-        commentId,
-        input,
-        authenticatedUserId: callerUserId,
-        isPlatformAdmin: isAdmin
-      });
-
-      return res.json(updated);
-    } catch (err: any) {
-      const isForbidden = (err as any).statusCode === 403 || err.message?.includes('403') || err.message?.includes('Huna ruhusa') || err.message?.includes('Huruhusiwi');
-      const statusCode = isForbidden ? 403 : 400;
-      return res.status(statusCode).json({ error: err.message });
-    }
+  // 3. Edit comment — Retired V1.0
+  app.patch('/api/gumzo/groups/:groupId/posts/:postId/comments/:commentId', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
-  // 4. Delete comment (Author or Authorized Admin: supports both POST :commentId/delete and DELETE :commentId)
-  const handleCommentDelete = async (req: express.Request, res: express.Response) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || (req.query.userId as string);
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Hujaingia kwenye mfumo.' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
-      const { groupId, postId, commentId } = req.params;
-
-      const deleted = gumzoCommentService.deleteComment({
-        groupId,
-        postId,
-        commentId,
-        authenticatedUserId: callerUserId,
-        isPlatformAdmin: isAdmin
-      });
-
-      return res.json(deleted);
-    } catch (err: any) {
-      const isForbidden = (err as any).statusCode === 403 || err.message?.includes('403') || err.message?.includes('Huna mamlaka') || err.message?.includes('Huruhusiwi');
-      const statusCode = isForbidden ? 403 : 400;
-      return res.status(statusCode).json({ error: err.message });
-    }
+  // 4. Delete comment — Retired V1.0
+  const handleCommentDelete = async (_req: express.Request, res: express.Response) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   };
   app.post('/api/gumzo/groups/:groupId/posts/:postId/comments/:commentId/delete', handleCommentDelete);
   app.delete('/api/gumzo/groups/:groupId/posts/:postId/comments/:commentId', handleCommentDelete);
@@ -9127,38 +8821,9 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
   // GUMZO ENFORCEMENT V1.0 — COMMUNITY REPORTS & MODERATION ROUTES
   // ========================================================================
 
-  // 8. Submit report on Gumzo post or comment (Authenticated users only)
-  app.post('/api/gumzo/reports', async (req, res) => {
-    try {
-      const authInfo = extractUserAuthFromRequest(req);
-      const callerUserId = authInfo?.callerUserId || (req.headers['x-user-id'] as string) || req.body?.reporterUserId;
-      if (!callerUserId) {
-        return res.status(401).json({ error: 'Huruhusiwi kuwasilisha ripoti bila kuingia kwenye akaunti yako (401 Unauthorized).' });
-      }
-
-      const isAdmin = authInfo?.isAdmin || req.headers['x-is-admin'] === 'true' || req.headers['x-user-role'] === 'admin';
-      const { groupId, targetType, targetId, postId, reason, details } = req.body;
-
-      const report = await gumzoEnforcementService.submitReport({
-        input: {
-          groupId,
-          targetType,
-          targetId,
-          postId,
-          reason,
-          details,
-        },
-        reporterUserId: callerUserId,
-        reporterDisplayName: (req.headers['x-user-name'] as string) || req.body?.reporterDisplayName,
-        isPlatformAdmin: isAdmin,
-      });
-
-      const sanitized = gumzoEnforcementService.sanitizeReportForUser(report, callerUserId, isAdmin);
-      return res.status(201).json(sanitized);
-    } catch (err: any) {
-      const statusCode = (err as any).statusCode || (err.message?.includes('401') ? 401 : (err.message?.includes('403') ? 403 : (err.message?.includes('404') ? 404 : 400)));
-      return res.status(statusCode).json({ error: err.message });
-    }
+  // 8. Submit report on Gumzo post or comment — Retired V1.0
+  app.post('/api/gumzo/reports', async (_req, res) => {
+    return res.status(410).json(GUMZO_RETIRED_RESPONSE);
   });
 
   // 9. Get Gumzo Admin Reports Queue (Authorized Admins only)

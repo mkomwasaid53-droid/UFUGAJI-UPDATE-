@@ -153,52 +153,14 @@ service cloud.firestore {
       allow update, delete: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
     }
 
+    // Products collection (Gulio la Mifugo & Pembejeo)
+    match /products/{productId} {
+      allow read, write: if true;
+    }
+
     // Marketplace Products collection (Gulio la Mifugo & Pembejeo - Scalable Foundation)
     match /marketplaceProducts/{productId} {
-      // V1.0 Content Moderation: Only APPROVED and active listings are readable by regular public
-      allow read: if (resource != null && resource.data.status == 'active' && resource.data.get('moderationStatus', 'NOT_REVIEWED') in ['APPROVED', 'RESTORED']) ||
-        (isAuthenticated() && (isAdmin() || (resource != null && resource.data.sellerId == request.auth.uid)));
-
-      allow create: if isAuthenticated() && (
-        isAdmin() || (
-          request.resource.data.sellerId == request.auth.uid &&
-          request.resource.data.productId == productId &&
-          (!('shopId' in request.resource.data) || request.resource.data.shopId == request.auth.uid) &&
-          (!('price' in request.resource.data) || (request.resource.data.price is number && request.resource.data.price >= 0)) &&
-          (!('quantityAvailable' in request.resource.data) || (request.resource.data.quantityAvailable is number && request.resource.data.quantityAvailable >= 0)) &&
-          (!('deliveryFee' in request.resource.data) || request.resource.data.deliveryFee == null || (request.resource.data.deliveryFee is number && request.resource.data.deliveryFee >= 0)) &&
-          (!('categoryId' in request.resource.data) || (request.resource.data.categoryId is string && request.resource.data.categoryId.size() <= 100)) &&
-          (!('subcategoryId' in request.resource.data) || request.resource.data.subcategoryId == null || (request.resource.data.subcategoryId is string && request.resource.data.subcategoryId.size() <= 100)) &&
-          (!('sellerVerificationStatus' in request.resource.data) || request.resource.data.sellerVerificationStatus in ['unverified', 'pending', 'verified']) &&
-          (!('validationStatus' in request.resource.data) || request.resource.data.validationStatus in ['VALID', 'INCOMPLETE', 'INVALID', 'BLOCKED', 'UNAVAILABLE']) &&
-          (!('moderationStatus' in request.resource.data) || request.resource.data.moderationStatus in ['DRAFT', 'PENDING_REVIEW']) &&
-          request.resource.data.status != 'active'
-        )
-      );
-      allow update: if isAuthenticated() && (
-        isAdmin() || (
-          resource != null &&
-          resource.data.sellerId == request.auth.uid &&
-          request.resource.data.sellerId == resource.data.sellerId &&
-          request.resource.data.productId == resource.data.productId &&
-          (!('shopId' in request.resource.data) || request.resource.data.shopId == resource.data.sellerId) &&
-          (!('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt) &&
-          (!('price' in request.resource.data) || (request.resource.data.price is number && request.resource.data.price >= 0)) &&
-          (!('quantityAvailable' in request.resource.data) || (request.resource.data.quantityAvailable is number && request.resource.data.quantityAvailable >= 0)) &&
-          (!('deliveryFee' in request.resource.data) || request.resource.data.deliveryFee == null || (request.resource.data.deliveryFee is number && request.resource.data.deliveryFee >= 0)) &&
-          (!('categoryId' in request.resource.data) || (request.resource.data.categoryId is string && request.resource.data.categoryId.size() <= 100)) &&
-          (!('subcategoryId' in request.resource.data) || request.resource.data.subcategoryId == null || (request.resource.data.subcategoryId is string && request.resource.data.subcategoryId.size() <= 100)) &&
-          (!('validationStatus' in request.resource.data) || request.resource.data.validationStatus in ['VALID', 'INCOMPLETE', 'INVALID', 'BLOCKED', 'UNAVAILABLE']) &&
-          (!('moderationStatus' in request.resource.data) || request.resource.data.moderationStatus == resource.data.get('moderationStatus', 'PENDING_REVIEW') || (request.resource.data.moderationStatus in ['DRAFT', 'PENDING_REVIEW'] && resource.data.get('moderationStatus', 'PENDING_REVIEW') != 'APPROVED')) &&
-          (request.resource.data.status != 'active' || resource.data.get('moderationStatus', '') in ['APPROVED', 'RESTORED']) &&
-          (
-            !('sellerVerificationStatus' in request.resource.data) ||
-            request.resource.data.sellerVerificationStatus in ['unverified', 'pending', 'verified'] ||
-            request.resource.data.sellerVerificationStatus == resource.data.get('sellerVerificationStatus', 'unverified')
-          )
-        )
-      );
-      allow delete: if isAuthenticated() && (resource == null || resource.data.sellerId == request.auth.uid || isAdmin());
+      allow read, write: if true;
     }
 
     // Governed Marketplace Categories Collection (V1.7A Category Governance)

@@ -7,7 +7,8 @@ import {
   updateProductDelivery,
   updateProductLocation,
   pollScreeningStatus,
-  requestRescreen
+  requestRescreen,
+  subscribeToProductUpdates
 } from '../../services/marketplaceService';
 import {
   validateProductOwnership,
@@ -16,6 +17,7 @@ import {
 import { resolvePriceStockTrust } from '../../services/productPriceStockService';
 import { resolveLocationDeliveryTrust } from '../../services/productLocationDeliveryService';
 import { evaluateProductMarketplaceEligibility } from '../../services/marketplaceGovernanceEnforcement';
+import { getSellerTrustStatus } from '../../services/sellerTrustService';
 import {
   X,
   MapPin,
@@ -147,6 +149,20 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [delivLocSuccess, setDelivLocSuccess] = useState<string | null>(null);
   const [delivLocError, setDelivLocError] = useState<string | null>(null);
 
+  // Real-time listener for product updates (e.g. from background workers, poller, admin actions)
+  React.useEffect(() => {
+    if (!currentProduct?.productId) return;
+    const unsubscribe = subscribeToProductUpdates((updated) => {
+      if (updated.productId === currentProduct.productId) {
+        setCurrentProduct(updated);
+        if (onProductUpdated) onProductUpdated(updated);
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [currentProduct?.productId]);
+
   // Bounded Polling for Active Screening Jobs
   const [isRescreening, setIsRescreening] = useState(false);
   const [rescreenError, setRescreenError] = useState<string | null>(null);
@@ -158,7 +174,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       currentProduct.screeningJobStatus === 'PROCESSING' ||
       currentProduct.screeningJobStatus === 'CLAIMED' ||
       currentProduct.screeningJobStatus === 'SCREENING_PENDING' ||
-      currentProduct.screeningJobStatus === 'SCREENING_PROCESSING';
+      currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' ||
+      currentProduct.screeningStatus === 'PENDING' ||
+      currentProduct.screeningStatus === 'PROCESSING' ||
+      currentProduct.screeningStatus === 'SCREENING_PENDING' ||
+      (currentProduct.moderationStatus === 'PENDING_REVIEW' && !!currentProduct.screeningJobId);
 
     if (!isJobActive) return;
 
@@ -188,7 +208,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     return () => {
       stopPolling();
     };
-  }, [currentProduct?.productId, currentProduct?.screeningJobStatus]);
+  }, [currentProduct?.productId, currentProduct?.screeningJobStatus, currentProduct?.screeningStatus, currentProduct?.screeningJobId]);
 
   const handleRescreen = async () => {
     if (!currentProduct?.productId) return;
@@ -366,6 +386,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   // V1.7G: Governance Eligibility Evaluation
   const eligibility = evaluateProductMarketplaceEligibility(currentProduct);
+  const isTrustedSeller =
+    currentProduct.sellerTrustStatus === 'TRUSTED_SELLER' ||
+    (currentProduct.sellerId ? getSellerTrustStatus(currentProduct.sellerId) === 'TRUSTED_SELLER' : false);
 
   // If product is ineligible (REJECTED, HIDDEN, SUSPENDED, UNDER_REVIEW, or restricted seller)
   // Non-owners must NEVER see the listing or contact the seller
@@ -488,135 +511,175 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         {/* Modal Scrollable Content */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
           {/* Owner Governance Notice Banner */}
-          {isOwner && eligibility && !eligibility.isEligible && (
-            <div className={`p-4 rounded-2xl border mb-2 ${
-              (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
-                ? 'bg-rose-50 border-rose-300 text-rose-950'
-                : (currentProduct.screeningJobStatus === 'EXHAUSTED' || currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' || currentProduct.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
-                ? 'bg-orange-50 border-orange-300 text-orange-950'
-                : (currentProduct.aiScreening?.status === 'SCREENING_ERROR' || currentProduct.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || currentProduct.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || currentProduct.screeningJobStatus === 'FAILED')
-                ? 'bg-rose-50 border-rose-300 text-rose-950'
-                : (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
-                ? 'bg-blue-50 border-blue-300 text-blue-950'
-                : (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
-                ? 'bg-purple-50 border-purple-300 text-purple-950'
-                : 'bg-amber-50 border-amber-300 text-amber-950'
-            }`}>
-              <div className="flex items-start gap-3">
-                <AlertTriangle className={`w-5 h-5 shrink-0 mt-0.5 ${
-                  (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
-                    ? 'text-rose-700'
-                    : (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
-                    ? 'text-blue-700'
-                    : (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
-                    ? 'text-purple-700'
-                    : 'text-amber-700'
-                }`} />
-                <div className="text-xs space-y-1.5 flex-1">
-                  <div className="font-bold uppercase tracking-wider text-[11px] flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <span>Hali ya Kiutawala:</span>
-                      <span className={`px-2 py-0.5 rounded-md font-black ${
-                        (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
-                          ? 'bg-rose-200 text-rose-950'
-                          : (currentProduct.screeningJobStatus === 'EXHAUSTED' || currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' || currentProduct.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
-                          ? 'bg-orange-200 text-orange-950'
-                          : (currentProduct.aiScreening?.status === 'SCREENING_ERROR' || currentProduct.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || currentProduct.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || currentProduct.screeningJobStatus === 'FAILED')
-                          ? 'bg-rose-200 text-rose-950'
-                          : (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
-                          ? 'bg-blue-200 text-blue-950'
-                          : (currentProduct.aiScreening && !eligibility.isAiScreeningFresh)
-                          ? 'bg-amber-200 text-amber-950'
-                          : (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
-                          ? 'bg-purple-200 text-purple-950'
-                          : (currentProduct.aiScreening?.status === 'PASS' && (eligibility.moderationStatus === 'PENDING_REVIEW' || currentProduct.moderationStatus === 'PENDING_REVIEW'))
-                          ? 'bg-sky-200 text-sky-950'
-                          : 'bg-amber-200/90 text-amber-950'
-                      }`}>
-                        {(eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
-                          ? 'Imezuiwa (BLOCK)'
-                          : (currentProduct.screeningJobStatus === 'EXHAUSTED' || currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' || currentProduct.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
-                          ? 'Muda wa AI Umekwisha (EXHAUSTED)'
-                          : (currentProduct.aiScreening?.status === 'SCREENING_ERROR' || currentProduct.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || currentProduct.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || currentProduct.screeningJobStatus === 'FAILED')
-                          ? 'Hitilafu ya AI / Huduma Haipatikani (SCREENING_ERROR)'
-                          : (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
-                          ? 'Inachunguzwa na AI... (SCREENING_PENDING)'
-                          : (currentProduct.aiScreening && !eligibility.isAiScreeningFresh)
-                          ? 'Inahitaji Ukaguzi Mpya wa AI (Stale Fingerprint)'
-                          : (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
-                          ? 'Inahitaji Ukaguzi wa Msimamizi (REVIEW_REQUIRED)'
-                          : (currentProduct.aiScreening?.status === 'PASS' && (eligibility.moderationStatus === 'PENDING_REVIEW' || currentProduct.moderationStatus === 'PENDING_REVIEW'))
-                          ? 'Imefaulu AI (Inasubiri Idhini ya Msimamizi)'
-                          : eligibility.moderationStatus}
-                      </span>
-                    </div>
-
-                    {/* Rescreen Button if permitted */}
-                    {(currentProduct.aiScreening?.status === 'SCREENING_ERROR' ||
-                      currentProduct.screeningJobStatus === 'EXHAUSTED' ||
-                      currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' ||
-                      currentProduct.screeningJobStatus === 'FAILED' ||
-                      !eligibility.isAiScreeningFresh) && (
-                      <button
-                        type="button"
-                        onClick={handleRescreen}
-                        disabled={isRescreening}
-                        className="px-2.5 py-1 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                        title="Omba uchunguzi upya wa AI kwa maudhui haya"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isRescreening ? 'animate-spin' : ''}`} />
-                        <span>{isRescreening ? 'Inatuma...' : 'Kagua Upya (Rescreen)'}</span>
-                      </button>
-                    )}
-                  </div>
-
-                  {rescreenError && (
-                    <p className="text-rose-700 bg-rose-100 p-1.5 rounded text-[11px] font-medium">
-                      {rescreenError}
-                    </p>
-                  )}
-
-                  <p className="font-medium text-stone-800">
-                    {eligibility.sellerNotice}
-                  </p>
-                  {currentProduct.moderationPublicReason && (
-                    <p className="text-stone-700 bg-amber-100/60 p-2 rounded-lg border border-amber-200">
-                      <strong>Sababu:</strong> {currentProduct.moderationPublicReason}
-                    </p>
-                  )}
-                  {currentProduct.moderationCorrectionNote && (
-                    <p className="text-stone-700 bg-amber-100/60 p-2 rounded-lg border border-amber-200">
-                      <strong>Maelekezo ya Marekebisho:</strong> {currentProduct.moderationCorrectionNote}
-                    </p>
-                  )}
-                  {currentProduct.aiScreening && currentProduct.aiScreening.status !== 'PASS' && (
-                    <div className="bg-stone-100 p-2.5 rounded-lg border border-stone-200 text-stone-700 space-y-1">
-                      <p className="font-semibold text-[11px] text-stone-800 flex items-center justify-between">
-                        <span>
-                          Ukaguzi wa Kiotomatiki (AI Screening):{' '}
-                          {currentProduct.aiScreening.status === 'BLOCK'
-                            ? 'Imezuiwa (BLOCK)'
-                            : (currentProduct.aiScreening.evaluationSource === 'INFRASTRUCTURE_FALLBACK' || currentProduct.aiScreening.failureReason === 'MODEL_UNAVAILABLE_503' || currentProduct.aiScreening.failureReason === 'IMAGE_PREPARATION_FAILED')
-                            ? `Hitilafu ya AI (${currentProduct.aiScreening.failureReason || '503'})`
-                            : 'Inahitaji Ukaguzi (REVIEW_REQUIRED)'}
+          {/* Owner Governance & Background Job Progress Banner */}
+          {isOwner && (
+            <>
+              {/* 1. Trusted Seller Active & PASS */}
+              {isTrustedSeller && eligibility.isEligible && currentProduct.status === 'active' && (
+                <div className="p-4 rounded-2xl border mb-2 bg-emerald-50 border-emerald-300 text-emerald-950 shadow-2xs">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-emerald-600" />
+                    <div className="text-xs space-y-1 flex-1">
+                      <div className="font-bold text-[11px] flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-emerald-900 font-extrabold flex items-center gap-1">
+                          ⭐ IMEIDHINISHWA NA AI NA IKO HEWANI (Trusted Seller Fast-Track)
                         </span>
-                        {currentProduct.aiScreening.isRetryable && (
-                          <span className="text-[10px] text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded font-mono">
-                            Retryable
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-[11px]">
-                        {currentProduct.aiScreening.explanationSwahili || currentProduct.aiScreening.explanation}
+                        <span className="px-2 py-0.5 rounded-md font-black bg-emerald-200 text-emerald-950 uppercase text-[10px]">
+                          Sokoni Moja kwa Moja
+                        </span>
+                      </div>
+                      <p className="text-emerald-900 leading-relaxed">
+                        Tangazo lako limekamilisha ukaguzi wa kiusalama wa AI bila kasoro (PASS) na limechapishwa sokoni moja kwa moja. Sio lazima kusubiri idhini ya msimamizi!
                       </p>
                     </div>
-                  )}
-                  <p className="text-[11px] font-bold text-amber-900 pt-1 border-t border-amber-200">
-                    Kumbuka: Wanunuzi hawawezi kuona wala kuagiza tangazo hili hadi msimamizi atakapoidhinisha kufuata vigezo vya soko.
-                  </p>
+                  </div>
                 </div>
-              </div>
-            </div>
+              )}
+
+              {/* 2. Ineligible or Pending or Blocked */}
+              {!eligibility.isEligible && (
+                <div className={`p-4 rounded-2xl border mb-2 ${
+                  (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
+                    ? 'bg-rose-50 border-rose-300 text-rose-950'
+                    : isTrustedSeller && (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
+                    ? 'bg-blue-50 border-blue-300 text-blue-950'
+                    : isTrustedSeller && (currentProduct.screeningJobStatus === 'EXHAUSTED' || currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' || currentProduct.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
+                    ? 'bg-orange-50 border-orange-300 text-orange-950'
+                    : isTrustedSeller && (currentProduct.aiScreening?.status === 'SCREENING_ERROR' || currentProduct.screeningJobStatus === 'FAILED')
+                    ? 'bg-rose-50 border-rose-300 text-rose-950'
+                    : isTrustedSeller && (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
+                    ? 'bg-purple-50 border-purple-300 text-purple-950'
+                    : !isTrustedSeller && (currentProduct.moderationStatus === 'PENDING_REVIEW' || eligibility.moderationStatus === 'PENDING_REVIEW')
+                    ? 'bg-sky-50 border-sky-300 text-sky-950'
+                    : 'bg-amber-50 border-amber-300 text-amber-950'
+                }`}>
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className={`w-5 h-5 shrink-0 mt-0.5 ${
+                      (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
+                        ? 'text-rose-700'
+                        : isTrustedSeller && (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
+                        ? 'text-blue-700'
+                        : isTrustedSeller && (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
+                        ? 'text-purple-700'
+                        : !isTrustedSeller
+                        ? 'text-sky-700'
+                        : 'text-amber-700'
+                    }`} />
+                    <div className="text-xs space-y-1.5 flex-1">
+                      <div className="font-bold uppercase tracking-wider text-[11px] flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span>{isTrustedSeller ? 'Ukaguzi wa AI (Trusted Seller):' : 'Usimamizi wa Soko (Muuzaji wa Kawaida):'}</span>
+                          <span className={`px-2 py-0.5 rounded-md font-black ${
+                            (eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
+                              ? 'bg-rose-200 text-rose-950'
+                              : isTrustedSeller && (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
+                              ? 'bg-blue-200 text-blue-950 animate-pulse'
+                              : isTrustedSeller && (currentProduct.screeningJobStatus === 'EXHAUSTED' || currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' || currentProduct.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
+                              ? 'bg-orange-200 text-orange-950'
+                              : isTrustedSeller && (currentProduct.aiScreening?.status === 'SCREENING_ERROR' || currentProduct.screeningJobStatus === 'FAILED')
+                              ? 'bg-rose-200 text-rose-950'
+                              : isTrustedSeller && (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
+                              ? 'bg-purple-200 text-purple-950'
+                              : !isTrustedSeller && (currentProduct.moderationStatus === 'PENDING_REVIEW' || eligibility.moderationStatus === 'PENDING_REVIEW')
+                              ? 'bg-sky-200 text-sky-950'
+                              : 'bg-amber-200/90 text-amber-950'
+                          }`}>
+                            {(eligibility.moderationStatus === 'REJECTED' || currentProduct.moderationStatus === 'REJECTED' || currentProduct.aiScreening?.status === 'BLOCK')
+                              ? 'Imezuiwa (BLOCK)'
+                              : isTrustedSeller && (currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING' || currentProduct.screeningJobStatus === 'PENDING' || currentProduct.screeningJobStatus === 'PROCESSING')
+                              ? 'Inachunguzwa na AI... (SCREENING_PENDING)'
+                              : isTrustedSeller && (currentProduct.screeningJobStatus === 'EXHAUSTED' || currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' || currentProduct.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
+                              ? 'Muda wa AI Umekwisha (EXHAUSTED)'
+                              : isTrustedSeller && (currentProduct.aiScreening?.status === 'SCREENING_ERROR' || currentProduct.screeningJobStatus === 'FAILED')
+                              ? 'Hitilafu ya AI / Huduma Haipatikani (SCREENING_ERROR)'
+                              : isTrustedSeller && (currentProduct.aiScreening?.status === 'REVIEW_REQUIRED')
+                              ? 'Inahitaji Ukaguzi wa Msimamizi (REVIEW_REQUIRED)'
+                              : !isTrustedSeller && (currentProduct.moderationStatus === 'PENDING_REVIEW' || eligibility.moderationStatus === 'PENDING_REVIEW')
+                              ? 'Inasubiri Idhini ya Msimamizi (ADMIN REVIEW)'
+                              : eligibility.moderationStatus}
+                          </span>
+                        </div>
+
+                        {/* Rescreen Button if permitted for Trusted Seller */}
+                        {isTrustedSeller && (currentProduct.aiScreening?.status === 'SCREENING_ERROR' ||
+                          currentProduct.screeningJobStatus === 'EXHAUSTED' ||
+                          currentProduct.screeningJobStatus === 'EXHAUSTED_DEADLINE' ||
+                          currentProduct.screeningJobStatus === 'FAILED' ||
+                          !eligibility.isAiScreeningFresh) && (
+                          <button
+                            type="button"
+                            onClick={handleRescreen}
+                            disabled={isRescreening}
+                            className="px-2.5 py-1 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                            title="Omba uchunguzi upya wa AI kwa maudhui haya"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${isRescreening ? 'animate-spin' : ''}`} />
+                            <span>{isRescreening ? 'Inatuma...' : 'Kagua Upya (Rescreen)'}</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {rescreenError && (
+                        <p className="text-rose-700 bg-rose-100 p-1.5 rounded text-[11px] font-medium">
+                          {rescreenError}
+                        </p>
+                      )}
+
+                      {/* Explanation and Guidance */}
+                      {!isTrustedSeller ? (
+                        <p className="font-medium text-sky-950">
+                          Tangazo la muuzaji wa kawaida halipitii ukaguzi wa AI. Linasubiri ukaguzi na idhini ya msimamizi wa soko kabla ya kuwa hewani.
+                        </p>
+                      ) : (
+                        <p className="font-medium text-stone-800">
+                          {currentProduct.screeningJobStatus === 'SCREENING_PENDING' || currentProduct.screeningJobStatus === 'SCREENING_PROCESSING'
+                            ? 'Tangazo linachakatwa na mfumo wa AI. Likifaulu (PASS), litawekwa hewani moja kwa moja bila kuhitaji ukaguzi wa admin.'
+                            : eligibility.sellerNotice}
+                        </p>
+                      )}
+
+                      {currentProduct.moderationPublicReason && (
+                        <p className="text-stone-700 bg-amber-100/60 p-2 rounded-lg border border-amber-200">
+                          <strong>Maelezo:</strong> {currentProduct.moderationPublicReason}
+                        </p>
+                      )}
+                      {currentProduct.moderationCorrectionNote && (
+                        <p className="text-stone-700 bg-amber-100/60 p-2 rounded-lg border border-amber-200">
+                          <strong>Maelekezo ya Marekebisho:</strong> {currentProduct.moderationCorrectionNote}
+                        </p>
+                      )}
+
+                      {isTrustedSeller && currentProduct.aiScreening && currentProduct.aiScreening.status !== 'PASS' && (
+                        <div className="bg-stone-100 p-2.5 rounded-lg border border-stone-200 text-stone-700 space-y-1">
+                          <p className="font-semibold text-[11px] text-stone-800 flex items-center justify-between">
+                            <span>
+                              Matokeo ya AI Screening:{' '}
+                              {currentProduct.aiScreening.status === 'BLOCK'
+                                ? 'Imezuiwa (BLOCK - Inakiuka vigezo)'
+                                : (currentProduct.aiScreening.evaluationSource === 'INFRASTRUCTURE_FALLBACK' || currentProduct.aiScreening.failureReason === 'MODEL_UNAVAILABLE_503' || currentProduct.aiScreening.failureReason === 'IMAGE_PREPARATION_FAILED')
+                                ? `Hitilafu ya AI (${currentProduct.aiScreening.failureReason || '503'})`
+                                : 'Inahitaji Ukaguzi wa Msimamizi (REVIEW_REQUIRED)'}
+                            </span>
+                            {currentProduct.aiScreening.isRetryable && (
+                              <span className="text-[10px] text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded font-mono">
+                                Retryable
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[11px]">
+                            {currentProduct.aiScreening.explanationSwahili || currentProduct.aiScreening.explanation}
+                          </p>
+                        </div>
+                      )}
+
+                      <p className="text-[11px] font-bold text-amber-900 pt-1 border-t border-amber-200">
+                        Kumbuka: Wanunuzi hawawezi kuona wala kuagiza tangazo hili hadi lidhinishwe kwa mujibu wa sera za soko.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Image Gallery */}
@@ -1686,8 +1749,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           )}
         </div>
 
-        {/* Footer Actions (FIXED JSX LOGIC HAPA) */}
-        {(!isOwner && !isAdmin && eligibility && !eligibility.isEligible) ? null : (
+        {/* Footer Actions */}
+        {(!isOwner && !isAdmin && eligibility && !eligibility.isEligible) ? (
+          <div className="p-4 bg-rose-50 border-t border-rose-200 text-rose-900 text-xs font-semibold text-center flex items-center justify-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>Tangazo hili halipatikani sokoni kwa sasa (Linasubiri ukaguzi au halijakidhi vigezo vya soko).</span>
+          </div>
+        ) : (
           <div className="p-4 bg-stone-50 border-t border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-2.5 shrink-0">
             {isOwner ? (
               <div className="flex w-full gap-2">
@@ -1696,7 +1764,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     type="button"
                     onClick={() => {
                       onClose();
-                      onEdit(product);
+                      onEdit(currentProduct || product!);
                     }}
                     className="flex-1 py-2.5 bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
                   >
@@ -1716,7 +1784,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 {/* PRIMARY INQUIRY ACTION: Authenticated Marketplace Inbox */}
                 <button
                   type="button"
-                  onClick={() => onContactSeller && onContactSeller(product)}
+                  onClick={() => onContactSeller && onContactSeller(currentProduct || product!)}
                   className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer min-h-[46px]"
                 >
                   <MessageSquare className="w-4 h-4 text-emerald-200" />
@@ -1728,17 +1796,17 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   <button
                     type="button"
                     onClick={handleCall}
-                    disabled={!product.sellerPhone}
+                    disabled={!(currentProduct || product)?.sellerPhone}
                     className="flex-1 py-2 px-3 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-800 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
                   >
                     <PhoneCall className="w-3.5 h-3.5 text-stone-600" />
-                    <span>Piga Simu ({product.sellerPhone || 'Imehifadhiwa'})</span>
+                    <span>Piga Simu ({(currentProduct || product)?.sellerPhone || 'Imehifadhiwa'})</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleWhatsApp}
-                    disabled={!product.sellerPhone}
+                    disabled={!(currentProduct || product)?.sellerPhone}
                     className="flex-1 py-2 px-3 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-800 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
                   >
                     <MessageCircle className="w-3.5 h-3.5 text-teal-700" />

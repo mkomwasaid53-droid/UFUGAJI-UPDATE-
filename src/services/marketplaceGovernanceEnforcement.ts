@@ -70,14 +70,22 @@ export function syncAuthoritativeModerationState(product: MarketplaceProduct): M
 
   const screening = authoritativeRecord?.aiScreening || product.aiScreening;
 
-  let authoritativeStatus: ModerationStatus =
-    authoritativeRecord?.status || (product.moderationStatus as ModerationStatus) || 'NOT_REVIEWED';
+  const rawModStatus = String(authoritativeRecord?.status || product.moderationStatus || 'NOT_REVIEWED').toLowerCase();
+  let authoritativeStatus: ModerationStatus = 'NOT_REVIEWED';
+  if (rawModStatus === 'approved') {
+    authoritativeStatus = 'APPROVED';
+  } else if (rawModStatus === 'rejected') {
+    authoritativeStatus = 'REJECTED';
+  } else if (rawModStatus === 'pending_admin' || rawModStatus === 'pending_review') {
+    authoritativeStatus = 'PENDING_REVIEW';
+  } else {
+    authoritativeStatus = (authoritativeRecord?.status || product.moderationStatus || 'NOT_REVIEWED') as ModerationStatus;
+  }
 
-  // If authoritativeRecord was PENDING_REVIEW, but product was actually updated to APPROVED by trusted seller auto-pass, check if it should be reconciled
+  // If authoritativeRecord was PENDING_REVIEW, but product was actually updated to approved by trusted seller auto-pass, check if it should be reconciled
   if (
-    authoritativeRecord &&
-    authoritativeRecord.status === 'PENDING_REVIEW' &&
-    product.moderationStatus === 'APPROVED' &&
+    (authoritativeRecord?.status === 'PENDING_REVIEW' || authoritativeStatus === 'PENDING_REVIEW') &&
+    (rawModStatus === 'approved' || product.visible === true) &&
     screening?.status === 'PASS' &&
     isScreeningResultUpToDate(product, screening)
   ) {
@@ -85,9 +93,11 @@ export function syncAuthoritativeModerationState(product: MarketplaceProduct): M
   }
 
   // RULE 1: An AI BLOCK must NEVER be overridden by previous approval or seller trust.
-  // If the listing received an AI BLOCK, its authoritative status MUST be REJECTED.
-  if (screening?.status === 'BLOCK') {
-    authoritativeStatus = 'REJECTED';
+  // If the listing received an AI BLOCK or rejected status or visible === false, its authoritative status MUST be REJECTED.
+  if (screening?.status === 'BLOCK' || rawModStatus === 'rejected' || (product as any).visible === false) {
+    if (rawModStatus === 'rejected' || screening?.status === 'BLOCK') {
+      authoritativeStatus = 'REJECTED';
+    }
   }
 
   // RULE 2: Content edit invalidation and screening freshness enforcement.
@@ -180,6 +190,7 @@ export function evaluateProductMarketplaceEligibility(
     'ESCALATED'
   ];
   let isBlockedByModeration =
+    (product as any)?.visible === false ||
     blockedModerationStatuses.includes(modStatus) ||
     (modStatus !== 'APPROVED' && modStatus !== 'RESTORED');
 
@@ -283,14 +294,16 @@ export function evaluateProductMarketplaceEligibility(
   // 8. Check Active Status
   const isActiveStatus = synced.status === 'active';
 
-  // Combined Eligibility:
-  // Must be active, moderation APPROVED, AI screening PASS & fresh,
-  // seller trust eligible, not restricted, category active, valid, and monetization-eligible.
+  // For Trusted Seller: AI screening PASS and freshness are strictly mandatory.
+  // For Normal Seller: They do not go through AI screening, so when admin approves them (modStatus === 'APPROVED'),
+  // they are eligible based on the administrator's review.
+  const isAiScreeningRequired = sellerTrust === 'TRUSTED_SELLER';
+  const satisfiesScreening = !isAiScreeningRequired || (isAiScreeningPassed && isAiScreeningFresh);
+
   const isEligible =
     isActiveStatus &&
     !isBlockedByModeration &&
-    isAiScreeningPassed &&
-    isAiScreeningFresh &&
+    satisfiesScreening &&
     !isSellerTrustIneligible &&
     !isSellerRestricted &&
     !isCategoryInactive &&

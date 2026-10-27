@@ -35,16 +35,16 @@ service firebase.storage {
       allow read, write: if false; // Accessible only via server authenticated participant gateway
     }
 
-    // Gumzo Community Admin Posts media
+    // Gumzo Community Admin Posts media (Retirement V1.0: Read-only preserved for historical content)
     match /gumzo/posts/{groupId}/{allPaths=**} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if false;
     }
 
-    // Gumzo Community Member Comments media
+    // Gumzo Community Member Comments media (Retirement V1.0: Read-only preserved for historical content)
     match /gumzo/comments/{groupId}/{allPaths=**} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if false;
     }
 
     // Default fallback: reject all unmapped paths

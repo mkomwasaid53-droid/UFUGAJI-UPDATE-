@@ -8,6 +8,7 @@ import { resolveProductTrustSignals } from '../../services/marketplaceTrustServi
 import { evaluateProductMarketplaceEligibility } from '../../services/marketplaceGovernanceEnforcement';
 import { PublicSellerVerificationBadge } from '../../types/sellerVerification';
 import { sellerVerificationService } from '../../services/sellerVerificationService';
+import { getSellerTrustStatus } from '../../services/sellerTrustService';
 import {
   MapPin,
   Tag,
@@ -35,6 +36,7 @@ interface ProductCardProps {
   isOwner?: boolean;
   isHighlighted?: boolean;
   publicBadge?: PublicSellerVerificationBadge | null;
+  viewMode?: 'grid' | 'compact' | 'list';
   onViewDetails: (product: MarketplaceProduct) => void;
   onOpenShop?: (sellerId: string) => void;
   onOpenShopCatalogue?: (sellerId: string, catalogueId?: string | null, productId?: string) => void;
@@ -49,6 +51,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   isOwner,
   isHighlighted,
   publicBadge,
+  viewMode = 'grid',
   onViewDetails,
   onOpenShop,
   onOpenShopCatalogue,
@@ -83,6 +86,24 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const governance = React.useMemo(() => evaluateProductMarketplaceEligibility(product), [product]);
   const isActivationBlocked = !governance.isEligible && product.status !== 'active';
 
+  const isTrustedSeller =
+    product.sellerTrustStatus === 'TRUSTED_SELLER' ||
+    (product.sellerId ? getSellerTrustStatus(product.sellerId) === 'TRUSTED_SELLER' : false);
+
+  const isRejected =
+    governance.moderationStatus === 'REJECTED' ||
+    product.moderationStatus === 'REJECTED' ||
+    product.aiScreening?.status === 'BLOCK';
+  const isReviewRequired = product.aiScreening?.status === 'REVIEW_REQUIRED';
+  const isPendingReview =
+    (governance.moderationStatus === 'PENDING_REVIEW' || product.moderationStatus === 'PENDING_REVIEW') && !isRejected;
+
+  const displayUrl = (!imgError && product.imageUrl && !product.imageUrl.startsWith('blob:'))
+    ? product.imageUrl
+    : (!imgError && product.images && product.images.length > 0 && product.images[0]?.url && !product.images[0]?.url.startsWith('blob:'))
+    ? product.images[0]?.url
+    : null;
+
   const handleShopClick = () => {
     if (onOpenShopCatalogue && product.catalogueId) {
       onOpenShopCatalogue(product.sellerId, product.catalogueId, product.productId);
@@ -93,76 +114,147 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     }
   };
 
-  return (
-    <div
-      id={`product-card-${product.productId}`}
-      className={`bg-white rounded-2xl border transition-all overflow-hidden flex flex-col justify-between group ${
-        isHighlighted
-          ? 'ring-2 ring-amber-500 border-amber-400 shadow-md bg-amber-50/10'
-          : isInactive
-          ? 'border-stone-300 opacity-80 bg-stone-50/50'
-          : 'border-stone-200/90 shadow-2xs hover:shadow-sm'
-      }`}
-    >
-      <div className="p-4 space-y-3">
-        {/* Highlight Banner if targeted */}
-        {isHighlighted && (
-          <div className="px-2.5 py-1 bg-amber-500 text-stone-950 font-extrabold text-[10.5px] rounded-lg flex items-center justify-between">
-            <span>🎯 Bidhaa Uliyofungua</span>
-            <span className="text-[9.5px] uppercase font-bold tracking-wider">Imechaguliwa</span>
-          </div>
-        )}
+  const renderOwnerNotice = () => {
+    if (!isOwner) return null;
 
-        {/* Owner Governance Notice if not eligible */}
-        {isOwner && !governance.isEligible && (
-          <div className={`p-2 rounded-xl space-y-1 text-[11px] border ${
-            (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
-              ? 'bg-rose-50 border-rose-200 text-rose-950'
-              : (product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' || product.screeningJobStatus === 'PENDING' || product.screeningJobStatus === 'PROCESSING')
-              ? 'bg-blue-50 border-blue-200 text-blue-950'
-              : (product.aiScreening?.status === 'REVIEW_REQUIRED')
-              ? 'bg-purple-50 border-purple-200 text-purple-950'
-              : 'bg-amber-50 border-amber-200 text-amber-950'
-          }`}>
-            <div className="flex items-center justify-between font-bold">
-              <span className="flex items-center gap-1">
-                <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${
-                  (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK') ? 'text-rose-700' : 'text-amber-700'
-                }`} />
-                <span>
-                  {(governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
-                    ? 'Imezuiwa (BLOCK)'
-                    : (product.screeningJobStatus === 'EXHAUSTED' || product.screeningJobStatus === 'EXHAUSTED_DEADLINE' || product.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
-                    ? 'Muda wa AI Umekwisha (EXHAUSTED)'
-                    : (product.aiScreening?.status === 'SCREENING_ERROR' || product.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || product.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || product.screeningJobStatus === 'FAILED')
-                    ? 'Hitilafu ya AI / Huduma Haipatikani'
-                    : (product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' || product.screeningJobStatus === 'PENDING' || product.screeningJobStatus === 'PROCESSING')
-                    ? 'Inachunguzwa na AI (SCREENING_PENDING)'
-                    : (product.aiScreening && governance.isAiScreeningFresh === false)
-                    ? 'Inahitaji Ukaguzi Mpya wa AI (Stale)'
-                    : (product.aiScreening?.status === 'REVIEW_REQUIRED')
-                    ? 'Inahitaji Ukaguzi wa Msimamizi (REVIEW_REQUIRED)'
-                    : (product.aiScreening?.status === 'PASS' && (governance.moderationStatus === 'PENDING_REVIEW' || product.moderationStatus === 'PENDING_REVIEW'))
-                    ? 'Imefaulu AI (Inasubiri Idhini ya Msimamizi)'
-                    : governance.moderationStatus === 'DRAFT'
-                    ? 'Rasimu (DRAFT)'
-                    : governance.moderationStatus || 'Haionekani Sokoni'}
-                </span>
-              </span>
-              <span className={`text-[9.5px] uppercase font-bold tracking-wider ${
-                (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK') ? 'text-rose-800' : 'text-amber-800'
-              }`}>Haionekani Sokoni</span>
-            </div>
-            {(product.moderationPublicReason || governance.sellerNotice || governance.publicUnavailableReason) && (
-              <p className={`text-[10px] leading-tight ${
-                (governance.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK') ? 'text-rose-900/90' : 'text-amber-900/90'
-              }`}>
-                {product.moderationPublicReason || governance.sellerNotice || governance.publicUnavailableReason}
-              </p>
+    // 1. REJECTED / BLOCKED
+    if (isRejected) {
+      return (
+        <div className="p-2.5 rounded-xl text-[11px] border bg-rose-50 border-rose-300 text-rose-950 space-y-1.5 shadow-2xs">
+          <div className="flex items-center justify-between font-extrabold text-rose-900">
+            <span className="flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-700 shrink-0" />
+              <span>{isTrustedSeller ? '🚫 LIMEZUIWA NA AI (BLOCKED)' : '🚫 LIMEKATALIWA NA MSIMAMIZI'}</span>
+            </span>
+            <span className="text-[9px] uppercase font-black text-rose-800 bg-rose-200/80 px-1.5 py-0.2 rounded border border-rose-300">
+              Halikidhi Vigezo
+            </span>
+          </div>
+          <p className="text-[10px] text-rose-900 leading-tight">
+            {product.aiScreening?.explanationSwahili || product.moderationPublicReason || governance.sellerNotice || 'Tangazo limezuiwa kwa sababu halijakidhi vigezo vya usalama na maadili ya soko.'}
+          </p>
+          <div className="flex items-center justify-between pt-1 border-t border-rose-200 text-[9.5px]">
+            <span className="text-rose-700 font-medium">📬 Ujumbe wa kuzuiliwa umetumwa kwenye arifa zako.</span>
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => onEdit(product)}
+                className="font-bold underline text-rose-900 hover:text-rose-950 cursor-pointer"
+              >
+                Rekebisha
+              </button>
             )}
           </div>
-        )}
+        </div>
+      );
+    }
 
+    // 2. TRUSTED SELLER: IN PROGRESS AI SCREENING
+    if (isTrustedSeller && (product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' || product.screeningJobStatus === 'PENDING' || product.screeningJobStatus === 'PROCESSING')) {
+      return (
+        <div className="p-2.5 rounded-xl text-[11px] border bg-blue-50 border-blue-200 text-blue-950 space-y-1 shadow-2xs">
+          <div className="flex items-center justify-between font-bold text-blue-900">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping inline-block" />
+              <span>🤖 INACHUNGUZWA NA AI... (AI SCREENING)</span>
+            </span>
+            <span className="text-[9px] uppercase font-bold text-blue-800 bg-blue-100 px-1.5 py-0.2 rounded border border-blue-200">
+              Inachakatwa
+            </span>
+          </div>
+          <p className="text-[10px] text-blue-900 leading-tight">
+            Tangazo lako la Trusted Seller linakaguliwa na AI. Likifaulu (PASS), litakuwa hewani moja kwa moja bila kusubiri admin review.
+          </p>
+        </div>
+      );
+    }
+
+    // 3. TRUSTED SELLER: REVIEW_REQUIRED (Complex / Sensitive Context)
+    if (isTrustedSeller && isReviewRequired) {
+      return (
+        <div className="p-2.5 rounded-xl text-[11px] border bg-purple-50 border-purple-200 text-purple-950 space-y-1">
+          <div className="flex items-center justify-between font-bold text-purple-900">
+            <span className="flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+              <span>🔍 INAHITAJI UHAKIKI (REVIEW REQUIRED)</span>
+            </span>
+            <span className="text-[9px] uppercase font-bold text-purple-800 bg-purple-100 px-1.5 py-0.2 rounded border border-purple-200">
+              Uhakiki
+            </span>
+          </div>
+          <p className="text-[10px] text-purple-900 leading-tight">
+            {product.aiScreening?.explanationSwahili || product.moderationPublicReason || 'AI imebaini maudhui yenye muktadha maalum (k.m. matibabu ya mifugo) yanayohitaji uhakiki wa msimamizi.'}
+          </p>
+        </div>
+      );
+    }
+
+    // 4. NORMAL SELLER: PENDING ADMIN APPROVAL (Bypasses AI Screening)
+    if (!isTrustedSeller && (isPendingReview || governance.moderationStatus === 'PENDING_REVIEW' || product.moderationStatus === 'PENDING_REVIEW')) {
+      return (
+        <div className="p-2.5 rounded-xl text-[11px] border bg-sky-50 border-sky-200 text-sky-950 space-y-1 shadow-2xs">
+          <div className="flex items-center justify-between font-bold text-sky-900">
+            <span className="flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-sky-700 shrink-0" />
+              <span>⏳ INASUBIRI IDHINI YA MSIMAMIZI (ADMIN REVIEW)</span>
+            </span>
+            <span className="text-[9px] uppercase font-bold text-sky-800 bg-sky-100 px-1.5 py-0.2 rounded border border-sky-200">
+              Muuzaji wa Kawaida
+            </span>
+          </div>
+          <p className="text-[10px] text-sky-900 leading-tight">
+            Tangazo la muuzaji wa kawaida halipitii ukaguzi wa AI. Linasubiri ukaguzi na idhini ya msimamizi wa soko kabla ya kuwa hewani.
+          </p>
+        </div>
+      );
+    }
+
+    // 5. TRUSTED SELLER: AUTO-PUBLISHED PASS
+    if (isTrustedSeller && governance.isEligible && product.status === 'active') {
+      return (
+        <div className="px-2.5 py-1.5 bg-gradient-to-r from-emerald-50 to-amber-50 border border-emerald-300 text-emerald-950 font-bold text-[10.5px] rounded-xl flex items-center justify-between shadow-2xs">
+          <span className="flex items-center gap-1 text-emerald-800">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span>⭐ Imechapishwa Moja kwa Moja (Trusted Seller - AI Pass)</span>
+          </span>
+          <span className="text-[9px] uppercase font-black text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded">Sokoni</span>
+        </div>
+      );
+    }
+
+    if (!governance.isEligible) {
+      return (
+        <div className="p-2 rounded-xl space-y-1 text-[11px] border bg-amber-50 border-amber-200 text-amber-950">
+          <div className="flex items-center justify-between font-bold">
+            <span className="flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              <span>{governance.moderationStatus || 'Haionekani Sokoni'}</span>
+            </span>
+            <span className="text-[9px] uppercase font-bold text-amber-800">Haionekani</span>
+          </div>
+          {product.moderationPublicReason && (
+            <p className="text-[10px] text-amber-900/90 leading-tight">
+              {product.moderationPublicReason}
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <div
+      className={`group relative bg-white rounded-2xl border transition-all duration-200 overflow-hidden flex flex-col justify-between ${
+        isHighlighted
+          ? 'border-amber-400 ring-2 ring-amber-300/50 shadow-md'
+          : 'border-stone-200 hover:border-stone-300 hover:shadow-sm'
+      }`}
+    >
+      {renderOwnerNotice()}
+
+      <div className="p-3.5 space-y-2.5">
         {/* Product Image Thumbnail / Placeholder */}
         <div
           onClick={() => onViewDetails(product)}
@@ -265,19 +357,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-md border inline-flex items-center gap-0.5 ${
                   (governance.moderationStatus === 'REJECTED' || product.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
                     ? 'bg-rose-50 text-rose-800 border-rose-300'
-                    : (product.screeningJobStatus === 'EXHAUSTED' || product.screeningJobStatus === 'EXHAUSTED_DEADLINE' || product.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
-                    ? 'bg-orange-50 text-orange-800 border-orange-300'
-                    : (product.aiScreening?.status === 'SCREENING_ERROR' || product.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || product.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || product.screeningJobStatus === 'FAILED')
-                    ? 'bg-rose-50 text-rose-800 border-rose-300'
-                    : (product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' || product.screeningJobStatus === 'PENDING' || product.screeningJobStatus === 'PROCESSING')
+                    : isTrustedSeller && (product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' || product.screeningJobStatus === 'PENDING' || product.screeningJobStatus === 'PROCESSING')
                     ? 'bg-blue-50 text-blue-800 border-blue-300 animate-pulse'
-                    : (product.aiScreening && governance.isAiScreeningFresh === false)
-                    ? 'bg-amber-50 text-amber-800 border-amber-300'
-                    : (product.aiScreening?.status === 'REVIEW_REQUIRED')
+                    : isTrustedSeller && (product.screeningJobStatus === 'EXHAUSTED' || product.screeningJobStatus === 'EXHAUSTED_DEADLINE' || product.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
+                    ? 'bg-orange-50 text-orange-800 border-orange-300'
+                    : isTrustedSeller && (product.aiScreening?.status === 'SCREENING_ERROR' || product.screeningJobStatus === 'FAILED')
+                    ? 'bg-rose-50 text-rose-800 border-rose-300'
+                    : isTrustedSeller && (product.aiScreening?.status === 'REVIEW_REQUIRED')
                     ? 'bg-purple-50 text-purple-800 border-purple-300'
-                    : (product.aiScreening?.status === 'PASS' && (product.moderationStatus === 'PENDING_REVIEW' || governance.moderationStatus === 'PENDING_REVIEW'))
+                    : isTrustedSeller && (governance.isEligible && product.status === 'active')
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                    : !isTrustedSeller && (product.moderationStatus === 'PENDING_REVIEW' || governance.moderationStatus === 'PENDING_REVIEW')
                     ? 'bg-sky-50 text-sky-800 border-sky-300'
-                    : (governance.isEligible && product.status === 'active')
+                    : !isTrustedSeller && (governance.isEligible && product.status === 'active')
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                     : product.validationStatus === 'INCOMPLETE'
                     ? 'bg-amber-50 text-amber-800 border-amber-300'
@@ -287,20 +379,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               >
                 {(governance.moderationStatus === 'REJECTED' || product.moderationStatus === 'REJECTED' || product.aiScreening?.status === 'BLOCK')
                   ? 'Imezuiwa (BLOCK)'
-                  : (product.screeningJobStatus === 'EXHAUSTED' || product.screeningJobStatus === 'EXHAUSTED_DEADLINE' || product.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
-                  ? 'Muda wa AI Umekwisha'
-                  : (product.aiScreening?.status === 'SCREENING_ERROR' || product.aiScreening?.failureReason === 'MODEL_UNAVAILABLE' || product.aiScreening?.failureReason === 'IMAGE_PREPARATION_FAILED' || product.screeningJobStatus === 'FAILED')
-                  ? 'Hitilafu ya AI / 503'
-                  : (product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' || product.screeningJobStatus === 'PENDING' || product.screeningJobStatus === 'PROCESSING')
+                  : isTrustedSeller && (product.screeningJobStatus === 'SCREENING_PENDING' || product.screeningJobStatus === 'SCREENING_PROCESSING' || product.screeningJobStatus === 'PENDING' || product.screeningJobStatus === 'PROCESSING')
                   ? 'Inachunguzwa na AI...'
-                  : (product.aiScreening && governance.isAiScreeningFresh === false)
-                  ? 'Inahitaji Ukaguzi Mpya'
-                  : (product.aiScreening?.status === 'REVIEW_REQUIRED')
+                  : isTrustedSeller && (product.screeningJobStatus === 'EXHAUSTED' || product.screeningJobStatus === 'EXHAUSTED_DEADLINE' || product.aiScreening?.failureReason === 'EXHAUSTED_DEADLINE')
+                  ? 'Muda wa AI Umekwisha'
+                  : isTrustedSeller && (product.aiScreening?.status === 'SCREENING_ERROR' || product.screeningJobStatus === 'FAILED')
+                  ? 'Hitilafu ya AI'
+                  : isTrustedSeller && (product.aiScreening?.status === 'REVIEW_REQUIRED')
                   ? 'Inahitaji Ukaguzi'
-                  : (product.aiScreening?.status === 'PASS' && (product.moderationStatus === 'PENDING_REVIEW' || governance.moderationStatus === 'PENDING_REVIEW'))
-                  ? 'Imefaulu AI (Inasubiri Idhini)'
-                  : (governance.isEligible && product.status === 'active')
-                  ? 'Imeidhinishwa (PASS)'
+                  : isTrustedSeller && (governance.isEligible && product.status === 'active')
+                  ? 'Imeidhinishwa na AI (PASS)'
+                  : !isTrustedSeller && (product.moderationStatus === 'PENDING_REVIEW' || governance.moderationStatus === 'PENDING_REVIEW')
+                  ? 'Inasubiri Idhini ya Admin'
+                  : !isTrustedSeller && (governance.isEligible && product.status === 'active')
+                  ? 'Imeidhinishwa na Admin'
                   : product.validationStatus === 'INCOMPLETE'
                   ? 'Haijakamilika'
                   : 'Rasimu / Imezimwa'}

@@ -53,7 +53,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { ProductVideoPlayer } from './ProductVideoPlayer';
-import { formatTshPrice } from '../../services/marketplaceService';
+import { formatTshPrice, subscribeToProductUpdates } from '../../services/marketplaceService';
 import { isScreeningResultUpToDate } from '../../services/marketplaceAiScreeningService';
 import { getSellerTrustStatus } from '../../services/sellerTrustService';
 
@@ -143,6 +143,14 @@ export const ListingModerationDetailModal: React.FC<ListingModerationDetailModal
 
   useEffect(() => {
     fetchPublicationDiagnosis();
+    const unsub = subscribeToProductUpdates((updated) => {
+      if (updated.productId === product?.productId) {
+        fetchPublicationDiagnosis();
+      }
+    });
+    return () => {
+      unsub();
+    };
   }, [product?.productId]);
 
   const handleReconcilePublication = async () => {

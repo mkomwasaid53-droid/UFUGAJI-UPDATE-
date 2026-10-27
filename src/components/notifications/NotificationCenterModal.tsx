@@ -428,14 +428,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
             >
               <Users className="w-3 h-3" />
               <span>Gumzo ({gumzoCount})</span>
-              {moduleCounts.gumzo > 0 && (
-                <span
-                  id="tab-gumzo-unread-badge"
-                  className="ml-0.5 px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-bold rounded-full"
-                >
-                  {moduleCounts.gumzo}
-                </span>
-              )}
+              {/* Gumzo unread badge suppressed during retirement */}
             </button>
 
             {/* Unread Tab */}

@@ -155,6 +155,9 @@ export interface MarketplaceProduct {
   moderationReasonCode?: string;
   moderationPublicReason?: string;
   moderationCorrectionNote?: string;
+  visible?: boolean;
+  reviewedBy?: string;
+  reason?: string;
 
   // V1.0 AI Content Screening
   aiScreening?: import('./marketplaceModeration').AIScreeningResult | null;

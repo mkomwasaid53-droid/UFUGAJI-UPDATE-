@@ -100,7 +100,7 @@ export const BottomNav: React.FC = () => {
       label: 'Gumzo',
       icon: Users,
       id: 'nav-community',
-      badgeCount: moduleCounts.gumzo,
+      badgeCount: undefined, // Suppressed in Gumzo Retirement V1.0
       activeMatch: (path: string) => path === '/community' || path === '/gumzo',
     },
   ];

@@ -196,7 +196,8 @@ export type ScreeningJobStatus =
   | 'COMPLETED'
   | 'FAILED'
   | 'EXHAUSTED_DEADLINE'
-  | 'SUPERSEDED';
+  | 'SUPERSEDED'
+  | 'NOT_APPLICABLE';
 
 export interface MarketplaceScreeningJob {
   jobId: string;
@@ -274,9 +275,14 @@ export type ModerationReasonCode =
   | 'AI_CONTENT_BLOCK'
   | 'AI_REVIEW_REQUIRED'
   | 'AI_MODEL_UNAVAILABLE'
-  | 'AI_SCREENING_PENDING';
+  | 'AI_SCREENING_PENDING'
+  | 'NORMAL_SELLER_ADMIN_REVIEW';
 
 export const MODERATION_REASON_LABELS: Record<ModerationReasonCode, { sw: string; en: string }> = {
+  NORMAL_SELLER_ADMIN_REVIEW: {
+    sw: 'Tangazo la muuzaji wa kawaida linasubiri idhini ya msimamizi',
+    en: 'Normal seller listing pending administrator review'
+  },
   AI_SCREENING_PENDING: {
     sw: 'Tangazo limewekwa kwenye foleni ya uchunguzi wa AI',
     en: 'Listing enqueued for background AI screening'

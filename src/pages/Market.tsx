@@ -30,7 +30,10 @@ import {
   moveProductCatalogue,
   formatTshPrice,
   fetchAllPublishedShops,
-  scoreProductRelevance
+  scoreProductRelevance,
+  pollScreeningStatus,
+  subscribeToProductUpdates,
+  updateProductInAllCaches
 } from '../services/marketplaceService';
 import { ProductCard } from '../components/marketplace/ProductCard';
 import { ProductDetailModal } from '../components/marketplace/ProductDetailModal';
@@ -55,8 +58,10 @@ import {
 } from '../services/marketplaceCategoryService';
 import {
   canSellerSellOnMarketplace,
-  isShopMarketplaceEligible
+  isShopMarketplaceEligible,
+  isProductMarketplaceEligible
 } from '../services/marketplaceGovernanceEnforcement';
+import { getSellerTrustStatus } from '../services/sellerTrustService';
 import { sellerMonetizationService } from '../services/sellerMonetizationService';
 import { useSellerMonetization } from '../hooks/useSellerMonetization';
 import { GovernedCategory } from '../types/marketplaceCategory';
@@ -85,6 +90,8 @@ import {
   Clock,
   MessageSquare
 } from 'lucide-react';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 export const Market: React.FC = () => {
   const { user, profile, isAdmin, sellerProfile: authSellerProfile, hasSellerCapability, saveSellerProfileState } = useAuth();
@@ -349,6 +356,203 @@ export const Market: React.FC = () => {
     }
   };
 
+  // Helper to update marketplace UI in real-time
+  const updateMarketplaceUI = (activeProducts: MarketplaceProduct[]) => {
+    setProducts((prev) => {
+      const mergedMap = new Map<string, MarketplaceProduct>();
+      for (const p of prev) {
+        if (p && p.productId) mergedMap.set(p.productId, p);
+      }
+      for (const p of activeProducts) {
+        if (p && p.productId) mergedMap.set(p.productId, p);
+      }
+      const combined = Array.from(mergedMap.values());
+      // Filter out rejected or explicitly hidden listings
+      const filtered = combined.filter((p: any) => {
+        const mod = String(p.moderationStatus || '').toLowerCase();
+        const isSanctioned = mod === 'rejected' || mod === 'hidden' || mod === 'suspended';
+        if (isSanctioned || p.visible === false || p.status === 'inactive') return false;
+        return mod === 'approved' || p.moderationStatus === 'APPROVED' || p.visible === true;
+      });
+      filtered.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      fetchAllPublishedShops(filtered).then((shops) => setPublishedShops(shops)).catch(() => {});
+      return filtered;
+    });
+  };
+
+  // 3. Usawazishaji wa UI ya Gulio (Real-time Listening via onSnapshot)
+  useEffect(() => {
+    // Listen to collection("products") where moderationStatus == "approved"
+    const qProducts = query(
+      collection(db, "products"),
+      where("moderationStatus", "in", ["approved", "APPROVED"])
+    );
+
+    const unsubscribeProducts = onSnapshot(
+      qProducts,
+      (snapshot) => {
+        const activeProducts = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          productId: docSnap.id,
+          ...docSnap.data()
+        })) as unknown as MarketplaceProduct[];
+        updateMarketplaceUI(activeProducts);
+      },
+      (error) => {
+        console.warn('Real-time listening notice (products):', error?.message);
+      }
+    );
+
+    // Also listen to collection("marketplaceProducts") for continuous backwards-compatibility
+    const qMarketplace = query(
+      collection(db, "marketplaceProducts"),
+      where("moderationStatus", "in", ["approved", "APPROVED"])
+    );
+
+    const unsubscribeMarketplace = onSnapshot(
+      qMarketplace,
+      (snapshot) => {
+        const activeProducts = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          productId: docSnap.id,
+          ...docSnap.data()
+        })) as unknown as MarketplaceProduct[];
+        updateMarketplaceUI(activeProducts);
+      },
+      (error) => {
+        console.warn('Real-time listening notice (marketplaceProducts):', error?.message);
+      }
+    );
+
+    return () => {
+      unsubscribeProducts();
+      unsubscribeMarketplace();
+    };
+  }, []);
+
+  // Listen to seller's own listings in real time so when background screening PASS/BLOCK writes, UI updates immediately
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const qSellerProducts = query(
+      collection(db, "products"),
+      where("sellerId", "==", user.uid)
+    );
+
+    const unsubscribeSeller = onSnapshot(
+      qSellerProducts,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const sellerProds = snapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            productId: docSnap.id,
+            ...docSnap.data()
+          })) as unknown as MarketplaceProduct[];
+
+          setMySellerProducts((prev) => {
+            const map = new Map<string, MarketplaceProduct>();
+            for (const p of prev) if (p.productId) map.set(p.productId, p);
+            for (const p of sellerProds) if (p.productId) map.set(p.productId, p);
+            return Array.from(map.values());
+          });
+        }
+      },
+      (err) => {
+        console.warn('Real-time listening notice (seller own products):', err?.message);
+      }
+    );
+
+    return () => unsubscribeSeller();
+  }, [user?.uid]);
+
+  // Subscribe to real-time product updates (from background workers & poller)
+  useEffect(() => {
+    const unsub = subscribeToProductUpdates((updatedProduct) => {
+      // 1. Update in mySellerProducts
+      setMySellerProducts((prev) => {
+        const idx = prev.findIndex((p) => p.productId === updatedProduct.productId);
+        if (idx !== -1) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], ...updatedProduct };
+          return next;
+        }
+        if (updatedProduct.sellerId === user?.uid) {
+          return [updatedProduct, ...prev];
+        }
+        return prev;
+      });
+
+      // 2. Update in public feed
+      setProducts((prev) => {
+        const isEligible = isProductMarketplaceEligible(updatedProduct) && updatedProduct.status === 'active';
+        const exists = prev.some((p) => p.productId === updatedProduct.productId);
+        if (isEligible) {
+          if (exists) {
+            return prev.map((p) => (p.productId === updatedProduct.productId ? { ...p, ...updatedProduct } : p));
+          }
+          return [updatedProduct, ...prev];
+        } else if (exists) {
+          return prev.filter((p) => p.productId !== updatedProduct.productId);
+        }
+        return prev;
+      });
+
+      // 3. Update active viewingProduct
+      setViewingProduct((curr) => {
+        if (curr && curr.productId === updatedProduct.productId) {
+          return { ...curr, ...updatedProduct };
+        }
+        return curr;
+      });
+
+      // Toast feedback if the listing belongs to current user
+      if (user?.uid && updatedProduct.sellerId === user.uid) {
+        if (updatedProduct.moderationStatus === 'APPROVED' && updatedProduct.status === 'active') {
+          showNotification('success', `⭐ Tangazo lako la "${updatedProduct.title}" limeidhinishwa na AI na lipo hewani!`);
+        } else if (updatedProduct.moderationStatus === 'REJECTED' || updatedProduct.aiScreening?.status === 'BLOCK') {
+          showNotification('error', `🚫 Tangazo lako la "${updatedProduct.title}" limezuiwa na AI kwa kukiuka sera za soko.`);
+        }
+      }
+    });
+
+    return () => unsub();
+  }, [user?.uid]);
+
+  // Bounded background polling for active Trusted Seller screening jobs
+  useEffect(() => {
+    if (!user?.uid || !mySellerProducts.length) return;
+
+    const pendingJobs = mySellerProducts.filter(
+      (p) =>
+        (p.sellerTrustStatus === 'TRUSTED_SELLER' || getSellerTrustStatus(user.uid) === 'TRUSTED_SELLER') &&
+        (p.screeningJobStatus === 'SCREENING_PENDING' || p.screeningJobStatus === 'SCREENING_PROCESSING' || p.screeningJobStatus === 'PENDING' || p.screeningJobStatus === 'PROCESSING')
+    );
+
+    if (pendingJobs.length === 0) return;
+
+    const stopPollers = pendingJobs.map((p) =>
+      pollScreeningStatus(
+        p.productId,
+        (res) => {
+          if (res.product) {
+            updateProductInAllCaches(res.product as MarketplaceProduct);
+          }
+        },
+        (res) => {
+          if (res.product) {
+            updateProductInAllCaches(res.product as MarketplaceProduct);
+          }
+        },
+        30,
+        2500
+      )
+    );
+
+    return () => {
+      stopPollers.forEach((stop) => stop());
+    };
+  }, [user?.uid, mySellerProducts.map((p) => `${p.productId}-${p.screeningJobStatus}`).join(',')]);
+
   useEffect(() => {
     loadData();
   }, [user?.uid]);
@@ -541,8 +745,9 @@ export const Market: React.FC = () => {
     }
 
     try {
+      let savedProduct: MarketplaceProduct;
       if (editingProduct) {
-        const updated = await updateMarketplaceProduct(
+        savedProduct = await updateMarketplaceProduct(
           user.uid,
           editingProduct.productId,
           {
@@ -551,12 +756,8 @@ export const Market: React.FC = () => {
           },
           isAdmin
         );
-        setProducts((prev) =>
-          prev.map((p) => (p.productId === updated.productId ? updated : p))
-        );
-        showNotification('success', 'Tangazo la bidhaa limesasishwa kikamilifu.');
       } else {
-        const created = await createMarketplaceProduct(user.uid, {
+        savedProduct = await createMarketplaceProduct(user.uid, {
           ...productData,
           shopId: user.uid,
           sellerName: myShop?.shopName || sellerProfile?.displayName || profile?.displayName || user.displayName || 'Mfugaji',
@@ -565,8 +766,49 @@ export const Market: React.FC = () => {
           sellerLocation: myShop?.location || sellerProfile?.location || profile?.region || productData.location || 'Dar es Salaam',
           sellerVerificationStatus: sellerProfile?.verificationStatus || 'unverified',
         });
-        setProducts((prev) => [created, ...prev]);
-        showNotification('success', 'Tangazo lako la bidhaa limeongezwa kwenye duka na sokoni.');
+      }
+
+      // Update in local cache and active subscribers
+      updateProductInAllCaches(savedProduct);
+
+      // Update mySellerProducts
+      setMySellerProducts((prev) => {
+        const idx = prev.findIndex((p) => p.productId === savedProduct.productId);
+        if (idx !== -1) {
+          const next = [...prev];
+          next[idx] = savedProduct;
+          return next;
+        }
+        return [savedProduct, ...prev];
+      });
+
+      // Update public feed only if eligible and active
+      setProducts((prev) => {
+        const isEligible = isProductMarketplaceEligible(savedProduct) && savedProduct.status === 'active';
+        const exists = prev.some((p) => p.productId === savedProduct.productId);
+        if (isEligible) {
+          if (exists) {
+            return prev.map((p) => (p.productId === savedProduct.productId ? savedProduct : p));
+          }
+          return [savedProduct, ...prev];
+        } else if (exists) {
+          return prev.filter((p) => p.productId !== savedProduct.productId);
+        }
+        return prev;
+      });
+
+      // User feedback tailored to seller trust
+      const isTrusted = getSellerTrustStatus(user.uid) === 'TRUSTED_SELLER';
+      if (isTrusted) {
+        if (savedProduct.status === 'active') {
+          showNotification('success', '⭐ Tangazo limefaulu ukaguzi wa AI na lipo hewani moja kwa moja!');
+        } else if (savedProduct.moderationStatus === 'REJECTED') {
+          showNotification('error', '🚫 Tangazo limezuiwa na mfumo wa AI kwa kukiuka sera za maudhui.');
+        } else {
+          showNotification('info', '🤖 Tangazo lako linachunguzwa na AI... Likifaulu litakuwa hewani mara moja bila kusubiri admin review.');
+        }
+      } else {
+        showNotification('info', '⏳ Tangazo la muuzaji wa kawaida limewasilishwa na linasubiri idhini ya msimamizi wa soko.');
       }
     } catch (err: any) {
       console.error('Hitilafu:', err);

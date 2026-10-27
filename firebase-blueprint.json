@@ -237,6 +237,18 @@
       },
       "required": ["userId", "category", "title", "createdAt"]
     },
+    "products": {
+      "title": "Products",
+      "description": "Marketplace products listing with moderation status and visibility.",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "moderationStatus": { "type": "string" },
+        "visible": { "type": "boolean" },
+        "reviewedBy": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
     "marketplaceProducts": {
       "title": "Marketplace Products (Gulio la Mifugo & Pembejeo)",
       "description": "Livestock, poultry, veterinary medicine, feeds, equipment, and agricultural supplies listed for sale across Tanzania.",
