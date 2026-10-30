@@ -25,7 +25,8 @@ import {
   Crown,
   CreditCard,
   Settings,
-  Award
+  Award,
+  Megaphone
 } from 'lucide-react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import { UserProfile, UserRole } from '../types';
@@ -39,6 +40,8 @@ import { AdminGovernanceInbox } from '../components/notifications/AdminGovernanc
 import { AdminAiPremiumManagement } from '../components/admin/AdminAiPremiumManagement';
 import { AdminSellerMonetization } from '../components/marketplace/AdminSellerMonetization';
 import { AdminGumzoGroupManagement } from '../components/admin/AdminGumzoGroupManagement';
+import { AdminAdPlacementGovernance } from '../components/admin/AdminAdPlacementGovernance';
+import { AdminCorporateCampaignManagement } from '../components/admin/AdminCorporateCampaignManagement';
 
 export const Admin: React.FC = () => {
   const { currentUser, role, isAdmin } = useAuth();
@@ -87,7 +90,7 @@ export const Admin: React.FC = () => {
     setActiveTab(tab);
     setSearchParams({ tab }, { replace: true });
   };
-  const [marketSubTab, setMarketSubTab] = useState<'inbox' | 'moderation' | 'governance' | 'reports_appeals' | 'categories' | 'monetization'>('inbox');
+  const [marketSubTab, setMarketSubTab] = useState<'inbox' | 'moderation' | 'governance' | 'reports_appeals' | 'categories' | 'monetization' | 'ad_placements' | 'corporate_campaigns'>('inbox');
   
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -626,6 +629,28 @@ export const Admin: React.FC = () => {
               <CreditCard className="w-3.5 h-3.5 text-amber-700" />
               <span>Usajili wa Wauzaji (Monetization V1.10A)</span>
             </button>
+            <button
+              onClick={() => setMarketSubTab('ad_placements')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
+                marketSubTab === 'ad_placements'
+                  ? 'bg-white text-stone-900 shadow-xs'
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 text-amber-700" />
+              <span>Nafasi za Matangazo (Ad Placements V1.0)</span>
+            </button>
+            <button
+              onClick={() => setMarketSubTab('corporate_campaigns')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
+                marketSubTab === 'corporate_campaigns'
+                  ? 'bg-white text-stone-900 shadow-xs'
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              <Megaphone className="w-3.5 h-3.5 text-amber-700" />
+              <span>Kampeni za Kampuni (Campaigns V1.0)</span>
+            </button>
           </div>
 
           {marketSubTab === 'inbox' ? (
@@ -641,8 +666,12 @@ export const Admin: React.FC = () => {
             <AdminReportsAndAppeals />
           ) : marketSubTab === 'categories' ? (
             <AdminCategoryGovernance />
-          ) : (
+          ) : marketSubTab === 'monetization' ? (
             <AdminSellerMonetization />
+          ) : marketSubTab === 'ad_placements' ? (
+            <AdminAdPlacementGovernance />
+          ) : (
+            <AdminCorporateCampaignManagement />
           )}
         </div>
       )}

@@ -938,6 +938,18 @@ service cloud.firestore {
       // Delete: Preserved for governance audit
       allow delete: if false;
     }
+
+    // Ad Placement Configuration (V1.0 - Authoritative placement configurations)
+    // Public read for responsive slot rendering; Admin-only write
+    match /adPlacements/{placementId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Corporate Campaigns Management (V1.0 - Admin Only, Drafts Never Public)
+    match /corporateCampaigns/{campaignId} {
+      allow read, write: if isAdmin();
+    }
   }
 }
 

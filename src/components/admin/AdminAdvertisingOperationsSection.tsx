@@ -73,8 +73,7 @@ export const AdminAdvertisingOperationsSection: React.FC<AdminAdvertisingOperati
       'Authorization': idToken ? `Bearer ${idToken}` : '',
       'x-user-id': currentUser?.uid || 'admin_user',
       'x-user-role': 'admin',
-      'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-      'x-admin-secret': 'ufugaji-admin-secret-test'
+      'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
     };
   };
 

@@ -1,0 +1,70 @@
+[
+  {
+    "placementId": "GULIO_TOP_BANNER",
+    "displayName": "Gulio Top Banner",
+    "locationDescription": "Juu ya Soko Kuu la Mifugo na Pembejeo (Gulio)",
+    "isEnabled": true,
+    "responsiveRules": {
+      "mobile": {
+        "width": 320,
+        "height": 50,
+        "maxWidth": "320px",
+        "maxHeight": "50px",
+        "aspectRatio": "320/50"
+      },
+      "desktop": {
+        "width": 728,
+        "height": 90,
+        "maxWidth": "728px",
+        "maxHeight": "90px",
+        "aspectRatio": "728/90"
+      }
+    },
+    "maxDimensions": {
+      "maxWidth": 728,
+      "maxHeight": 90
+    },
+    "fallbackBehavior": "collapse",
+    "targetPage": "gulio",
+    "allowedCreativeTypes": [
+      "banner_image",
+      "html_banner"
+    ],
+    "createdAt": "2026-10-27T00:00:00.000Z",
+    "updatedAt": "2026-10-27T00:00:00.000Z"
+  },
+  {
+    "placementId": "MARKETPLACE_TOP_BANNER",
+    "displayName": "Marketplace Top Banner",
+    "locationDescription": "Sehemu Kuu ya Soko la Kidijitali (Marketplace)",
+    "isEnabled": false,
+    "responsiveRules": {
+      "mobile": {
+        "width": 320,
+        "height": 50,
+        "maxWidth": "320px",
+        "maxHeight": "50px",
+        "aspectRatio": "320/50"
+      },
+      "desktop": {
+        "width": 728,
+        "height": 90,
+        "maxWidth": "728px",
+        "maxHeight": "90px",
+        "aspectRatio": "728/90"
+      }
+    },
+    "maxDimensions": {
+      "maxWidth": 728,
+      "maxHeight": 90
+    },
+    "fallbackBehavior": "collapse",
+    "targetPage": "marketplace",
+    "allowedCreativeTypes": [
+      "banner_image",
+      "html_banner"
+    ],
+    "createdAt": "2026-10-27T00:00:00.000Z",
+    "updatedAt": "2026-10-27T00:00:00.000Z"
+  }
+]

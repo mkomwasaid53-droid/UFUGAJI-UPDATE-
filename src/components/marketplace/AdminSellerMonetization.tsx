@@ -63,7 +63,6 @@ export const AdminSellerMonetization: React.FC = () => {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    headers['x-admin-secret'] = 'ufugaji-admin-secret-test';
     return headers;
   };
 

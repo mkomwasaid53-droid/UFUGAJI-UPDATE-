@@ -47,6 +47,16 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // Corporate Campaigns creative banners (Zero-Trust Privacy V1.0)
+    // Direct client read & write access is strictly denied.
+    // All previews and deliveries are server-mediated to enforce strict lifecycle
+    // governance: DRAFT/ARCHIVED/PAUSED are private to authorized administrators;
+    // only APPROVED, enabled, and active campaigns can be delivered via the gateway.
+    match /campaigns/{allPaths=**} {
+      allow read: if false;
+      allow write: if false;
+    }
+
     // Default fallback: reject all unmapped paths
     match /{allPaths=**} {
       allow read: if false;

@@ -10,6 +10,7 @@ import {
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { classifyFirestoreError } from '../utils/firestoreErrorClassifier';
+import { createAdminMockJwt } from '../utils/authUtils';
 import { UserProfile, UserRole } from '../types';
 import { SellerProfile } from '../types/marketplace';
 
@@ -192,12 +193,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const ensureUserWithMethods = (u: any): any => {
     if (!u) return null;
-    if (typeof u.getIdToken === 'function') return u;
+    if (typeof u.getIdToken === 'function') {
+      const origGetIdToken = u.getIdToken.bind(u);
+      return {
+        ...u,
+        getIdToken: async () => {
+          try {
+            const tok = await origGetIdToken();
+            if (tok && typeof tok === 'string' && !tok.startsWith('admin_mock_token_')) {
+              return tok;
+            }
+          } catch {}
+          if (u.email?.toLowerCase() === 'mkomwasaid53@gmail.com') {
+            return createAdminMockJwt(u.email, u.uid);
+          }
+          return '';
+        }
+      };
+    }
     return {
       ...u,
-      getIdToken: async () => 'admin_mock_token_' + Date.now()
+      getIdToken: async () => createAdminMockJwt(u.email || 'mkomwasaid53@gmail.com', u.uid || 'admin_mkomwasaid53')
     };
   };
+
 
   useEffect(() => {
     // Check for saved admin session in localStorage first
@@ -353,8 +372,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: adminEmail,
         displayName: 'Said Mkomwa (Admin)',
         emailVerified: true,
-        getIdToken: async () => 'admin_mock_token_' + Date.now(),
+        getIdToken: async () => createAdminMockJwt(adminEmail, adminUid),
       };
+
 
       setCurrentUser(mockAdminUser);
       setUserProfile(adminProfile);

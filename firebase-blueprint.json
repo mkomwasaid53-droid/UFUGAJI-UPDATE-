@@ -736,7 +736,51 @@
         "notificationEventIds": { "type": "array", "items": { "type": "string" } }
       },
       "required": ["id", "sellerUserId", "previousStatus", "nextStatus", "transitionId", "action", "source", "actorUserId", "timestamp"]
+    },
+    "adPlacements": {
+      "title": "Ad Placement Configurations",
+      "description": "Authoritative corporate advertising placement slots and governance configurations.",
+      "type": "object",
+      "properties": {
+        "placementId": { "type": "string", "enum": ["GULIO_TOP_BANNER", "MARKETPLACE_TOP_BANNER"] },
+        "displayName": { "type": "string" },
+        "locationDescription": { "type": "string" },
+        "isEnabled": { "type": "boolean" },
+        "targetPage": { "type": "string", "enum": ["gulio", "marketplace"] },
+        "fallbackBehavior": { "type": "string", "enum": ["collapse", "custom"] },
+        "allowedCreativeTypes": { "type": "array", "items": { "type": "string" } },
+        "responsiveRules": { "type": "object" },
+        "maxDimensions": { "type": "object" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["placementId", "displayName", "isEnabled", "targetPage", "fallbackBehavior", "createdAt", "updatedAt"]
+    },
+    "corporateCampaigns": {
+      "title": "Corporate Advertising Campaigns",
+      "description": "Authoritative corporate advertising campaigns and draft records for livestock and feed companies.",
+      "type": "object",
+      "properties": {
+        "campaignId": { "type": "string" },
+        "advertiserName": { "type": "string" },
+        "campaignName": { "type": "string" },
+        "placementId": { "type": "string", "enum": ["GULIO_TOP_BANNER", "MARKETPLACE_TOP_BANNER"] },
+        "imageUrl": { "type": "string" },
+        "storagePath": { "type": "string" },
+        "destinationUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "PAUSED", "ARCHIVED", "COMPLETED"] },
+        "startDate": { "type": ["string", "null"] },
+        "endDate": { "type": ["string", "null"] },
+        "internalNotes": { "type": ["string", "null"] },
+        "version": { "type": "string", "enum": ["V1.0"] },
+        "createdBy": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["campaignId", "advertiserName", "campaignName", "placementId", "imageUrl", "destinationUrl", "status", "version", "createdBy", "updatedBy", "createdAt", "updatedAt"]
     }
   }
 }
+
 

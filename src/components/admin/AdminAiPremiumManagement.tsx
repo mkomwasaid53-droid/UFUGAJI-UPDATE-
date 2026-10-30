@@ -206,8 +206,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         },
         body: JSON.stringify({ providerName })
       });
@@ -254,8 +253,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         },
         body: JSON.stringify({
           providerName: 'PLUSPESA',
@@ -321,8 +319,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         }
       });
       if (res.ok) {
@@ -347,8 +344,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         }
       });
       if (res.ok) {
@@ -377,8 +373,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
         'Authorization': idToken ? `Bearer ${idToken}` : '',
         'x-user-id': currentUser?.uid || 'admin_user',
         'x-user-role': 'admin',
-        'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-        'x-admin-secret': 'ufugaji-admin-secret-test'
+        'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
       };
 
       const [metricsRes, eventsRes, providersRes, settingsRes, complianceRes] = await Promise.all([
@@ -442,8 +437,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         },
         body: JSON.stringify(updates)
       });
@@ -484,8 +478,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         }
       });
       const data = await res.json();
@@ -518,8 +511,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         },
         body: JSON.stringify({
           providerName: adSettings?.providerName || 'ADMOB'
@@ -550,8 +542,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         },
         body: JSON.stringify({
           privacyPolicyUrl: editPrivacyUrl,
@@ -600,8 +591,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         },
         body: JSON.stringify({
           behavior: newBehavior,
@@ -637,8 +627,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         }
       });
       const data = await res.json();
@@ -682,8 +671,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         },
         body: JSON.stringify({
           userId: targetUserId.trim(),
@@ -727,8 +715,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         }
       });
       const data = await res.json();
@@ -760,8 +747,7 @@ export const AdminAiPremiumManagement: React.FC<AdminAiPremiumManagementProps> =
           'Authorization': idToken ? `Bearer ${idToken}` : '',
           'x-user-id': currentUser?.uid || 'admin_user',
           'x-user-role': 'admin',
-          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com',
-          'x-admin-secret': 'ufugaji-admin-secret-test'
+          'x-user-email': currentUser?.email || 'mkomwasaid53@gmail.com'
         },
         body: JSON.stringify({
           userId: inspectedStatus.userId,

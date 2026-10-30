@@ -9,7 +9,29 @@ import multer from 'multer';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { initializeApp as initServerFirebase, getApps as getServerApps, getApp as getServerApp } from 'firebase/app';
-import { getFirestore as getServerFirestore, doc as serverDoc, setDoc as serverSetDoc } from 'firebase/firestore';
+import {
+  getFirestore as getServerFirestore,
+  doc as serverDoc,
+  setDoc as serverSetDoc,
+  getDoc as serverGetDoc,
+  getDocs as serverGetDocs,
+  collection as serverCollection
+} from 'firebase/firestore';
+import {
+  getStorage as getServerStorage,
+  ref as serverStorageRef,
+  uploadBytes as serverUploadBytes,
+  getDownloadURL as serverGetDownloadURL
+} from 'firebase/storage';
+import {
+  detectAndValidateImageMagicBytes,
+  generateSafeCampaignStoragePath,
+  validateCampaignIdForPath,
+  MAX_CAMPAIGN_BANNER_SIZE_BYTES,
+  ALLOWED_CAMPAIGN_MIME_TYPES
+} from './src/utils/campaignImageValidator';
+import { GoogleAuth } from 'google-auth-library';
+import { campaignStoragePrivacyService } from './src/services/adPlacement/campaignStoragePrivacyService';
 import { classifyMarketplaceIntent } from './src/utils/marketplaceIntentClassifier';
 import { classifyDoctorIntent, validateAndSanitizeDoctorAction } from './src/utils/doctorHandoffClassifier';
 import { AiDoctorAction } from './src/types/aiDoctorAction';
@@ -80,6 +102,27 @@ import { adOperationsAnalyticsService } from './src/services/ad/adOperationsAnal
 import { adProductionLaunchService } from './src/services/ad/adProductionLaunchService';
 import { googleAdManagerWebRewardedProvider } from './src/services/ad/googleAdManagerWebRewardedProvider';
 import { MockAdBehavior } from './src/services/ad/adProviderInterface';
+import {
+  adPlacementRegistry,
+  initAdPlacementStorage,
+  isValidPlacementId,
+  VALID_PLACEMENT_IDS,
+  INITIAL_AD_PLACEMENTS,
+  verifyAuthoritativePlacementAdmin
+} from './src/services/adPlacement/adPlacementRegistry';
+import { PlacementId } from './src/types/adPlacementTypes';
+import { validateSafeAdDestinationUrl } from './src/services/adPlacement/adTrackingService';
+import {
+  corporateCampaignService,
+  initCorporateCampaignStorage,
+  validateCampaignDraftInput,
+  validateSafeCampaignDestinationUrl
+} from './src/services/adPlacement/corporateCampaignService';
+import {
+  CorporateCampaign,
+  CreateCampaignDraftInput,
+  UpdateCampaignDraftInput
+} from './src/types/corporateCampaign';
 import {
   sellerMonetizationService,
   SELLER_MONETIZATION_CONFIG
@@ -188,6 +231,7 @@ const TEMP_VIDEO_DIR = path.join(os.tmpdir(), 'ufugaji_ai_video_temp');
 const GUMZO_POSTS_DIR = path.join(UPLOADS_DIR, 'gumzo_posts');
 const GUMZO_COMMENTS_DIR = path.join(UPLOADS_DIR, 'gumzo_comments');
 const PRIVATE_INBOX_DIR = path.join(process.cwd(), 'private_uploads', 'inbox');
+const CAMPAIGNS_DIR = path.join(UPLOADS_DIR, 'campaigns');
 
 // Ensure upload, data & temp directories exist
 if (!fs.existsSync(VIDEOS_DIR)) {
@@ -195,6 +239,9 @@ if (!fs.existsSync(VIDEOS_DIR)) {
 }
 if (!fs.existsSync(IMAGES_DIR)) {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
+}
+if (!fs.existsSync(CAMPAIGNS_DIR)) {
+  fs.mkdirSync(CAMPAIGNS_DIR, { recursive: true });
 }
 if (!fs.existsSync(GUMZO_POSTS_DIR)) {
   fs.mkdirSync(GUMZO_POSTS_DIR, { recursive: true });
@@ -242,6 +289,12 @@ initAiScreeningStorage(fs, path);
 // Authoritative marketplace moderation persistent storage initialization
 initModerationStorage(fs, path);
 
+// Authoritative corporate ad placement persistent storage initialization (V1.0)
+initAdPlacementStorage(fs, path);
+
+// Authoritative corporate campaign management persistent storage initialization (V1.0)
+initCorporateCampaignStorage(fs, path);
+
 // Persistent marketplace products storage helpers
 function readMarketplaceProductsFromDisk(): any[] {
   try {
@@ -271,16 +324,107 @@ function writeMarketplaceProductsToDisk(products: any[]): void {
 // SERVER-SIDE FIRESTORE CLIENT & SYNC
 // ==========================================
 let serverFirestoreDb: any = null;
+let serverStorage: any = null;
+let serverAppInstance: any = null;
 try {
   const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
   if (fs.existsSync(firebaseConfigPath)) {
     const configData = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf-8'));
     const serverApp = getServerApps().length > 0 ? getServerApp() : initServerFirebase(configData);
+    serverAppInstance = serverApp;
     serverFirestoreDb = getServerFirestore(serverApp);
+    try {
+      serverStorage = getServerStorage(serverApp);
+      console.info('[Server Storage] Initialized successfully for corporate campaign creatives.');
+    } catch (stErr: any) {
+      console.warn('[Server Storage] Init notice:', stErr?.message);
+    }
     console.info('[Server Firestore] Initialized successfully for background screening sync.');
+    initAuthoritativeAdPlacementsInFirestore().catch((e) =>
+      console.warn('[AdPlacement] Startup sync warning:', e?.message)
+    );
+    syncAuthoritativeCorporateCampaignsFromFirestore().catch((e) =>
+      console.warn('[CorporateCampaigns] Startup sync warning:', e?.message)
+    );
   }
 } catch (e: any) {
   console.warn('[Server Firestore] Init notice:', e?.message);
+}
+
+// Trusted server identity via Google Application Default Credentials (ADC)
+let serverGoogleAuthClient: any = null;
+let serverIdentityType: 'GCP_ADC_SERVICE_ACCOUNT' | 'ISOLATED_TEST_HARNESS' = 'GCP_ADC_SERVICE_ACCOUNT';
+try {
+  const gAuth = new GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/cloud-platform', 'https://www.googleapis.com/auth/devstorage.read_write']
+  });
+  gAuth.getClient().then((c) => {
+    serverGoogleAuthClient = c;
+    console.info('[Server Auth] Initialized trusted GCP Application Default Credentials (ADC) for server operations.');
+  }).catch((e) => {
+    if (process.env.NODE_ENV === 'test') {
+      serverIdentityType = 'ISOLATED_TEST_HARNESS';
+    } else {
+      console.warn('[Server Auth] ADC initialization notice:', e?.message);
+    }
+  });
+} catch (e: any) {
+  if (process.env.NODE_ENV === 'test') {
+    serverIdentityType = 'ISOLATED_TEST_HARNESS';
+  }
+}
+
+/**
+ * Ensures Ad Placement configurations in Firestore are initialized with safe defaults
+ * WITHOUT overwriting existing administrator choices on server startup or reboot.
+ */
+async function initAuthoritativeAdPlacementsInFirestore(): Promise<void> {
+  if (!serverFirestoreDb) return;
+  try {
+    for (const placementId of VALID_PLACEMENT_IDS) {
+      const docRef = serverDoc(serverFirestoreDb, 'adPlacements', placementId);
+      const snap = await serverGetDoc(docRef);
+      if (snap.exists()) {
+        // Document already exists! Preserve existing administrator choices without overwriting.
+        const existingData = snap.data();
+        const defaultTemplate = INITIAL_AD_PLACEMENTS[placementId];
+        adPlacementRegistry.updatePlacementAuthoritatively(placementId, {
+          isEnabled: typeof existingData.isEnabled === 'boolean' ? existingData.isEnabled : defaultTemplate.isEnabled,
+          fallbackBehavior: existingData.fallbackBehavior || defaultTemplate.fallbackBehavior
+        });
+        console.info(`[AdPlacement] Authoritative configuration loaded from Firestore for ${placementId}: isEnabled=${existingData.isEnabled}`);
+      } else {
+        // Document missing: initialize with safe defaults
+        const defaultConfig = INITIAL_AD_PLACEMENTS[placementId];
+        await serverSetDoc(docRef, defaultConfig, { merge: true });
+        console.info(`[AdPlacement] Safe defaults initialized in Firestore for ${placementId}: isEnabled=${defaultConfig.isEnabled}`);
+      }
+    }
+  } catch (err: any) {
+    console.warn('[AdPlacement] Firestore init check notice:', err?.message);
+  }
+}
+
+/**
+ * Synchronizes authoritative Corporate Campaigns from Firestore on startup without overwriting.
+ */
+async function syncAuthoritativeCorporateCampaignsFromFirestore(): Promise<void> {
+  if (!serverFirestoreDb) return;
+  try {
+    const colRef = serverCollection(serverFirestoreDb, 'corporateCampaigns');
+    const snapshot = await serverGetDocs(colRef);
+    if (!snapshot.empty) {
+      snapshot.forEach((docSnap: any) => {
+        const campaign = docSnap.data() as CorporateCampaign;
+        if (campaign && campaign.campaignId) {
+          corporateCampaignService.cacheCampaign(campaign);
+        }
+      });
+      console.info(`[CorporateCampaigns] Authoritative store loaded ${snapshot.size} campaigns from Firestore.`);
+    }
+  } catch (err: any) {
+    console.warn('[CorporateCampaigns] Firestore startup sync notice:', err?.message);
+  }
 }
 
 async function syncScreeningResultToFirestore(productId: string, payload: {
@@ -5350,6 +5494,20 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
     return { callerUserId: null, isAdmin: Boolean(isAdminFromHeader), userName: headerUserName || userName };
   }
 
+  // Authoritatively verifies admin access without accepting test secrets in production
+  function isAuthorizedAdminOrTest(isAdmin: boolean, adminKey?: string): boolean {
+    if (isAdmin) return true;
+    // Test secret is ONLY permitted in isolated test environments (NODE_ENV === 'test')
+    if (process.env.NODE_ENV === 'test' && adminKey === 'ufugaji-admin-secret-test') {
+      return true;
+    }
+    const configuredSecret = process.env.UFUGAJI_ADMIN_SERVER_SECRET || process.env.ADMIN_SECRET_KEY;
+    if (configuredSecret && configuredSecret !== 'ufugaji-admin-secret-test' && adminKey === configuredSecret) {
+      return true;
+    }
+    return false;
+  }
+
   // ============================================================================
   // V1.8B — AI OBSERVABILITY METRICS ENDPOINT (SAFE PLATFORM AGGREGATES)
   // ============================================================================
@@ -5394,7 +5552,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
   app.post('/api/ai/entitlement/grant', (req, res) => {
     const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
     const adminKey = req.headers['x-admin-secret'] as string;
-    const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+    const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
     if (!isAuthorized) {
       return res.status(403).json({
@@ -5509,7 +5667,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
   app.post('/api/ai/admin/grant-premium', (req, res) => {
     const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
     const adminKey = req.headers['x-admin-secret'] as string;
-    const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+    const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
     if (!isAuthorized) {
       return res.status(403).json({
@@ -5547,7 +5705,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
   app.get('/api/ai/admin/entitlements', (req, res) => {
     const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
     const adminKey = req.headers['x-admin-secret'] as string;
-    const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+    const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
     if (!isAuthorized) {
       return res.status(403).json({
@@ -5572,7 +5730,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
   app.post('/api/ai/admin/entitlement/status-update', (req, res) => {
     const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
     const adminKey = req.headers['x-admin-secret'] as string;
-    const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+    const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
     if (!isAuthorized) {
       return res.status(403).json({
@@ -5602,7 +5760,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
   app.post('/api/ai/admin/simulate-payment-activation', (req, res) => {
     const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
     const adminKey = req.headers['x-admin-secret'] as string;
-    const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+    const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
     if (!isAuthorized) {
       return res.status(403).json({
@@ -5640,7 +5798,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
   app.post('/api/ai/admin/storage/prune-tests', (req, res) => {
     const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
     const adminKey = req.headers['x-admin-secret'] as string;
-    const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+    const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
     if (!isAuthorized) {
       return res.status(403).json({
@@ -5952,7 +6110,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
     app.get('/api/ai/admin/payments', (req, res) => {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({
@@ -5990,7 +6148,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
     app.post('/api/ai/admin/payments/test-connection', async (req, res) => {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa (Admin authorization required).' });
@@ -6010,7 +6168,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
     app.post('/api/ai/admin/payments/config', (req, res) => {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa (Admin authorization required).' });
@@ -6315,7 +6473,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6336,7 +6494,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6359,7 +6517,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6386,7 +6544,7 @@ KANUNI KUU YA UTAMBUZI: "AI NI MFASIRI WA UKWELI ULIOREKODIWA, SIO CHANZO CHA UK
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6531,7 +6689,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6553,7 +6711,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6582,7 +6740,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6616,7 +6774,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6638,7 +6796,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6661,7 +6819,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6704,7 +6862,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6728,7 +6886,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6753,7 +6911,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6779,7 +6937,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6808,7 +6966,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6839,7 +6997,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6863,7 +7021,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6892,7 +7050,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6923,7 +7081,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6947,7 +7105,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -6980,7 +7138,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7016,7 +7174,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7045,7 +7203,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7077,7 +7235,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7101,7 +7259,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7131,7 +7289,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7162,7 +7320,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7237,7 +7395,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7281,6 +7439,902 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Hitilafu ya seva' });
     }
+  });
+
+  // ============================================================================
+  // AD PLACEMENT FOUNDATION V1.0 — BANNER PLACEMENT & TRACKING ENDPOINTS
+  // Authoritative server-side persistence, admin authorization, and safe tracking.
+  // ============================================================================
+
+  // In-memory audit logs for Foundation V1.0 (impressions and clicks)
+  // NOTE: Durable analytics database persistence is deferred to Campaign Management Phase.
+  const serverAdImpressions: Array<any> = [];
+  const serverAdClicks: Array<any> = [];
+
+  function isAuthoritativePlacementAdmin(req: express.Request): boolean {
+    return verifyAuthoritativePlacementAdmin(req.headers as Record<string, any>, process.env.NODE_ENV);
+  }
+
+  function getAdminActorIdentity(req: express.Request): string {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7).trim();
+      try {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+          while (b64.length % 4 !== 0) {
+            b64 += '=';
+          }
+          const payload = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+          if (payload.email) return String(payload.email).toLowerCase();
+          if (payload.user_id || payload.sub || payload.uid) return String(payload.user_id || payload.sub || payload.uid);
+        } else if (token.startsWith('admin_mock_token_') || token.startsWith('mock_admin_token') || token.startsWith('admin_token_')) {
+          return 'mkomwasaid53@gmail.com';
+        }
+      } catch {}
+    }
+    if (process.env.NODE_ENV === 'test' && req.headers['x-admin-secret'] === 'ufugaji-admin-secret-test') {
+      return 'test_admin_harness';
+    }
+    return 'mkomwasaid53@gmail.com';
+  }
+
+  // 1. Get All Registered Ad Placements (Authoritative Server State)
+  app.get('/api/ad-placements', async (req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+      if (serverFirestoreDb) {
+        try {
+          const colRef = serverCollection(serverFirestoreDb, 'adPlacements');
+          const snapshot = await serverGetDocs(colRef);
+          if (!snapshot.empty) {
+            const firestorePlacements: any[] = [];
+            snapshot.forEach((d: any) => {
+              const data = d.data();
+              const pId = (data.placementId || d.id) as PlacementId;
+              if (isValidPlacementId(pId)) {
+                const defaultTemplate = INITIAL_AD_PLACEMENTS[pId];
+                const merged = {
+                  ...defaultTemplate,
+                  ...data,
+                  // Immutable server fields guaranteed
+                  placementId: pId,
+                  targetPage: defaultTemplate.targetPage,
+                  responsiveRules: defaultTemplate.responsiveRules,
+                  maxDimensions: defaultTemplate.maxDimensions,
+                  allowedCreativeTypes: defaultTemplate.allowedCreativeTypes
+                };
+                firestorePlacements.push(merged);
+                // Synchronize in-memory registry
+                adPlacementRegistry.updatePlacementAuthoritatively(pId, {
+                  isEnabled: merged.isEnabled,
+                  fallbackBehavior: merged.fallbackBehavior
+                });
+              }
+            });
+
+            // Ensure all valid placement IDs are present
+            for (const expectedId of VALID_PLACEMENT_IDS) {
+              if (!firestorePlacements.some((p) => p.placementId === expectedId)) {
+                firestorePlacements.push(INITIAL_AD_PLACEMENTS[expectedId]);
+              }
+            }
+
+            return res.json({
+              success: true,
+              count: firestorePlacements.length,
+              placements: firestorePlacements,
+              persistence: 'DURABLE_FIRESTORE'
+            });
+          }
+        } catch (fsErr: any) {
+          console.warn('[AdPlacement API] Firestore read notice, falling back to registry:', fsErr?.message);
+        }
+      }
+
+      const placements = adPlacementRegistry.getAllPlacements();
+      res.json({
+        success: true,
+        count: placements.length,
+        placements,
+        persistence: 'LOCAL_REGISTRY'
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Hitilafu ya seva' });
+    }
+  });
+
+  // 2. Get Single Ad Placement Configuration
+  app.get('/api/ad-placements/:placementId', async (req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      const { placementId } = req.params;
+
+      if (!isValidPlacementId(placementId)) {
+        return res.status(404).json({ error: `Nafasi ya tangazo "${placementId}" haijapatikana.` });
+      }
+
+      if (serverFirestoreDb) {
+        try {
+          const docRef = serverDoc(serverFirestoreDb, 'adPlacements', placementId);
+          const docSnap = await serverGetDoc(docRef);
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            const defaultTemplate = INITIAL_AD_PLACEMENTS[placementId];
+            const merged = {
+              ...defaultTemplate,
+              ...data,
+              placementId,
+              targetPage: defaultTemplate.targetPage,
+              responsiveRules: defaultTemplate.responsiveRules,
+              maxDimensions: defaultTemplate.maxDimensions,
+              allowedCreativeTypes: defaultTemplate.allowedCreativeTypes
+            };
+            return res.json({ success: true, placement: merged, persistence: 'DURABLE_FIRESTORE' });
+          }
+        } catch (fsErr: any) {
+          console.warn('[AdPlacement API] Firestore single get notice:', fsErr?.message);
+        }
+      }
+
+      const placement = adPlacementRegistry.getPlacement(placementId);
+      if (!placement) {
+        return res.status(404).json({ error: `Nafasi ya tangazo "${placementId}" haijapatikana.` });
+      }
+      res.json({ success: true, placement, persistence: 'LOCAL_REGISTRY' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Hitilafu ya seva' });
+    }
+  });
+
+  // 3. Authoritatively Update Ad Placement Configuration (Strict Admin Only)
+  app.patch('/api/ad-placements/:placementId', async (req, res) => {
+    try {
+      const { placementId } = req.params;
+
+      // 1. Authoritative admin verification (Client headers alone are strictly rejected)
+      if (!isAuthoritativePlacementAdmin(req)) {
+        return res.status(403).json({
+          error: 'Mamlaka ya msimamizi (Admin) inahitajika ili kusanidi nafasi za matangazo. Header za mteja pekee hazitoshi.',
+          code: 'ADMIN_REQUIRED'
+        });
+      }
+
+      // 2. Server-side validation of Placement ID whitelist
+      if (!isValidPlacementId(placementId)) {
+        return res.status(400).json({
+          error: `Kitambulisho cha nafasi ya tangazo "${placementId}" si sahihi au hakiruhusiwi.`,
+          code: 'INVALID_PLACEMENT_ID'
+        });
+      }
+
+      // 3. Payload validation
+      const updates = req.body;
+      if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+        return res.status(400).json({
+          error: 'Payload ya marekebisho si sahihi (JSON object required).',
+          code: 'INVALID_PAYLOAD'
+        });
+      }
+
+      // 4. Strict restriction of updatable properties (prevent overwriting server-controlled fields)
+      const safeUpdates: any = {};
+      if (updates.isEnabled !== undefined) {
+        if (typeof updates.isEnabled !== 'boolean') {
+          return res.status(400).json({
+            error: 'Thamani ya "isEnabled" lazima iwe boolean (true au false).',
+            code: 'INVALID_FIELD_TYPE'
+          });
+        }
+        safeUpdates.isEnabled = updates.isEnabled;
+      }
+
+      if (updates.fallbackBehavior !== undefined) {
+        if (updates.fallbackBehavior !== 'collapse' && updates.fallbackBehavior !== 'custom') {
+          return res.status(400).json({
+            error: 'Thamani ya "fallbackBehavior" lazima iwe "collapse" au "custom".',
+            code: 'INVALID_FIELD_VALUE'
+          });
+        }
+        safeUpdates.fallbackBehavior = updates.fallbackBehavior;
+      }
+
+      if (Object.keys(safeUpdates).length === 0) {
+        return res.status(400).json({
+          error: 'Hakuna uwanja halali uliotumwa kubadilishwa.',
+          code: 'NO_UPDATABLE_FIELDS'
+        });
+      }
+
+      // 5. Commit to authoritative persistent store FIRST before confirming success
+      let updatedPlacement: any;
+      if (serverFirestoreDb) {
+        try {
+          const docRef = serverDoc(serverFirestoreDb, 'adPlacements', placementId);
+          const currentDoc = await serverGetDoc(docRef);
+          const currentData = currentDoc.exists() ? currentDoc.data() : INITIAL_AD_PLACEMENTS[placementId];
+          const mergedData = {
+            ...INITIAL_AD_PLACEMENTS[placementId],
+            ...currentData,
+            ...safeUpdates,
+            updatedAt: new Date().toISOString()
+          };
+
+          // Durably commit to Firestore BEFORE reporting success
+          await serverSetDoc(docRef, mergedData, { merge: true });
+
+          // Synchronize local memory & disk
+          updatedPlacement = adPlacementRegistry.updatePlacementAuthoritatively(placementId, safeUpdates);
+        } catch (fsErr: any) {
+          console.error('[AdPlacement API] Firestore persistence failure:', fsErr);
+          // Storage failure: return 500 without false success
+          return res.status(500).json({
+            error: 'Hitilafu ya kuhifadhi kwenye mfumo dhabiti wa Firestore (Firestore write failed). Mabadiliko hayajahifadhiwa.',
+            code: 'PERSISTENCE_FAILED',
+            details: fsErr?.message
+          });
+        }
+      } else {
+        // Fallback for offline dev
+        updatedPlacement = adPlacementRegistry.updatePlacementAuthoritatively(placementId, safeUpdates);
+      }
+
+      return res.json({
+        success: true,
+        placement: updatedPlacement,
+        persistence: serverFirestoreDb ? 'DURABLE_FIRESTORE' : 'DURABLE_DISK'
+      });
+    } catch (err: any) {
+      console.error('[AdPlacement API] Hitilafu ya kusasisha:', err);
+      return res.status(err.message?.includes('haijapatikana') ? 404 : 500).json({
+        error: err.message || 'Hitilafu ya kusasisha nafasi ya tangazo kwenye mfumo dhabiti.',
+        code: 'PERSISTENCE_FAILED'
+      });
+    }
+  });
+
+  // 4. Record Viewport Visibility Impression (Idempotent)
+  app.post('/api/ad-placements/impressions', (req, res) => {
+    try {
+      const { eventId, placementId, campaignId, creativeId, timestamp, viewport, visiblePercentage } = req.body;
+
+      if (!eventId || !placementId || !campaignId) {
+        return res.status(400).json({ error: 'Taarifa za tukio la impression hazijakamilika.' });
+      }
+
+      // Record in server memory audit log
+      const record = {
+        eventId,
+        placementId,
+        campaignId,
+        creativeId,
+        timestamp: timestamp || new Date().toISOString(),
+        viewport: viewport || 'mobile',
+        visiblePercentage: typeof visiblePercentage === 'number' ? visiblePercentage : 50,
+        recordedAt: new Date().toISOString()
+      };
+      serverAdImpressions.push(record);
+      if (serverAdImpressions.length > 500) {
+        serverAdImpressions.shift();
+      }
+
+      res.json({
+        status: 'recorded',
+        eventId,
+        persistence: 'IN_MEMORY_AUDIT_LOG_PHASE_1',
+        durableAnalyticsPersistence: 'DEFERRED_TO_CAMPAIGN_MANAGEMENT_PHASE'
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Hitilafu ya kurekodi impression.' });
+    }
+  });
+
+  // 5. Record Banner Click & Validate Safe Destination URL (Open-Redirect Guard)
+  app.post('/api/ad-placements/clicks', (req, res) => {
+    try {
+      const { eventId, placementId, campaignId, creativeId, destinationUrl, timestamp } = req.body;
+
+      if (!eventId || !placementId || !campaignId || !destinationUrl) {
+        return res.status(400).json({ error: 'Taarifa za click hazijakamilika.' });
+      }
+
+      const validation = validateSafeAdDestinationUrl(destinationUrl);
+      if (!validation.isValid) {
+        return res.status(400).json({
+          error: validation.error || 'URL ya marudio si salama (Open redirect blocked).',
+          code: 'UNSAFE_DESTINATION_URL'
+        });
+      }
+
+      // Record click audit log (NOTE: Click does NOT prove sale or completed lead)
+      const clickRecord = {
+        eventId,
+        placementId,
+        campaignId,
+        creativeId,
+        safeDestinationUrl: validation.sanitizedUrl,
+        timestamp: timestamp || new Date().toISOString(),
+        isSaleOrLeadProof: false, // Explicit contract constraint
+        recordedAt: new Date().toISOString()
+      };
+      serverAdClicks.push(clickRecord);
+      if (serverAdClicks.length > 500) {
+        serverAdClicks.shift();
+      }
+
+      res.json({
+        status: 'recorded',
+        eventId,
+        safeDestinationUrl: validation.sanitizedUrl,
+        persistence: 'IN_MEMORY_AUDIT_LOG_PHASE_1',
+        durableAnalyticsPersistence: 'DEFERRED_TO_CAMPAIGN_MANAGEMENT_PHASE'
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Hitilafu ya kurekodi click.' });
+    }
+  });
+
+  // ============================================================================
+  // CORPORATE CAMPAIGN MANAGEMENT V1.0 — PHASE 1: CAMPAIGN FOUNDATION ENDPOINTS
+  // Strictly Admin-Governed Draft Management (Never Delivers Public Campaigns in Phase 1)
+  // ============================================================================
+
+  const campaignImageUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_CAMPAIGN_BANNER_SIZE_BYTES }, // 5MB limit
+    fileFilter: (_req, file, cb) => {
+      if (ALLOWED_CAMPAIGN_MIME_TYPES.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Aina ya faili hairuhusiwi. Tumia picha za JPEG, PNG, au WebP pekee.'));
+      }
+    }
+  });
+
+  // 1. Get All Corporate Campaigns (Admin Only, Authoritative)
+  app.get('/api/admin/corporate-campaigns', async (req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+      if (!isAuthoritativePlacementAdmin(req)) {
+        return res.status(403).json({
+          error: 'Mamlaka ya msimamizi inahitajika (Admin authorization required).',
+          code: 'ADMIN_REQUIRED'
+        });
+      }
+
+      if (serverFirestoreDb) {
+        try {
+          const colRef = serverCollection(serverFirestoreDb, 'corporateCampaigns');
+          const snapshot = await serverGetDocs(colRef);
+          const campaigns: CorporateCampaign[] = [];
+          snapshot.forEach((d: any) => {
+            const data = d.data() as CorporateCampaign;
+            if (data && data.campaignId) {
+              campaigns.push(data);
+              corporateCampaignService.cacheCampaign(data);
+            }
+          });
+          campaigns.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+          return res.json({
+            success: true,
+            count: campaigns.length,
+            campaigns,
+            persistence: 'DURABLE_FIRESTORE'
+          });
+        } catch (fsErr: any) {
+          console.warn('[CorporateCampaigns API] Firestore read notice, falling back to local service:', fsErr?.message);
+        }
+      }
+
+      const campaigns = corporateCampaignService.getAllCampaigns();
+      return res.json({
+        success: true,
+        count: campaigns.length,
+        campaigns,
+        persistence: 'LOCAL_STORE'
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Hitilafu ya seva.' });
+    }
+  });
+
+  // 2. Get Single Corporate Campaign (Admin Only)
+  app.get('/api/admin/corporate-campaigns/:campaignId', async (req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+      if (!isAuthoritativePlacementAdmin(req)) {
+        return res.status(403).json({
+          error: 'Mamlaka ya msimamizi inahitajika.',
+          code: 'ADMIN_REQUIRED'
+        });
+      }
+
+      const { campaignId } = req.params;
+
+      if (serverFirestoreDb) {
+        try {
+          const docRef = serverDoc(serverFirestoreDb, 'corporateCampaigns', campaignId);
+          const snap = await serverGetDoc(docRef);
+          if (snap.exists()) {
+            const campaign = snap.data() as CorporateCampaign;
+            corporateCampaignService.cacheCampaign(campaign);
+            return res.json({ success: true, campaign, persistence: 'DURABLE_FIRESTORE' });
+          }
+        } catch (fsErr: any) {
+          console.warn('[CorporateCampaigns API] Firestore single get notice:', fsErr?.message);
+        }
+      }
+
+      const campaign = corporateCampaignService.getCampaignById(campaignId);
+      if (!campaign) {
+        return res.status(404).json({ error: `Kampeni "${campaignId}" haijapatikana.` });
+      }
+      return res.json({ success: true, campaign, persistence: 'LOCAL_STORE' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Hitilafu ya seva.' });
+    }
+  });
+
+  // 3. Create Corporate Campaign Draft (Admin Only)
+  app.post('/api/admin/corporate-campaigns', async (req, res) => {
+    try {
+      if (!isAuthoritativePlacementAdmin(req)) {
+        return res.status(403).json({
+          error: 'Mamlaka ya msimamizi inahitajika kuunda rasimu za kampeni.',
+          code: 'ADMIN_REQUIRED'
+        });
+      }
+
+      const validation = validateCampaignDraftInput(req.body);
+      if (!validation.isValid || !validation.sanitized) {
+        const firstError = Object.values(validation.errors)[0] || 'Taarifa za kampeni si sahihi.';
+        return res.status(400).json({
+          error: firstError,
+          errors: validation.errors,
+          code: 'INVALID_PAYLOAD'
+        });
+      }
+
+      const actor = getAdminActorIdentity(req);
+
+      // Verify temporary upload ownership: Only the initiating administrator can associate it
+      if (validation.sanitized.storagePath && validation.sanitized.storagePath.startsWith('campaigns/drafts/temp_')) {
+        const assocCheck = campaignStoragePrivacyService.verifyAndAssociateTemporaryUpload(
+          validation.sanitized.storagePath,
+          actor,
+          'NEW_DRAFT_PENDING'
+        );
+        if (!assocCheck.isValid) {
+          return res.status(403).json({
+            error: assocCheck.error || 'Huwezi kuunganisha picha ya muda iliyopakiwa na msimamizi mwingine.',
+            code: assocCheck.code || 'UNAUTHORIZED_TEMP_UPLOAD_ASSOCIATION'
+          });
+        }
+      }
+
+      const newCampaign = corporateCampaignService.createDraft(
+        validation.sanitized as CreateCampaignDraftInput,
+        actor
+      );
+
+      // Associate with new campaign ID
+      if (newCampaign.storagePath && newCampaign.storagePath.startsWith('campaigns/drafts/temp_')) {
+        campaignStoragePrivacyService.verifyAndAssociateTemporaryUpload(
+          newCampaign.storagePath,
+          actor,
+          newCampaign.campaignId
+        );
+      }
+
+      // Durably commit to Firestore FIRST before confirming success
+      if (serverFirestoreDb) {
+        try {
+          const docRef = serverDoc(serverFirestoreDb, 'corporateCampaigns', newCampaign.campaignId);
+          await serverSetDoc(docRef, newCampaign);
+        } catch (fsErr: any) {
+          console.error('[CorporateCampaigns API] Firestore write failure:', fsErr);
+          return res.status(500).json({
+            error: 'Hitilafu ya kuhifadhi rasimu kwenye Firestore. Mabadiliko hayajahifadhiwa.',
+            code: 'PERSISTENCE_FAILED',
+            details: fsErr?.message
+          });
+        }
+      }
+
+      return res.status(201).json({
+        success: true,
+        campaign: newCampaign,
+        persistence: serverFirestoreDb ? 'DURABLE_FIRESTORE' : 'DURABLE_DISK'
+      });
+    } catch (err: any) {
+      console.error('[CorporateCampaigns API] Hitilafu ya kuunda rasimu:', err);
+      return res.status(500).json({
+        error: err.message || 'Hitilafu ya seva wakati wa kuunda rasimu ya kampeni.',
+        code: 'CREATE_DRAFT_FAILED'
+      });
+    }
+  });
+
+  // 4. Update Existing Corporate Campaign Draft (Admin Only)
+  app.patch('/api/admin/corporate-campaigns/:campaignId', async (req, res) => {
+    try {
+      if (!isAuthoritativePlacementAdmin(req)) {
+        return res.status(403).json({
+          error: 'Mamlaka ya msimamizi inahitajika kuhariri rasimu za kampeni.',
+          code: 'ADMIN_REQUIRED'
+        });
+      }
+
+      const { campaignId } = req.params;
+      const updates = req.body;
+
+      if (!updates || typeof updates !== 'object') {
+        return res.status(400).json({
+          error: 'Payload ya marekebisho si sahihi (JSON object required).',
+          code: 'INVALID_PAYLOAD'
+        });
+      }
+
+      // Phase 1 security rule: Cannot bypass approval governance
+      if (updates.status && updates.status !== 'DRAFT' && updates.status !== 'ARCHIVED') {
+        return res.status(400).json({
+          error: 'Katika Awamu ya 1, hali ya kampeni inaweza kuwa DRAFT au ARCHIVED pekee. Idhini za uzalishaji zimeahirishwa.',
+          code: 'INVALID_STATUS_TRANSITION'
+        });
+      }
+
+      const actor = getAdminActorIdentity(req);
+
+      // If updating storagePath with a temporary upload, verify ownership
+      if (updates.storagePath && typeof updates.storagePath === 'string' && updates.storagePath.startsWith('campaigns/drafts/temp_')) {
+        const assocCheck = campaignStoragePrivacyService.verifyAndAssociateTemporaryUpload(
+          updates.storagePath,
+          actor,
+          campaignId
+        );
+        if (!assocCheck.isValid) {
+          return res.status(403).json({
+            error: assocCheck.error || 'Huwezi kuunganisha picha ya muda iliyopakiwa na msimamizi mwingine.',
+            code: assocCheck.code || 'UNAUTHORIZED_TEMP_UPLOAD_ASSOCIATION'
+          });
+        }
+      }
+
+      let updatedCampaign: CorporateCampaign;
+      try {
+        updatedCampaign = corporateCampaignService.updateDraft(campaignId, updates, actor);
+      } catch (svcErr: any) {
+        return res.status(svcErr.message.includes('haijapatikana') ? 404 : 400).json({
+          error: svcErr.message,
+          code: 'VALIDATION_FAILED'
+        });
+      }
+
+      // Durably commit to Firestore
+      if (serverFirestoreDb) {
+        try {
+          const docRef = serverDoc(serverFirestoreDb, 'corporateCampaigns', campaignId);
+          await serverSetDoc(docRef, updatedCampaign, { merge: true });
+        } catch (fsErr: any) {
+          console.error('[CorporateCampaigns API] Firestore update failure:', fsErr);
+          return res.status(500).json({
+            error: 'Hitilafu ya kuhifadhi marekebisho kwenye Firestore.',
+            code: 'PERSISTENCE_FAILED',
+            details: fsErr?.message
+          });
+        }
+      }
+
+      return res.json({
+        success: true,
+        campaign: updatedCampaign,
+        persistence: serverFirestoreDb ? 'DURABLE_FIRESTORE' : 'DURABLE_DISK'
+      });
+    } catch (err: any) {
+      console.error('[CorporateCampaigns API] Update error:', err);
+      return res.status(500).json({
+        error: err.message || 'Hitilafu ya seva wakati wa kusasisha rasimu.',
+        code: 'UPDATE_FAILED'
+      });
+    }
+  });
+
+  // 5. Archive Corporate Campaign Draft (Admin Only, Soft Delete)
+  app.post('/api/admin/corporate-campaigns/:campaignId/archive', async (req, res) => {
+    try {
+      if (!isAuthoritativePlacementAdmin(req)) {
+        return res.status(403).json({
+          error: 'Mamlaka ya msimamizi inahitajika kuhifadhi kumbukumbu za kampeni.',
+          code: 'ADMIN_REQUIRED'
+        });
+      }
+
+      const { campaignId } = req.params;
+      const actor = getAdminActorIdentity(req);
+
+      let archivedCampaign: CorporateCampaign;
+      try {
+        archivedCampaign = corporateCampaignService.archiveCampaign(campaignId, actor);
+      } catch (svcErr: any) {
+        return res.status(404).json({ error: svcErr.message });
+      }
+
+      if (serverFirestoreDb) {
+        try {
+          const docRef = serverDoc(serverFirestoreDb, 'corporateCampaigns', campaignId);
+          await serverSetDoc(docRef, archivedCampaign, { merge: true });
+        } catch (fsErr: any) {
+          console.error('[CorporateCampaigns API] Firestore archive failure:', fsErr);
+          return res.status(500).json({
+            error: 'Hitilafu ya kuhifadhi kumbukumbu kwenye Firestore.',
+            code: 'PERSISTENCE_FAILED'
+          });
+        }
+      }
+
+      return res.json({
+        success: true,
+        campaign: archivedCampaign,
+        persistence: serverFirestoreDb ? 'DURABLE_FIRESTORE' : 'DURABLE_DISK'
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Hitilafu ya seva.' });
+    }
+  });
+
+  // 6. Upload Corporate Campaign Banner Image to Durable Firebase Storage (Admin Only)
+  app.post('/api/admin/corporate-campaigns/upload-image', (req, res) => {
+    // 1. Strictly verify administrator authentication before processing upload
+    if (!isAuthoritativePlacementAdmin(req)) {
+      return res.status(403).json({
+        error: 'Mamlaka ya msimamizi inahitajika kupakia picha za matangazo ya shirika.',
+        code: 'ADMIN_REQUIRED'
+      });
+    }
+
+    campaignImageUpload.single('image')(req, res, async (err: any) => {
+      if (err) {
+        if (err.code === 'LIMIT_FILE_SIZE' || (err.message && err.message.toLowerCase().includes('file too large'))) {
+          return res.status(400).json({
+            error: 'Ukubwa wa picha umezidi kiwango cha juu cha 5MB (Max 5MB).',
+            code: 'FILE_TOO_LARGE'
+          });
+        }
+        return res.status(400).json({
+          error: err.message || 'Hitilafu ya kupakia picha ya kampeni.',
+          code: 'INVALID_IMAGE_TYPE'
+        });
+      }
+
+      if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
+        return res.status(400).json({
+          error: 'Faili la picha halikupatikana (Image file is required).',
+          code: 'NO_FILE_PROVIDED'
+        });
+      }
+
+      // 2. Strict file size check
+      if (req.file.size > MAX_CAMPAIGN_BANNER_SIZE_BYTES || req.file.buffer.length > MAX_CAMPAIGN_BANNER_SIZE_BYTES) {
+        return res.status(400).json({
+          error: 'Ukubwa wa picha umezidi kiwango cha juu cha 5MB.',
+          code: 'FILE_TOO_LARGE'
+        });
+      }
+
+      // 3. Inspect magic bytes and file content (Strictly rejects SVG, HTML, scripts, executables)
+      const magicCheck = detectAndValidateImageMagicBytes(req.file.buffer);
+      if (!magicCheck.isValid || !magicCheck.format) {
+        return res.status(400).json({
+          error: magicCheck.error || 'Aina hii ya faili hairuhusiwi. Tumia picha halisi ya JPEG, PNG, au WebP.',
+          code: magicCheck.code || 'INVALID_IMAGE_TYPE'
+        });
+      }
+
+      // 4. Validate campaignId if provided to prevent path traversal
+      if (req.body && req.body.campaignId) {
+        const candidateId = String(req.body.campaignId).trim();
+        if (!validateCampaignIdForPath(candidateId)) {
+          return res.status(400).json({
+            error: 'Kitambulisho cha kampeni si sahihi (Invalid campaign ID for storage path scoping).',
+            code: 'INVALID_CAMPAIGN_ID'
+          });
+        }
+      }
+
+      // 5. Generate safe, server-controlled Storage object path and filename
+      const pathResult = generateSafeCampaignStoragePath(req.body?.campaignId, magicCheck.format);
+      const storagePath = pathResult.storagePath;
+      const format = magicCheck.format;
+      const mimeType = format === 'jpeg' ? 'image/jpeg' : (format === 'png' ? 'image/png' : 'image/webp');
+      const actor = getAdminActorIdentity(req);
+
+      // Register temporary upload ownership if creating a temporary draft creative
+      if (pathResult.tempUploadId) {
+        campaignStoragePrivacyService.registerTemporaryUpload({
+          tempUploadId: pathResult.tempUploadId,
+          storagePath,
+          uploaderIdentity: actor,
+          sizeBytes: req.file.size,
+          mimetype: mimeType,
+          buffer: req.file.buffer
+        });
+      }
+
+      // Store in private server cache for authenticated admin preview & delivery
+      campaignStoragePrivacyService.storeImageBuffer(storagePath, req.file.buffer, mimeType);
+
+      // Upload to durable Firebase Storage with server identity (direct client access blocked by storage.rules)
+      if (serverStorage) {
+        try {
+          const fileRef = serverStorageRef(serverStorage, storagePath);
+          await serverUploadBytes(fileRef, req.file.buffer, {
+            contentType: mimeType,
+            customMetadata: {
+              storagePath,
+              uploadedBy: actor,
+              uploadedAt: new Date().toISOString(),
+              originalName: path.basename(req.file.originalname || 'banner').substring(0, 100)
+            }
+          });
+        } catch (storageErr: any) {
+          console.warn('[CorporateCampaigns API] Firebase Storage background upload notice:', storageErr?.message);
+        }
+      }
+
+      // Generate signed, short-lived admin preview ticket (prevents permanent public download exposure)
+      const previewTicket = campaignStoragePrivacyService.generateAdminPreviewTicket(storagePath, actor);
+      const imageUrl = `/api/admin/corporate-campaigns/preview-image?storagePath=${encodeURIComponent(storagePath)}&ticket=${previewTicket}`;
+
+      return res.json({
+        success: true,
+        imageUrl,
+        storagePath,
+        sizeBytes: req.file.size,
+        mimetype: mimeType
+      });
+    });
+  });
+
+  // 7. Secure Server-Mediated Admin Image Preview (Admin Only, Zero-Trust Storage)
+  app.get('/api/admin/corporate-campaigns/preview-image', (req, res) => {
+    try {
+      const storagePath = req.query.storagePath as string;
+      const ticket = req.query.ticket as string;
+
+      if (!storagePath || typeof storagePath !== 'string' || !storagePath.startsWith('campaigns/')) {
+        return res.status(400).json({
+          error: 'Njia ya faili si sahihi (Invalid storage path).',
+          code: 'INVALID_STORAGE_PATH'
+        });
+      }
+
+      // Check authorization: Either verified admin Bearer header OR valid signed short-lived ticket
+      const hasAdminAuth = isAuthoritativePlacementAdmin(req);
+      let isTicketValid = false;
+      if (ticket) {
+        const ticketCheck = campaignStoragePrivacyService.validateAdminPreviewTicket(ticket, storagePath);
+        if (ticketCheck.isValid) {
+          isTicketValid = true;
+        }
+      }
+
+      if (!hasAdminAuth && !isTicketValid) {
+        return res.status(403).json({
+          error: 'Mamlaka ya msimamizi inahitajika kuona hakikisho la picha ya kampeni.',
+          code: 'ADMIN_REQUIRED'
+        });
+      }
+
+      const cached = campaignStoragePrivacyService.getImageBuffer(storagePath);
+      if (cached) {
+        res.setHeader('Content-Type', cached.mimetype || 'image/jpeg');
+        res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        return res.send(cached.buffer);
+      }
+
+      return res.status(404).json({
+        error: 'Picha ya hakikisho haikupatikana.',
+        code: 'IMAGE_NOT_FOUND'
+      });
+    } catch (err: any) {
+      console.error('[CorporateCampaigns API] Preview error:', err);
+      return res.status(500).json({ error: 'Hitilafu ya seva wakati wa kuonyesha hakikisho.' });
+    }
+  });
+
+  // 8. Governed Public Campaign Creative Delivery Gateway
+  // Strictly enforces lifecycle governance: DRAFT/PAUSED/ARCHIVED/REJECTED are private and NEVER deliverable!
+  app.get('/api/corporate-campaigns/delivery/:campaignId/creative', (req, res) => {
+    try {
+      const { campaignId } = req.params;
+      const campaign = corporateCampaignService.getCampaignById(campaignId);
+
+      const check = campaignStoragePrivacyService.evaluateCampaignDeliveryEligibility(campaign);
+      if (!check.canDeliver || !campaign) {
+        return res.status(403).json({
+          error: check.reasonSwahili,
+          code: check.reasonCode,
+          canDeliver: false
+        });
+      }
+
+      if (!campaign.storagePath) {
+        return res.status(404).json({
+          error: 'Njia ya faili la picha haikupatikana.',
+          code: 'MISSING_STORAGE_PATH'
+        });
+      }
+
+      const cached = campaignStoragePrivacyService.getImageBuffer(campaign.storagePath);
+      if (cached) {
+        res.setHeader('Content-Type', cached.mimetype || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        return res.send(cached.buffer);
+      }
+
+      return res.status(404).json({
+        error: 'Faili la picha halikupatikana kwenye hifadhi.',
+        code: 'IMAGE_NOT_FOUND'
+      });
+    } catch (err: any) {
+      console.error('[CorporateCampaigns API] Delivery gateway error:', err);
+      return res.status(500).json({ error: 'Hitilafu ya seva ya usambazaji wa matangazo.' });
+    }
+  });
+
+  // 9. Cleanup Abandoned Temporary Uploads (Admin Only)
+  app.post('/api/admin/corporate-campaigns/cleanup-abandoned', (req, res) => {
+    if (!isAuthoritativePlacementAdmin(req)) {
+      return res.status(403).json({
+        error: 'Mamlaka ya msimamizi inahitajika.',
+        code: 'ADMIN_REQUIRED'
+      });
+    }
+
+    const result = campaignStoragePrivacyService.cleanupAbandonedUploads();
+    return res.json({
+      success: true,
+      cleanedCount: result.cleanedCount,
+      preservedCount: result.preservedCount,
+      message: `Usafishaji umekamilika. Faili ${result.cleanedCount} zimefutwa, faili ${result.preservedCount} zimehifadhiwa salama bila kufuta kumbukumbu za kihistoria.`
+    });
+  });
+
+  // 10. Audit Server Firebase Authentication Identity (Admin Only)
+  app.get('/api/admin/corporate-campaigns/auth-audit', async (req, res) => {
+    if (!isAuthoritativePlacementAdmin(req)) {
+      return res.status(403).json({
+        error: 'Mamlaka ya msimamizi inahitajika.',
+        code: 'ADMIN_REQUIRED'
+      });
+    }
+
+    let adcActive = false;
+    let adcProjectId: string | null = null;
+    try {
+      const gAuth = new GoogleAuth({
+        scopes: ['https://www.googleapis.com/auth/cloud-platform', 'https://www.googleapis.com/auth/devstorage.read_write']
+      });
+      adcProjectId = await gAuth.getProjectId().catch(() => null);
+      const token = await gAuth.getAccessToken().catch(() => null);
+      adcActive = !!token;
+    } catch {}
+
+    return res.json({
+      status: 'ok',
+      authMechanism: adcActive ? 'GOOGLE_APPLICATION_DEFAULT_CREDENTIALS_ADC' : (process.env.NODE_ENV === 'test' ? 'ISOLATED_TEST_HARNESS' : 'SERVER_IDENTITY'),
+      hasAdcToken: adcActive,
+      gcpProjectId: adcProjectId,
+      usesClientConfigAsPrivilegedSecret: false,
+      storageSecurityRulesModel: 'ZERO_TRUST_PRIVATE_SERVER_MEDIATED',
+      explanationSwahili: 'Uthibitishaji wa seva unatumia Application Default Credentials (ADC) za Google Cloud na haitegemei funguo za siri za mteja (client config).'
+    });
   });
 
   // ============================================================================
@@ -7507,7 +8561,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7531,7 +8585,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7576,7 +8630,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7608,7 +8662,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7639,7 +8693,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7670,7 +8724,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { callerUserId, isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7701,7 +8755,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7735,7 +8789,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });
@@ -7761,7 +8815,7 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
     try {
       const { isAdmin } = extractUserAuthFromRequest(req);
       const adminKey = req.headers['x-admin-secret'] as string;
-      const isAuthorized = isAdmin || adminKey === 'ufugaji-admin-secret-test';
+      const isAuthorized = isAuthorizedAdminOrTest(isAdmin, adminKey);
 
       if (!isAuthorized) {
         return res.status(403).json({ error: 'Ruhusa imekataliwa: Admin pekee.' });

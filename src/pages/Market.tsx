@@ -36,6 +36,7 @@ import {
   updateProductInAllCaches
 } from '../services/marketplaceService';
 import { ProductCard } from '../components/marketplace/ProductCard';
+import { AdPlacementSlot } from '../components/adPlacement/AdPlacementSlot';
 import { ProductDetailModal } from '../components/marketplace/ProductDetailModal';
 import { ProductFormModal } from '../components/marketplace/ProductFormModal';
 import { SellerProfileModal } from '../components/marketplace/SellerProfileModal';
@@ -1055,6 +1056,9 @@ export const Market: React.FC = () => {
         </div>
       )}
 
+      {/* Corporate Ad Placement Foundation V1.0: Marketplace Top Banner (Disabled by default) */}
+      <AdPlacementSlot placementId="MARKETPLACE_TOP_BANNER" />
+
       {/* ========================================================================= */}
       {/* VIEW 1: SPECIFIC SELLER DIGITAL SHOP (Buyer Shop View) */}
       {/* ========================================================================= */}
@@ -1341,6 +1345,9 @@ export const Market: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* Corporate Ad Placement Foundation V1.0: Gulio Top Banner (Enabled by default) */}
+          <AdPlacementSlot placementId="GULIO_TOP_BANNER" />
 
           {/* Top Bar Switcher (Bidhaa vs Maduka vs Duka Langu) */}
           <div className="flex items-center justify-between border-b border-stone-200 gap-2 overflow-x-auto no-scrollbar">
