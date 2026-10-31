@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { getSafeIdToken, createAdminMockJwt } from '../../utils/authUtils';
+import { parseApiResponse } from '../../utils/apiClient';
 import {
   CorporateCampaign,
   CreateCampaignDraftInput,
@@ -80,15 +81,16 @@ export const AdminCorporateCampaignManagement: React.FC = () => {
     try {
       const headers = await getAuthHeaders();
       const res = await fetch('/api/admin/corporate-campaigns', { headers });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Seva imeshindwa kupakia kampeni (HTTP ${res.status}).`);
+      const parsed = await parseApiResponse(res);
+      if (!parsed.ok) {
+        throw new Error(parsed.error || `Seva imeshindwa kupakia kampeni (HTTP ${res.status}).`);
       }
-      const data = await res.json();
-      if (data.success && Array.isArray(data.campaigns)) {
+      const data = parsed.data;
+      if (data && data.success && Array.isArray(data.campaigns)) {
         setCampaigns(data.campaigns);
       }
     } catch (err: any) {
+
       console.error('[AdminCorporateCampaign] Hitilafu ya kupakia:', err);
       setErrorMsg(err.message || 'Hitilafu ya kupakia kampeni kutoka kwenye seva.');
     } finally {
@@ -183,13 +185,13 @@ export const AdminCorporateCampaignManagement: React.FC = () => {
         body: formData
       });
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Upakiaji wa picha umeshindwa.');
+      const parsed = await parseApiResponse(res);
+      if (!parsed.ok) {
+        throw new Error(parsed.error || 'Upakiaji wa picha umeshindwa.');
       }
 
-      const data = await res.json();
-      if (data.imageUrl) {
+      const data = parsed.data;
+      if (data && data.imageUrl) {
         setImageUrl(data.imageUrl);
         setStoragePath(data.storagePath || '');
         setFormErrors((prev) => {
@@ -199,6 +201,7 @@ export const AdminCorporateCampaignManagement: React.FC = () => {
         });
       }
     } catch (uploadErr: any) {
+
       setFormErrors((prev) => ({
         ...prev,
         imageUrl: uploadErr.message || 'Hitilafu ya kupakia faili la picha.'
@@ -282,13 +285,14 @@ export const AdminCorporateCampaignManagement: React.FC = () => {
         });
       }
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Seva imeshindwa kuhifadhi (HTTP ${res.status}).`);
+      const parsed = await parseApiResponse(res);
+      if (!parsed.ok) {
+        throw new Error(parsed.error || `Seva imeshindwa kuhifadhi (HTTP ${res.status}).`);
       }
 
-      const resData = await res.json();
+      const resData = parsed.data;
       const savedCampaign: CorporateCampaign = resData.campaign;
+
 
       // Update state authoritatively
       if (editingCampaign) {
@@ -324,18 +328,19 @@ export const AdminCorporateCampaignManagement: React.FC = () => {
         headers
       });
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Hitilafu ya kuhifadhi kumbukumbu.');
+      const parsed = await parseApiResponse(res);
+      if (!parsed.ok) {
+        throw new Error(parsed.error || 'Hitilafu ya kuhifadhi kumbukumbu.');
       }
 
-      const data = await res.json();
-      if (data.campaign) {
+      const data = parsed.data;
+      if (data && data.campaign) {
         setCampaigns((prev) =>
           prev.map((c) => (c.campaignId === campaign.campaignId ? data.campaign : c))
         );
         setActionSuccessMsg(`Kampeni "${campaign.campaignName}" imehifadhiwa kwenye kumbukumbu (Archived).`);
       }
+
     } catch (err: any) {
       alert(err.message || 'Hitilafu wakati wa kuhifadhi kumbukumbu.');
     }

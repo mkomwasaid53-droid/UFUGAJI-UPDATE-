@@ -7,6 +7,8 @@
  * 3. Never deleted or blanked out due to quota overflow.
  */
 
+import { parseApiResponse } from '../utils/apiClient';
+
 const IDB_NAME = 'ufugaji_marketplace_media_db';
 const IDB_VERSION = 1;
 const IDB_STORE_IMAGES = 'product_images';
@@ -123,8 +125,9 @@ export async function persistImagePermanently(
         productId,
       }),
     });
-    if (resp.ok) {
-      const serverData = await resp.json();
+    const parsedResp = await parseApiResponse(resp);
+    if (parsedResp.ok && parsedResp.data) {
+      const serverData = parsedResp.data;
       if (serverData?.url) {
         publicUrl = serverData.url;
         resolvedStoragePath = serverData.storagePath || resolvedStoragePath;
@@ -135,6 +138,7 @@ export async function persistImagePermanently(
   } catch (err) {
     console.warn('[imageStorageService] Server upload fallback notice:', err);
   }
+
 
   return {
     url: publicUrl,

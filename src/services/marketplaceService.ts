@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { classifyFirestoreError } from '../utils/firestoreErrorClassifier';
+import { parseApiResponse } from '../utils/apiClient';
 import {
   MarketplaceProduct,
   ProductImage,
@@ -182,11 +183,9 @@ export async function fetchMarketplaceProducts(options?: {
   // 1. Fetch from Server Persistence API (fast & guaranteed across reloads)
   try {
     const res = await fetch('/api/marketplace/products');
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        serverProducts.push(...data);
-      }
+    const parsed = await parseApiResponse<MarketplaceProduct[]>(res);
+    if (parsed.ok && Array.isArray(parsed.data)) {
+      serverProducts.push(...parsed.data);
     }
   } catch (err) {
     console.warn('Server marketplace products fetch notice:', err);
@@ -995,14 +994,16 @@ export async function createMarketplaceProduct(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newProduct),
     });
-    if (resp.ok) {
-      const serverSaved = await resp.json();
+    const parsedResp = await parseApiResponse(resp);
+    if (parsedResp.ok && parsedResp.data) {
+      const serverSaved = parsedResp.data;
       if (serverSaved && serverSaved.imageUrl) {
         newProduct.imageUrl = serverSaved.imageUrl;
       }
       if (serverSaved && Array.isArray(serverSaved.images)) {
         newProduct.images = serverSaved.images;
       }
+
       if (serverSaved && serverSaved.aiScreening) {
         newProduct.aiScreening = serverSaved.aiScreening;
         newProduct.aiScreenedAt = serverSaved.aiScreenedAt;
@@ -1314,14 +1315,16 @@ export async function updateMarketplaceProduct(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedProduct),
     });
-    if (resp.ok) {
-      const serverSaved = await resp.json();
+    const parsedResp = await parseApiResponse(resp);
+    if (parsedResp.ok && parsedResp.data) {
+      const serverSaved = parsedResp.data;
       if (serverSaved && serverSaved.imageUrl) {
         updatedProduct.imageUrl = serverSaved.imageUrl;
       }
       if (serverSaved && Array.isArray(serverSaved.images)) {
         updatedProduct.images = serverSaved.images;
       }
+
       if (serverSaved && serverSaved.aiScreening) {
         updatedProduct.aiScreening = serverSaved.aiScreening;
         updatedProduct.aiScreenedAt = serverSaved.aiScreenedAt;

@@ -215,8 +215,10 @@ import {
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const resolvedFilename = typeof __filename !== 'undefined' ? __filename : process.cwd();
+const resolvedDirname = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
+
+
 
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 const VIDEOS_DIR = path.join(UPLOADS_DIR, 'videos');
@@ -846,18 +848,41 @@ try {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT && process.env.NODE_ENV === 'production'
+    ? parseInt(process.env.PORT, 10)
+    : 3000;
+
+  // Request ID & safe diagnostics tracing middleware
+  app.use((req, res, next) => {
+    const rawId = req.headers['x-request-id'];
+    const reqId = typeof rawId === 'string' && rawId.trim()
+      ? rawId.trim()
+      : `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    res.setHeader('x-request-id', reqId);
+    (req as any).id = reqId;
+
+    if (req.path.startsWith('/api/')) {
+      const startTime = Date.now();
+      res.on('finish', () => {
+        const duration = Date.now() - startTime;
+        console.info(`[API ${req.method}] ${req.path} -> ${res.statusCode} (${duration}ms) [id:${reqId}]`);
+      });
+    }
+    next();
+  });
 
   // CORS and Preflight (OPTIONS) middleware for seamless API access from all preview origins & iframes
   app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-user-id, x-is-admin, x-user-role, x-user-name, x-file-name, x-video-id, x-title, x-description');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-user-id, x-is-admin, x-user-role, x-user-name, x-file-name, x-video-id, x-title, x-description, x-request-id');
+    res.header('Access-Control-Expose-Headers', 'x-request-id, Content-Type');
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
     }
     next();
   });
+
 
   // Dedicated upload instances for governed media streams
   const inboxMediaUpload = multer({
@@ -1075,10 +1100,38 @@ async function startServer() {
   }));
   app.use(express.urlencoded({ extended: true, limit: '60mb' }));
 
-  // Health check endpoint
+  // Production health and operational status endpoint
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', name: 'UFUGAJI UPDATE API', version: '1.0.0' });
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    const hasFirestore = Boolean(serverFirestoreDb);
+    const hasStorage = Boolean(serverStorage || serverGoogleAuthClient);
+    const env = process.env.NODE_ENV || 'development';
+    const isCloudRun = Boolean(process.env.K_SERVICE);
+
+    res.json({
+      status: 'ok',
+      service: 'UFUGAJI UPDATE API',
+      version: '1.0.0',
+      backendAvailability: 'OPERATIONAL',
+      environment: env,
+      timestamp: new Date().toISOString(),
+      uptimeSeconds: Math.floor(process.uptime()),
+      firebase: {
+        firestoreConnected: hasFirestore,
+        storageConfigured: hasStorage
+      },
+      storage: {
+        mode: hasStorage ? 'DURABLE_STORAGE_READY' : 'LOCAL_CACHE_FALLBACK',
+        bucket: 'ufugaji-update.firebasestorage.app'
+      },
+      deployment: {
+        platform: isCloudRun ? 'GOOGLE_CLOUD_RUN' : 'EXPRESS_SERVER',
+        serviceId: process.env.K_SERVICE || 'local',
+        region: 'europe-west1'
+      }
+    });
   });
+
 
   // ============================================================================
   // MARKETPLACE PERSISTENCE ENDPOINTS (Guaranteed Storage Across Refreshes)
@@ -8167,8 +8220,49 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
       // Store in private server cache for authenticated admin preview & delivery
       campaignStoragePrivacyService.storeImageBuffer(storagePath, req.file.buffer, mimeType);
 
-      // Upload to durable Firebase Storage with server identity (direct client access blocked by storage.rules)
-      if (serverStorage) {
+      // Also persist to local durable disk in uploads/campaigns
+      try {
+        const fullLocalPath = path.join(CAMPAIGNS_DIR, path.basename(storagePath));
+        fs.writeFileSync(fullLocalPath, req.file.buffer);
+      } catch (localWriteErr: any) {
+        console.warn('[CorporateCampaigns API] Local creative disk write notice:', localWriteErr?.message);
+      }
+
+      // Upload to durable Firebase Storage with server identity (ADC credentials)
+      let cloudUploaded = false;
+      if (serverGoogleAuthClient) {
+        try {
+          const accessTokenObj = await serverGoogleAuthClient.getAccessToken();
+          const accessToken = accessTokenObj?.token;
+          if (accessToken) {
+            const bucketName = 'ufugaji-update.firebasestorage.app';
+            const uploadUrl = `https://storage.googleapis.com/upload/storage/v1/b/${encodeURIComponent(bucketName)}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`;
+            const gcsResp = await fetch(uploadUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': mimeType,
+                'x-goog-meta-storagepath': storagePath,
+                'x-goog-meta-uploadedby': actor,
+                'x-goog-meta-uploadedat': new Date().toISOString()
+              },
+              body: req.file.buffer
+            });
+            if (gcsResp.ok) {
+              cloudUploaded = true;
+              console.info(`[CorporateCampaigns API] Creative uploaded to Cloud Storage via ADC: ${storagePath}`);
+            } else {
+              const errTxt = await gcsResp.text().catch(() => '');
+              console.warn(`[CorporateCampaigns API] Cloud Storage ADC upload status ${gcsResp.status}:`, errTxt);
+            }
+          }
+        } catch (adcErr: any) {
+          console.warn('[CorporateCampaigns API] ADC Cloud Storage notice:', adcErr?.message);
+        }
+      }
+
+      // Fallback: Firebase Storage Client SDK
+      if (!cloudUploaded && serverStorage) {
         try {
           const fileRef = serverStorageRef(serverStorage, storagePath);
           await serverUploadBytes(fileRef, req.file.buffer, {
@@ -8180,12 +8274,14 @@ google.com, pub-3940256099942544, DIRECT, f08c47fec0942fa0
               originalName: path.basename(req.file.originalname || 'banner').substring(0, 100)
             }
           });
+          cloudUploaded = true;
         } catch (storageErr: any) {
-          console.warn('[CorporateCampaigns API] Firebase Storage background upload notice:', storageErr?.message);
+          console.warn('[CorporateCampaigns API] Firebase Storage client SDK notice (non-fatal, stored in disk cache):', storageErr?.message);
         }
       }
 
       // Generate signed, short-lived admin preview ticket (prevents permanent public download exposure)
+
       const previewTicket = campaignStoragePrivacyService.generateAdminPreviewTicket(storagePath, actor);
       const imageUrl = `/api/admin/corporate-campaigns/preview-image?storagePath=${encodeURIComponent(storagePath)}&ticket=${previewTicket}`;
 
